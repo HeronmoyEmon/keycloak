@@ -38,7 +38,7 @@
   /* Milestone badges are deliberately the one bold, saturated element on the roadmap — everything
      else leans pale/pastel, so the Part markers need real depth of their own to read as anchors
      rather than blending into the page; white text needs a genuinely dark fill to sit on. */
-  --milestone-bg: #9c5f45;
+  --milestone-bg: #8f6049;
   --milestone-contrast: #ffffff;
   --code-bg: #2b2a22;
   --code-text: #f0ecdd;
@@ -70,7 +70,7 @@
   --danger-soft: #3b1916;
   --info: #7fd0de;
   --info-soft: #15323a;
-  --milestone-bg: #9c5f45;
+  --milestone-bg: #8f6049;
   --milestone-contrast: #ffffff;
   --code-bg: #121008;
   --code-text: #eae2ce;
@@ -98,7 +98,7 @@
   --danger-soft: #f1dcd6;
   --info: #2c6670;
   --info-soft: #dcebe8;
-  --milestone-bg: #9c5f45;
+  --milestone-bg: #8f6049;
   --milestone-contrast: #ffffff;
   --code-bg: #2a2015;
   --code-text: #ecdfc4;
@@ -127,7 +127,7 @@
     --danger-soft: #3b1916;
     --info: #7fd0de;
     --info-soft: #15323a;
-    --milestone-bg: #9c5f45;
+    --milestone-bg: #8f6049;
     --milestone-contrast: #ffffff;
     --code-bg: #121008;
     --code-text: #eae2ce;
