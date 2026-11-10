@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Labs — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Hands-on labs</h1>
+    <p class="lede">Every lab in this course runs against infrastructure you stand up yourself — a
+      local Docker Compose stack, or (Part III only) a public test identity server. Nothing in this
+      site talks to a real Keycloak instance; the deployed pages are static, read-only documentation.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Parts I-III (chapters 0-18) need no local setup beyond Docker/Java/curl (chapter 0). Part IV
+        (chapter 20 onward) is where Keycloak itself gets installed for the first time, using the
+        environment below.</p>
+    </div>
+
+    <div class="part-card">
+      <h3>Keycloak + PostgreSQL (chapters 20-26, and most later Keycloak chapters)</h3>
+      <p>A Docker Compose stack: Keycloak 26.8.2 (Quarkus distribution, <code>start-dev</code> mode) with
+        a PostgreSQL 17 database. Confirmed working end to end before any chapter was built on it:
+        the stack boots, the Admin Console and Admin REST API both come up, and <code>kcadm.sh</code>
+        (the admin CLI, bundled in the Keycloak image) can log in and create realms/users/roles/clients.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>labs/docker/docker-compose.yml</code></td><td>The stack definition</td></tr>
+            <tr><td><code>labs/docker/README.md</code></td><td>Start/stop instructions, credentials, <code>kcadm.sh</code> usage</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Chapter 20 creates a single realm, <code>northwind-apps</code>, used as the running example
+        through chapter 26 — each of those chapters' labs starts from a fresh
+        <code>docker compose up</code> rather than one long-lived shared instance, and briefly
+        recreates whatever earlier state it needs so it still makes sense read on its own.</p>
+    </div>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Try it</div>
+      <p>Before chapter 20, confirm Docker actually works on your machine: <code>docker --version</code>
+        and <code>docker compose version</code>. Chapter 0 covered this already — this is just a
+        reminder now that it actually matters.</p>
+    </div>
+
+    <p>More lab environments get added here as later Parts need them: a Spring Boot resource server
+      and a React SPA (Part VI, securing real applications), and Java SPI source examples (Part VIII,
+      extending Keycloak).</p>
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/book.js"></script>
+</body>
+</html>

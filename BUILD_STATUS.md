@@ -7,22 +7,66 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
-**GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10 — awaiting review
-now, see Gates below for the GATE-3 summary.** All approved as built, no feedback given on any of the
-three. Confirms the parallel-subagent-then-central-merge working mode as the permanent default.
+**GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10** ("continue" —
+treated as approval given it directly followed the GATE-3 presentation; no feedback given on any of
+the three gates). Confirms the parallel-subagent-then-central-merge working mode as the permanent
+default.
 
-**Part III complete 2026-11-10: chapters 13-18** (OAuth 2.0 core/extended, OpenID Connect, JWT &
-applied crypto, SAML 2.0, OAuth/OIDC security best practices) — 6 chapters, 6 parallel subagents,
-centrally merged and independently re-verified. This was the course's first unit with real hands-on
-labs (curl-only, against Duende Software's public demo IdentityServer — decision record in CLAUDE.md
-§5) and the biggest single round so far. Full detail, including two things the coordinator personally
-re-verified rather than trusting subagent reports (chapter 13's redirect_uri-validation finding, and a
-discrepancy between two subagents over whether scripted login was possible), is in the GATE-3 summary
-under Gates, and in Done.
+This finishes **Part III — Protocols** in full (see Done below for detail).
 
-This finishes **Part III — Protocols** in full. Next up: Part IV (chapters 19-26, Keycloak core
-administration — Keycloak itself finally gets installed in chapter 20) plus the `labs/docker/` base
-environment, leading to **GATE-4**.
+**In progress now: Part IV, chapters 19-26** (Keycloak core administration). Leads to **GATE-4**.
+
+**Done so far**: `labs/docker/docker-compose.yml` + `README.md` + `labs.html` (built and personally
+verified by the coordinator end-to-end before any agent touched them — see Done below), chapter 19
+(architecture) and chapter 20 (installing Keycloak — the `northwind-apps` realm now exists as of this
+chapter, confirmed via a real, captured `kcadm.sh` run, not narrated). Both merged, verified, committed.
+
+**Up next: chapters 21-26**, all building on the `northwind-apps` realm chapter 20 established. Still
+needed below for that round's briefs.
+
+**The "Northwind Apps realm" build plan (chapters 20-26 share this exact plan)** — ties back to running
+examples already established in Parts I-II, so these chapters pay off threads the course set up
+earlier rather than inventing disconnected new examples:
+- **Ch 20 — DONE.** Created the `northwind-apps` realm (leaves `master` alone). This is the one piece
+  every later chapter's lab depends on existing — each chapter's own lab recreates it fresh via its own
+  `docker compose up`, not a shared running instance.
+- **Ch 21** (realm settings) configures realm-level settings on `northwind-apps` only — display name
+  "Northwind Apps", token/session lifetimes (forward-point to ch08/ch29), login settings. No new
+  users/roles/clients.
+- **Ch 22** (users) creates `jane.doe` (jane.doe@northwindapps.com — the exact identity chapter 2's
+  identity/identifier/credential/attribute example used) and `priya.patel` (chapter 1's team-move
+  example) as real users in `northwind-apps`, with credentials and a required action (e.g. configure
+  OTP) demonstrated.
+- **Ch 23** (roles & groups) creates realm roles `tenant-admin`, `support-agent`, `platform-engineer`
+  and groups `Engineering`/`Support`; assigns `jane.doe` → `tenant-admin`, `priya.patel` → initially
+  `support-agent`. **Payoff**: literally reproduce chapter 10's Priya "Mover event" scenario here —
+  move her from `support-agent`/`Support` to `platform-engineer`/`Engineering` in the real Admin
+  Console, and show the old role must be explicitly removed (exactly chapter 10's point, now hands-on).
+- **Ch 24** (clients, scopes, mappers) registers `northwind-dashboard` (confidential, standard flow)
+  and previews `northwind-spa` (public, forward-pointing to ch35); configures a client scope with a
+  protocol mapper adding a custom `department` claim from a user attribute. **Payoff**: this is the
+  exact "custom claim via a Keycloak protocol mapper" mechanism chapter 15 (OIDC) forward-referenced.
+- **Ch 25** (auth flows & required actions) clones the browser flow and adds a conditional OTP
+  requirement — tie to chapter 5's MFA content, now configured for real.
+- **Ch 26** (themes, branding, localization) customizes `northwind-apps`'s login theme with Northwind
+  branding and shows a locale/i18n option.
+
+Each of chapters 20-26 is a **real lab chapter** per CLAUDE.md §4 — the agent must actually run the
+Docker stack and either click through (described precisely, cross-checked against live-fetched current
+Keycloak 26.x Admin Console documentation, since no browser tool exists to click through it personally)
+or use `kcadm.sh`/the Admin REST API (which the agent CAN run and verify directly, no browser needed)
+to confirm every described step actually produces the claimed result. Where the Admin Console's exact
+screen layout can't be personally confirmed without a browser, the agent must cross-check against
+Keycloak's own current official Server Administration Guide (live-fetched, version 26.x) rather than
+describing a remembered-from-training-data layout that may be stale.
+
+Chapter 19 (Keycloak architecture, no lab) — **DONE**, had no dependency on the realm plan above.
+
+Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
+`hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
+sandboxed environment (looks like bot-blocking, not a dead link). Subagents have been substituting
+verified alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue
+that pattern rather than re-discovering the same block each time.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -63,10 +107,11 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 7. ~~Chapters 13-18~~ — done 2026-11-10 (6 parallel subagents + central merge; see Done below).
    **→ GATE-3 reached, approved 2026-11-10.**
 
-### Part IV (Keycloak core — first real Keycloak labs) — up next
-8. `labs/docker/docker-compose.yml` (Keycloak + Postgres, the base lab environment every Part IV+ chapter
-   reuses) + `labs.html` index page.
-9. Chapters 19-26.
+### Part IV (Keycloak core — first real Keycloak labs) — in progress
+8. ~~`labs/docker/docker-compose.yml` + `README.md` + `labs.html`~~ — done 2026-11-10, coordinator-built
+   and personally verified end-to-end (see Done below).
+9. Chapters 19-26 — **19 and 20 done** 2026-11-10 (see Done below); **21-26 up next**, all sharing the
+   "Northwind Apps realm" plan above.
    **→ GATE-4: stop here for review.**
 
 ### Part V (Keycloak operations)
@@ -394,6 +439,46 @@ of either kind, confirmed via a Node script with a `window` shim, same approach 
     has exactly 4 options.
   - `nav-data.js`'s `built` flag flipped to `true` for chapters 13-18 only after all checks passed.
   - This completes **Part III — Protocols** (chapters 13-18) in full, and reaches **GATE-3**.
+
+### Part IV, started — lab environment + chapters 19-20
+- 2026-11-10 `labs/docker/docker-compose.yml`, `labs/docker/README.md`, `labs.html` complete — built
+  directly by the coordinator, not delegated, and personally verified end-to-end before any chapter
+  agent touched the environment: confirmed the real Keycloak image version (`docker run
+  quay.io/keycloak/keycloak:26.8.2 --version`, not assumed), brought the real Docker Compose stack up,
+  confirmed Keycloak reached ready state, logged in with `kcadm.sh` using the bootstrap admin, created
+  a real test realm, confirmed it via a separate `get realms` call, then tore everything down (`docker
+  compose down -v`) before handing the environment off. This meant every chapter 19-20 agent started
+  from a known-working baseline instead of each independently discovering the same setup problems.
+- 2026-11-10 chapters 19 (Keycloak architecture) and 20 (installing Keycloak) complete — 2 chapters, 2
+  parallel subagents, then centrally merged and independently re-verified:
+  - Structural: both files parse cleanly, balanced tags, all mount points/script tags present, served
+    and `curl`-confirmed `200`. Chapter 20's agent personally tore its own test stack down afterward
+    (`docker compose down -v`) — the coordinator independently confirmed via `docker ps -a` and `docker
+    volume ls` that no stray containers or volumes were left behind before merging.
+  - Chapter 20 is the course's first chapter with a real, running Keycloak instance. Its agent could not
+    personally click through the Admin Console (no browser tool) and handled this exactly like Part
+    III's device-flow labs did: everything machine-verifiable (the Docker stack, `kcadm.sh` login, real
+    realm creation, a `get realms` confirmation) was actually run with real captured output; the Admin
+    Console's exact screen layout is described from Keycloak's current official documentation and
+    labeled as such, not claimed as personally observed. It also honestly reported being unable to curl
+    the `/health/ready` endpoint from inside the container (the Keycloak image has no curl/wget, and the
+    management port isn't exposed in this project's compose file) rather than fabricating sample output
+    — and confirmed this matches Keycloak's own documented limitation.
+  - Caught and resolved 3 cross-chapter glossary collisions during merge (`start-dev mode`, `Production
+    mode (Keycloak)`, `Bootstrap admin`) — kept chapter 20's more mechanically detailed version of each
+    (env vars, exact "only once" condition) as canonical, extended its `chapters` array to include
+    `keycloak-architecture`, dropped chapter 19's duplicates. Chapter 19's agent had already proactively
+    checked that "Realm" didn't already exist as a term before proposing `Realm (Keycloak)`; chapter
+    20's own realm-creation-mechanics terms (`Realm creation (kcadm.sh / Admin Console)`, `Current realm
+    (Admin Console)`) are differently scoped and were kept as separate, non-duplicate entries.
+  - Merged 32 new glossary terms (ch19: 14 kept after dropping 3 duplicates, ch20: 18) plus 2 extend-
+    existing-term requests (`Authorization Server` from ch13, `Admin console` from ch01) — total
+    glossary now **311 terms, zero duplicates** (checked programmatically).
+  - Merged 32 new quiz questions (ch19: 15, ch20: 17) — total now **354, zero duplicate ids** (prefixes
+    `kca-`/`ick-`, checked against all 15 existing prefixes programmatically).
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 19-20 only after all checks passed.
+  - The `northwind-apps` realm this project's Part IV plan depends on now genuinely exists as of this
+    chapter's real lab run (though each later chapter's own lab recreates it fresh, per the plan).
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is

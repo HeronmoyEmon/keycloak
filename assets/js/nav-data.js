@@ -43,9 +43,9 @@ window.COURSE_NAV = [
   { number: 18, slug: "oauth-oidc-security", title: "OAuth/OIDC Security Best Practices", part: "Part III — Protocols", minutes: 35, hasLab: false, built: true,
     blurb: "The BCP RFCs, PKCE-everywhere, mix-up/CSRF defenses, token storage pitfalls." },
 
-  { number: 19, slug: "keycloak-architecture", title: "Keycloak Architecture & Deployment Options", part: "Part IV — Keycloak Core Administration", minutes: 30, hasLab: false, built: false,
+  { number: 19, slug: "keycloak-architecture", title: "Keycloak Architecture & Deployment Options", part: "Part IV — Keycloak Core Administration", minutes: 30, hasLab: false, built: true,
     blurb: "The Quarkus distribution, database backends, standalone vs. containerized." },
-  { number: 20, slug: "installing-keycloak", title: "Installing & Running Keycloak", part: "Part IV — Keycloak Core Administration", minutes: 50, hasLab: true, built: false,
+  { number: 20, slug: "installing-keycloak", title: "Installing & Running Keycloak", part: "Part IV — Keycloak Core Administration", minutes: 50, hasLab: true, built: true,
     blurb: "First real Keycloak lab: Docker Compose, production-mode basics." },
   { number: 21, slug: "realms", title: "Realms & Realm Settings", part: "Part IV — Keycloak Core Administration", minutes: 40, hasLab: true, built: false,
     blurb: "Tenancy boundaries, the master realm, per-realm policy." },
