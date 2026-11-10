@@ -8,7 +8,7 @@
    Clean-room build (CLAUDE.md §2.6). Reuses book.css tokens.
    ============================================================ */
 
-.roadmap-shell { max-width: 1040px; margin: 0 auto; padding: 2.2em 1.5em 5em; }
+.roadmap-shell { max-width: 1040px; margin: 0 auto; padding: 1.8em 1.5em 4em; }
 
 .top-quicklinks { display: flex; gap: 0.3em; flex-wrap: wrap; }
 .top-quicklinks a {
@@ -17,14 +17,14 @@
 }
 .top-quicklinks a:hover { background: var(--accent-soft); color: var(--accent-strong); text-decoration: none; }
 
-.roadmap-hero { text-align: center; margin-bottom: 2.2em; }
-.roadmap-hero .badge { margin-bottom: 0.8em; }
-.roadmap-hero h1 { font-size: 2.1em; margin: 0.3em 0 0.5em; }
-.roadmap-hero .lede { max-width: 620px; margin: 0 auto 1.6em; }
+.roadmap-hero { text-align: center; margin-bottom: 1.6em; }
+.roadmap-hero .badge { margin-bottom: 0.7em; }
+.roadmap-hero h1 { font-size: 1.95em; margin: 0.25em 0 0.45em; }
+.roadmap-hero .lede { max-width: 620px; margin: 0 auto 1.3em; }
 .roadmap-hero .stat-grid { max-width: 640px; margin: 0 auto; }
 
 /* ---------- The roadmap map ---------- */
-.road-map { position: relative; margin: 2.4em 0 0; }
+.road-map { position: relative; margin: 1.8em 0 0; }
 .road-svg-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
 .road-connector { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 4 5; }
 
@@ -36,8 +36,8 @@
 
 .road-row {
   position: relative; z-index: 1;
-  display: grid; grid-template-columns: 1fr 190px 1fr;
-  align-items: center; column-gap: 22px; margin-bottom: 30px;
+  display: grid; grid-template-columns: 1fr 230px 1fr;
+  align-items: center; column-gap: 20px; margin-bottom: 16px;
 }
 .road-row:last-child { margin-bottom: 0; }
 
@@ -45,21 +45,26 @@
 .road-spine-node { display: flex; justify-content: center; }
 .road-part-badge {
   position: relative; z-index: 2; background: var(--accent); color: var(--accent-contrast);
-  border-radius: 10px; padding: 0.7em 0.9em; text-align: center; box-shadow: var(--shadow);
-  max-width: 190px; font-weight: 800; font-size: 0.92em; line-height: 1.3;
+  border-radius: 10px; padding: 0.55em 0.9em; text-align: center; box-shadow: var(--shadow);
+  width: 100%; max-width: 230px; font-weight: 800; font-size: 1em; line-height: 1.3;
 }
-.road-part-badge .road-part-desc { display: block; font-weight: 600; font-size: 0.82em; opacity: 0.9; margin-top: 0.15em; }
-.road-part-badge .road-part-progress { display: block; font-weight: 700; font-size: 0.74em; opacity: 0.85; margin-top: 0.35em; }
+.road-part-badge .road-part-desc {
+  display: block; font-weight: 600; font-size: 0.76em; opacity: 0.92; margin-top: 0.2em; line-height: 1.25;
+}
+.road-part-badge .road-part-progress {
+  display: inline-block; font-weight: 700; font-size: 0.7em; opacity: 0.85;
+  margin-top: 0.3em; background: rgba(0, 0, 0, 0.14); border-radius: 999px; padding: 0.15em 0.6em;
+}
 
 /* ---------- Leaf cluster (chapters in a Part) ---------- */
-.road-leaf-cluster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.road-leaf-cluster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .road-leaf-cluster-empty { min-height: 1px; }
 
 .road-leaf { position: relative; z-index: 2; }
 .road-leaf-link, .road-leaf-static {
-  display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
-  padding: 0.55em 0.75em; font-size: 0.9em;
+  display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.4em 0.7em; font-size: 0.87em;
 }
 a.road-leaf-link:hover { border-color: var(--accent); background: var(--accent-soft); text-decoration: none; }
 .road-leaf-num { font-weight: 800; color: var(--text-muted); font-size: 0.82em; flex: 0 0 auto; font-variant-numeric: tabular-nums; }

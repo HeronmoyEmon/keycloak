@@ -246,6 +246,11 @@ figure.diagram figcaption {
 }
 .diagram-label { fill: var(--text); font: 13px -apple-system, Roboto, sans-serif; }
 .diagram-label-muted { fill: var(--text-muted); font: 12px -apple-system, Roboto, sans-serif; }
+/* For text drawn on top of a solid diagram-fill-accent-strong shape. Never hardcode fill="#fff" on
+   diagram text — accent-strong flips from dark (light theme) to light (dark theme), so white text
+   would disappear in dark mode. accent-contrast tracks accent-strong's own background correctly in
+   every theme instead. */
+.diagram-label-on-accent { fill: var(--accent-contrast); font: 13px -apple-system, Roboto, sans-serif; }
 .diagram-stroke { stroke: var(--line-strong); }
 .diagram-fill-surface { fill: var(--surface); }
 .diagram-fill-accent { fill: var(--accent-soft); }
