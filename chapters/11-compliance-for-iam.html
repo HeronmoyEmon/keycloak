@@ -5,562 +5,677 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Compliance for IAM — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "compliance-for-iam";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part II — Governance &amp; Compliance</span>
-      <span class="badge minutes">~40 min</span>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part II — Governance &amp; Compliance</span>
+          <span class="badge minutes">~40 min</span>
+        </div>
+        <h1>11. Compliance for IAM</h1>
+        <p class="lede">A security auditor will never ask you "do you have role-based access control?" They'll
+        ask "can you show me evidence of your Q3 access review," or "how do you enforce least privilege in the
+        cardholder data environment," or "what's your process for the minimum necessary standard." Different
+        words, same concepts this course already taught. This chapter is the translation layer between
+        compliance-speak and the IAM vocabulary you already have.</p>
+
+        <h2>Why this matters</h2>
+        <p>Every IAM specialist eventually sits across a table from an auditor, a customer's security
+        questionnaire, or a regulator's investigator, and has to map what the system actually does onto a
+        checklist written in someone else's vocabulary. Get the mapping wrong — or worse, not realize there is
+        a mapping at all, and treat "compliance" as a separate body of knowledge to learn from scratch — and
+        you'll either fail an audit you could have passed, or over-build controls nobody asked for. This
+        chapter exists so you walk into that conversation already fluent.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">Recall — chapter 1</div>
+          <p>Chapter 1 introduced <strong>Compliance-readiness</strong> in one line: the degree to which an IAM
+          system's audit logging, MFA support, and access controls satisfy regulatory requirements out of the
+          box. This chapter is that one line, deepened — specifically which requirements, from which
+          frameworks, and expressed in which parts of the IAM vocabulary you already have.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="central-argument" data-title="No new theory, just new names">
+        <h2>The central argument: no new theory, just new names</h2>
+        <p>Here's the claim this whole chapter rests on, stated plainly up front: <strong>compliance frameworks
+        don't invent new IAM concepts.</strong> GDPR, SOC 2, the HIPAA Security Rule, PCI-DSS, and ISO 27001
+        were written by different bodies, for different industries, at different times, and none of them sat
+        down to design a new theory of identity and access. Instead, each one independently arrived at the same
+        small set of IAM fundamentals — authenticate reliably, authorize by need, record what happened, require
+        strong proof of identity — and then wrote them down using its own vocabulary, its own numbering scheme,
+        and its own enforcement mechanism. A "Requirement 10" in one framework and an "audit-controls standard"
+        in another are, underneath the label, the same accounting concept chapter 3 already taught you.</p>
+
+        <p>That means this chapter isn't a new body of theory to memorize. It's a lookup table: when a
+        framework says X, what IAM concept from chapters 3-6 is it actually demanding? Learn the table, and
+        "compliance" stops being a separate, intimidating subject and becomes an exercise in relabeling things
+        you already understand.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 920 460" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Compliance frameworks as a translation layer over existing IAM concepts</title>
+            <desc id="d1">A diagram with five framework boxes on the left — GDPR, SOC 2, HIPAA Security Rule,
+            PCI-DSS, ISO 27001 — each with an arrow pointing right into one of four IAM concept boxes on the
+            right: Authentication and MFA, Authorization and least privilege, Accounting and audit trail, and
+            Data handling and minimization. Multiple frameworks point into the same concept boxes, showing that
+            the frameworks converge on the same underlying ideas under different names. A caption states that
+            the arrows represent "demands," not new concepts.</desc>
+            <rect x="20" y="20" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="50" text-anchor="middle" class="diagram-label" font-weight="700">GDPR</text>
+            <rect x="20" y="95" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="125" text-anchor="middle" class="diagram-label" font-weight="700">SOC 2 (Security criteria)</text>
+            <rect x="20" y="170" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="200" text-anchor="middle" class="diagram-label" font-weight="700">HIPAA Security Rule</text>
+            <rect x="20" y="245" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="275" text-anchor="middle" class="diagram-label" font-weight="700">PCI-DSS</text>
+            <rect x="20" y="320" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="350" text-anchor="middle" class="diagram-label" font-weight="700">ISO 27001 (Annex A)</text>
+
+            <rect x="600" y="10" width="300" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="750" y="34" text-anchor="middle" class="diagram-label" font-weight="700">Authentication &amp; MFA</text>
+            <text x="750" y="54" text-anchor="middle" class="diagram-label-muted">ch. 3, 5</text>
+
+            <rect x="600" y="100" width="300" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="750" y="124" text-anchor="middle" class="diagram-label" font-weight="700">Authorization &amp; least privilege</text>
+            <text x="750" y="144" text-anchor="middle" class="diagram-label-muted">ch. 3, 6</text>
+
+            <rect x="600" y="190" width="300" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="750" y="214" text-anchor="middle" class="diagram-label" font-weight="700">Accounting &amp; audit trail</text>
+            <text x="750" y="234" text-anchor="middle" class="diagram-label-muted">ch. 3</text>
+
+            <rect x="600" y="280" width="300" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="750" y="304" text-anchor="middle" class="diagram-label" font-weight="700">Data handling &amp; minimization</text>
+            <text x="750" y="324" text-anchor="middle" class="diagram-label-muted">new to this chapter</text>
+
+            <line x1="280" y1="45" x2="600" y2="40" class="diagram-stroke"/>
+            <line x1="280" y1="45" x2="600" y2="310" class="diagram-stroke"/>
+            <line x1="280" y1="120" x2="600" y2="40" class="diagram-stroke"/>
+            <line x1="280" y1="120" x2="600" y2="130" class="diagram-stroke"/>
+            <line x1="280" y1="120" x2="600" y2="220" class="diagram-stroke"/>
+            <line x1="280" y1="195" x2="600" y2="130" class="diagram-stroke"/>
+            <line x1="280" y1="195" x2="600" y2="220" class="diagram-stroke"/>
+            <line x1="280" y1="270" x2="600" y2="40" class="diagram-stroke"/>
+            <line x1="280" y1="270" x2="600" y2="130" class="diagram-stroke"/>
+            <line x1="280" y1="270" x2="600" y2="220" class="diagram-stroke"/>
+            <line x1="280" y1="345" x2="600" y2="130" class="diagram-stroke"/>
+            <line x1="280" y1="345" x2="600" y2="220" class="diagram-stroke"/>
+
+            <text x="460" y="400" text-anchor="middle" class="diagram-label-muted">Every arrow is a "demand," not a new concept — frameworks converge on the</text>
+            <text x="460" y="420" text-anchor="middle" class="diagram-label-muted">same small set of IAM fundamentals this course already taught, by five different names.</text>
+          </svg>
+          <figcaption>Figure 11.1 — Five compliance frameworks, four underlying IAM concepts. Compliance work is
+          mostly a translation exercise, not new theory.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="gdpr" data-title="GDPR: data subject rights">
+        <h2>GDPR: data subject rights over identity data</h2>
+        <p>The <strong>General Data Protection Regulation (GDPR)</strong>, Regulation (EU) 2016/679, has been
+        in force since 25 May 2018 as the EU's baseline data-protection law. As of this writing, the EU is
+        actively negotiating a "Digital Omnibus" package that would amend several GDPR provisions — but the
+        data-protection portion of that package had not reached trilogue and had no adopted text as of the
+        searches done for this chapter; only a related AI-Act-adjacent portion of the omnibus had become law.
+        Treat GDPR's current substantive text (Articles 5, 6, 15, 17, 20 below) as the live rule, and treat any
+        specific Digital Omnibus change as not yet in force — verify against the EU's official legislative
+        tracker before relying on a claim that GDPR's text has changed.</p>
+
+        <p>For an IAM specialist, GDPR isn't really about marketing cookies — it's about the fact that the
+        accounts, profiles, and access logs an IAM system manages are themselves the kind of personal data GDPR
+        regulates. Three things matter most:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>GDPR concepts relevant to an IAM system</caption>
+            <thead><tr><th>GDPR concept</th><th>What it demands of an IAM system</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Data subject rights</strong> — access, erasure, portability</td><td>A person must
+              be able to find out what identity data is held about them (Art. 15), have it corrected or
+              deleted (Art. 17's "right to erasure"), and receive it in a portable format (Art. 20). An IAM
+              system has to be able to locate, export, and delete a specific person's account, profile
+              attributes, and consent records on request.</td></tr>
+              <tr><td><strong>Lawful basis for processing</strong></td><td>Every piece of identity data an IAM
+              system stores needs a documented legal justification (Art. 6) — consent, contract necessity,
+              legal obligation, or legitimate interest. An IAM system can't just collect attributes "because
+              it might be useful later."</td></tr>
+              <tr><td><strong>Data minimization</strong></td><td>Collect and retain only the identity attributes
+              actually needed for the stated purpose (Art. 5(1)(c)) — an onboarding form asking for a user's
+              attribute just because the schema has a free field is a minimization violation waiting to be
+              flagged.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — the erasure/audit-trail tension</div>
+          <p>There's a genuine, unresolved practical tension here worth naming honestly rather than papering
+          over: GDPR's right to erasure says delete this person's data on request; chapter 3's audit-trail
+          concept — and several of the frameworks below — says retain access logs for years, sometimes under a
+          <em>legal</em> retention obligation. The common resolution in practice is to delete or anonymize
+          identity-linked personal data (profile attributes, contact details) while retaining audit log entries
+          in a pseudonymized form (a stable internal identifier instead of a name/email) — satisfying both
+          the deletion request and the retention requirement without literally deleting history. But this is a
+          real engineering and legal judgment call, not a clean default any IAM product gives you automatically,
+          and different organizations' legal teams land on different specifics. Don't present this as a solved
+          problem to a client — present it as a design decision that needs their legal team's sign-off.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 880 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The erasure request vs. audit-trail retention tension</title>
+            <desc id="d2">A single person's identity record box on the left splits into two paths after an
+            erasure request arrives. The top path, labeled profile and attribute data, leads to a box labeled
+            deleted or fully anonymized. The bottom path, labeled audit log entries, leads to a box labeled
+            retained but pseudonymized, replacing the person's name and email with a stable opaque internal
+            identifier. A note underneath states this is a common compromise requiring legal sign-off, not a
+            universal clean resolution.</desc>
+            <rect x="20" y="110" width="220" height="80" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="130" y="142" text-anchor="middle" class="diagram-label" font-weight="700">PERSON'S IDENTITY</text>
+            <text x="130" y="162" text-anchor="middle" class="diagram-label-muted">erasure request received</text>
+
+            <line x1="240" y1="130" x2="430" y2="50" class="diagram-stroke"/>
+            <line x1="240" y1="170" x2="430" y2="230" class="diagram-stroke"/>
+
+            <rect x="430" y="15" width="260" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="560" y="42" text-anchor="middle" class="diagram-label" font-weight="700">Profile &amp; attribute data</text>
+            <text x="560" y="62" text-anchor="middle" class="diagram-label-muted">(chapter 2's identity record)</text>
+
+            <line x1="690" y1="50" x2="780" y2="50" class="diagram-stroke" marker-end="url(#arrow11a)"/>
+            <rect x="780" y="15" width="90" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="825" y="45" text-anchor="middle" class="diagram-label" font-weight="700">Deleted</text>
+            <text x="825" y="63" text-anchor="middle" class="diagram-label-muted">or anonymized</text>
+
+            <rect x="430" y="195" width="260" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="560" y="222" text-anchor="middle" class="diagram-label" font-weight="700">Audit log entries</text>
+            <text x="560" y="242" text-anchor="middle" class="diagram-label-muted">(chapter 3's accounting output)</text>
+
+            <line x1="690" y1="230" x2="780" y2="230" class="diagram-stroke" marker-end="url(#arrow11a)"/>
+            <rect x="780" y="195" width="90" height="70" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="825" y="222" text-anchor="middle" class="diagram-label" font-weight="700">Retained</text>
+            <text x="825" y="242" text-anchor="middle" class="diagram-label-muted">pseudonymized</text>
+
+            <defs>
+              <marker id="arrow11a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+            <text x="440" y="295" text-anchor="middle" class="diagram-label-muted">A common compromise requiring legal sign-off — not a universal, automatic resolution.</text>
+          </svg>
+          <figcaption>Figure 11.2 — Erasure requests and audit-trail retention pull in opposite directions;
+          pseudonymizing log entries instead of deleting them is the common (not universal) compromise.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p>Northwind Apps sells B2B SaaS to customers across the EU, which puts every one of those customers'
+          end users squarely inside GDPR's scope — not because Northwind is European, but because its data
+          subjects are. When a customer's employee asks Northwind to delete their account, Northwind's IAM
+          layer needs a real, tested erasure path that reaches every identity attribute and consent record tied
+          to that person, not just a "deactivate user" button that leaves the underlying row intact.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="soc2" data-title="SOC 2: Trust Services Criteria">
+        <h2>SOC 2: the Trust Services Criteria, Security above all</h2>
+        <p>SOC 2 is an attestation framework defined by the AICPA's <strong>Trust Services Criteria (TSC)</strong>.
+        As of the searches done for this chapter, the TSC currently in force is the 2017 criteria set with
+        points of focus revised in 2022 — that is the version auditors are attesting against today. The AICPA
+        has published an exposure draft proposing a significant revision (reportedly consolidating the Common
+        Criteria from 33 down to 21) with public comment running into January 2027 and a possible effective
+        date for engagements starting in late 2027 — that revision is <em>not yet in force</em> as of this
+        writing. Don't cite specific new criterion numbers from the draft as current; the 2017/2022 criteria
+        are what an auditor will test against today.</p>
+
+        <p>SOC 2 reports against up to five Trust Services Criteria categories (Security, Availability,
+        Processing Integrity, Confidentiality, Privacy); <strong>Security</strong> is the only one required in
+        every SOC 2 report and the one most relevant to IAM. An auditor testing the Security criterion wants
+        concrete evidence, not a policy document, for things this course already named:</p>
+
+        <ul>
+          <li><strong>Access reviews</strong> — evidence that who-has-access-to-what is periodically
+          recertified, not just granted once and forgotten (chapter 10's IGA territory).</li>
+          <li><strong>MFA enforcement</strong> — evidence that privileged and remote access requires more than a
+          password (chapter 5).</li>
+          <li><strong>Logging</strong> — evidence that authentication and access events are recorded and
+          retained (chapter 3's accounting/audit trail).</li>
+        </ul>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>Meridian Trust needs SOC 2 for a different reason than it needs PCI-DSS: PCI-DSS is mandatory
+          because it processes card payments; SOC 2 is commercially necessary because Meridian's enterprise
+          banking partners and fintech integrators will not sign a contract without a clean SOC 2 report in
+          hand. Same IAM controls — access reviews, MFA, logging — doing double duty against two different
+          frameworks' paperwork.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="hipaa" data-title="HIPAA Security Rule">
+        <h2>The HIPAA Security Rule: safeguards for electronic PHI</h2>
+        <p>The <strong>HIPAA Security Rule</strong> (45 CFR Part 164, Subpart C) sets the baseline for protecting
+        electronic protected health information (ePHI) and has been in force, as last substantially amended by
+        the 2013 Omnibus Rule, for over a decade. HHS published a Notice of Proposed Rulemaking in January 2025
+        proposing a significant overhaul (removing the current "addressable vs. required" distinction among
+        other changes); as of the searches done for this chapter that NPRM had <em>not</em> been finalized, and
+        its projected final-action date had already slipped from an earlier May 2026 target to around July
+        2027, with further slippage considered likely by observers. Everything below describes the
+        <em>currently operative</em> rule, not the proposal — don't present the NPRM's provisions as already in
+        force.</p>
+
+        <p>The Security Rule organizes its requirements into three safeguard categories; the ones with the
+        clearest IAM mapping are the technical safeguards at 45 CFR §164.312:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>HIPAA Security Rule safeguards relevant to IAM</caption>
+            <thead><tr><th>Safeguard</th><th>IAM concept it's demanding</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Access control</strong> (§164.312(a))</td><td>Authorization — technical policies
+              and procedures limiting ePHI access to authorized persons (chapter 6's authorization models).</td></tr>
+              <tr><td><strong>Unique user identification</strong> (§164.312(a), required)</td><td>Every user gets
+              a unique identifier, never a shared login — the baseline chapter 2's identity concept requires
+              before any accounting is even possible.</td></tr>
+              <tr><td><strong>Audit controls</strong> (§164.312(b))</td><td>Accounting/audit trail by another
+              name — hardware, software, and procedural mechanisms that record and examine ePHI system
+              activity (chapter 3).</td></tr>
+              <tr><td><strong>Person or entity authentication</strong> (§164.312(d))</td><td>Authentication —
+              verifying a person or entity is who they claim before granting ePHI access (chapters 3, 5).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — minimum necessary is a Privacy Rule term, not a Security Rule term</div>
+          <p>Worth getting precisely right rather than hand-waving: the <strong>minimum necessary standard</strong>
+          is codified at 45 CFR §164.502(b) and §164.514(d) — that's the <em>HIPAA Privacy Rule</em>, a sibling
+          regulation to the Security Rule, not the Security Rule itself. It's easy to blur the two together
+          because they're both HIPAA and both bear directly on IAM access decisions, and in practice
+          compliance teams discuss them in the same breath. But if a document or an auditor cites "minimum
+          necessary" as a Security Rule requirement, that's imprecise — it's a Privacy Rule requirement that an
+          IAM system's access control design happens to be one of the main ways you operationally satisfy.
+          The substance matters regardless of which rule it lives under: covered entities and business
+          associates must make reasonable efforts to limit PHI use, disclosure, and access requests to the
+          minimum needed for the purpose at hand — not "give clinicians broad access because checking narrowly
+          is inconvenient."</p>
+        </div>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Minimum necessary is where chapter 6's ReBAC care-team concept earns its keep concretely: a
+          cardiologist shouldn't have standing access to every patient in the hospital, only to the patients on
+          their current care team. "Minimum necessary" is the compliance <em>requirement</em>; a relationship-
+          based access model that grants access only while a clinician-patient care-team relationship is active
+          is one concrete <em>implementation</em> of that requirement — not the only possible one, but the one
+          this course will build toward in Keycloak-era chapters. Riverside is the epicenter of HIPAA across
+          this course's three case-study orgs precisely because its entire clinical workforce and patient
+          population sit inside this rule's scope.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="pci-dss" data-title="PCI-DSS">
+        <h2>PCI-DSS: three requirements that are IAM concepts by another name</h2>
+        <p>The <strong>Payment Card Industry Data Security Standard (PCI-DSS)</strong> is maintained by the PCI
+        Security Standards Council. As of the searches done for this chapter, <strong>v4.0.1</strong> is the
+        sole currently active version — a minor clarification release over v4.0 (no requirements added or
+        removed), with the transition period for v4.0's previously future-dated new requirements having closed
+        on 31 March 2025 (sources vary on the exact count of requirements that became mandatory that day,
+        somewhere in the high-40s). One source suggested the Council had opened a request-for-comment window on
+        v4.0.1 in mid-2026 to shape a future revision; that could not be independently confirmed from the
+        Council's own site during this chapter's research, so treat it as unconfirmed rather than citing it as
+        fact. Verify against pcisecuritystandards.org directly before asserting a successor version exists.</p>
+
+        <p>Three of PCI-DSS's twelve numbered requirements map directly onto this course's vocabulary:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>PCI-DSS requirements mapped to IAM concepts</caption>
+            <thead><tr><th>PCI-DSS requirement</th><th>IAM concept it's demanding</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Requirement 7</strong> — restrict access to system components and cardholder data
+              by business need-to-know</td><td>Least privilege (chapter 6), stated in PCI-DSS's own words
+              instead of the general security-principle name.</td></tr>
+              <tr><td><strong>Requirement 8</strong> — identify users and authenticate access to system
+              components</td><td>Unique user IDs, MFA for all access into the Cardholder Data Environment, and
+              password/credential strength rules — authentication (chapters 3, 5) with specific numeric teeth
+              attached.</td></tr>
+              <tr><td><strong>Requirement 10</strong> — log and monitor all access to system components and
+              cardholder data</td><td>Accounting and audit trail (chapter 3), by PCI-DSS's own name for the same
+              concept.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 880 320" role="img" aria-labelledby="t3 d3">
+            <title id="t3">PCI-DSS Requirements 7, 8, and 10 scoped to the Cardholder Data Environment</title>
+            <desc id="d3">An outer boundary box labeled Cardholder Data Environment, CDE: systems, people, and
+            processes that store, process, or transmit cardholder data, plus anything connected to them.
+            Inside it, three smaller boxes represent Requirement 7, restrict access by business need to know;
+            Requirement 8, unique user IDs and MFA for all access into the CDE; and Requirement 10, log and
+            monitor all access. Each box has a small label underneath naming the IAM concept it corresponds
+            to: least privilege, authentication, and accounting, respectively.</desc>
+            <rect x="30" y="30" width="820" height="260" rx="14" class="diagram-fill-surface diagram-stroke"/>
+            <text x="440" y="60" text-anchor="middle" class="diagram-label" font-weight="700">CARDHOLDER DATA ENVIRONMENT (CDE)</text>
+            <text x="440" y="80" text-anchor="middle" class="diagram-label-muted" font-size="11">systems, people &amp; processes that store, process, or transmit cardholder data —</text>
+            <text x="440" y="96" text-anchor="middle" class="diagram-label-muted" font-size="11">plus anything connected to them</text>
+
+            <rect x="70" y="130" width="220" height="130" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="180" y="160" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 7</text>
+            <text x="90" y="185" class="diagram-label-muted">Restrict access by</text>
+            <text x="90" y="203" class="diagram-label-muted">business need-to-know</text>
+            <text x="180" y="235" text-anchor="middle" class="diagram-label-muted">= least privilege (ch. 6)</text>
+
+            <rect x="330" y="130" width="220" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="440" y="160" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 8</text>
+            <text x="350" y="185" class="diagram-label-muted">Unique user IDs,</text>
+            <text x="350" y="203" class="diagram-label-muted">MFA for all CDE access</text>
+            <text x="440" y="235" text-anchor="middle" class="diagram-label-muted">= authentication (ch. 3, 5)</text>
+
+            <rect x="590" y="130" width="220" height="130" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="700" y="160" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 10</text>
+            <text x="610" y="185" class="diagram-label-muted">Log and monitor all</text>
+            <text x="610" y="203" class="diagram-label-muted">access to the CDE</text>
+            <text x="700" y="235" text-anchor="middle" class="diagram-label-muted">= accounting/audit trail (ch. 3)</text>
+          </svg>
+          <figcaption>Figure 11.3 — PCI-DSS Requirements 7, 8, and 10, scoped to the Cardholder Data Environment —
+          least privilege, authentication, and accounting under PCI-DSS's own numbering.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>Meridian Trust's online banking platform touches payment card data, which puts a defined
+          <strong>Cardholder Data Environment (CDE)</strong> — the systems, people, and processes that store,
+          process, or transmit cardholder data, plus anything connected to them — squarely inside PCI-DSS's
+          scope. Requirement 7's need-to-know restriction is exactly why Meridian's tellers and its wire-
+          transfer approval staff don't share the same access profile, even though both work in retail
+          banking — chapter 6's least-privilege principle, enforced because PCI-DSS requires it by name, not
+          just because it's good practice.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="iso27001" data-title="ISO 27001 Annex A">
+        <h2>ISO 27001: Annex A's access-control controls</h2>
+        <p>The current edition is <strong>ISO/IEC 27001:2022</strong>. It reorganized the standard's Annex A
+        control list significantly from the prior 2013 edition: 2013's 114 controls across 14 categories became
+        2022's <strong>93 controls across 4 themes</strong> (Organizational, People, Physical, Technological).
+        If you see a document citing an "A.9.x" control number, that's 2013-edition numbering — the 2022
+        edition renumbered access-control content into the 5.x and 8.x ranges instead. The access-control-
+        relevant controls, per the secondary sources checked for this chapter (the standard's own text is
+        paywalled, so verify exact wording against a licensed copy of ISO/IEC 27001:2022 and ISO/IEC 27002:2022
+        before citing control text verbatim in a client deliverable):</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>ISO/IEC 27001:2022 Annex A controls relevant to IAM (current numbering)</caption>
+            <thead><tr><th>Control</th><th>IAM concept it's demanding</th></tr></thead>
+            <tbody>
+              <tr><td><strong>A.5.15</strong> — Access control</td><td>The overarching authorization policy
+              (chapter 6) — rules for managing access to information and other assets.</td></tr>
+              <tr><td><strong>A.5.16</strong> — Identity management</td><td>The identity lifecycle (chapter 2) —
+              managing the full life cycle of identities.</td></tr>
+              <tr><td><strong>A.5.17</strong> — Authentication information</td><td>Credential handling
+              (chapter 2/3) — secure allocation and management of passwords and other authentication secrets.</td></tr>
+              <tr><td><strong>A.5.18</strong> — Access rights</td><td>Provisioning/deprovisioning and periodic
+              review of access rights — chapter 10's IGA territory.</td></tr>
+              <tr><td><strong>A.8.2</strong> — Privileged access rights</td><td>A narrower, higher-stakes slice
+              of least privilege (chapter 6), for elevated/administrative access specifically.</td></tr>
+              <tr><td><strong>A.8.5</strong> — Secure authentication</td><td>Authentication mechanisms including
+              MFA (chapters 3, 5).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--deep-dive">
+          <div class="callout-label">Deep dive — numbering carries real risk</div>
+          <p>If you're reviewing an older Statement of Applicability or a vendor's older ISO certification
+          documentation, expect 2013-edition clause numbers like A.9.2.1 (user registration) or A.9.4.1
+          (information access restriction). Treating old and new numbering as interchangeable without mapping
+          them is a realistic way to misstate what a client is actually certified against — always confirm
+          which edition a document is citing before relying on its control numbers.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="framework-map" data-title="The framework-to-IAM map">
+        <h2>Putting it all together: the framework-to-IAM-concept map</h2>
+        <p>Here's the full lookup table this chapter has been building, one row per framework:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>All five frameworks mapped onto this course's IAM vocabulary</caption>
+            <thead><tr><th>Framework</th><th>Authentication / MFA</th><th>Authorization / least privilege</th><th>Accounting / audit trail</th><th>Data handling</th></tr></thead>
+            <tbody>
+              <tr><td><strong>GDPR</strong></td><td>—</td><td>Data minimization (limits what's collected)</td><td>Tension with erasure rights (see pitfall above)</td><td>Data subject rights, lawful basis, erasure, portability</td></tr>
+              <tr><td><strong>SOC 2 (Security)</strong></td><td>MFA enforcement evidence</td><td>Access review evidence</td><td>Logging evidence</td><td>—</td></tr>
+              <tr><td><strong>HIPAA Security Rule</strong></td><td>Person/entity authentication, unique user ID</td><td>Access control (§164.312(a))</td><td>Audit controls (§164.312(b))</td><td>Minimum necessary is formally a Privacy Rule term, operationalized via access control</td></tr>
+              <tr><td><strong>PCI-DSS</strong></td><td>Requirement 8 (unique IDs, MFA into the CDE)</td><td>Requirement 7 (need-to-know)</td><td>Requirement 10 (log and monitor)</td><td>CDE scoping</td></tr>
+              <tr><td><strong>ISO 27001:2022</strong></td><td>A.8.5 (secure authentication), A.5.17</td><td>A.5.15, A.8.2 (privileged access)</td><td>Implicit in A.5.18's access-rights review</td><td>A.5.16 (identity management)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 880 400" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Overlapping compliance obligations across the three case-study organizations</title>
+            <desc id="d4">Three organization boxes on the left — Northwind Apps, Riverside Health, and Meridian
+            Trust — connect to four framework boxes on the right — GDPR, SOC 2, HIPAA Security Rule, and
+            PCI-DSS. Solid lines mark an obligation confirmed elsewhere in this chapter's case-study callouts:
+            Northwind to GDPR, Riverside to the HIPAA Security Rule, and Meridian to PCI-DSS. Dashed lines mark
+            a likely or conditional secondary obligation: Northwind to SOC 2, Meridian to SOC 2, and Meridian
+            to GDPR if it has EU customers or staff. No organization maps to exactly one framework.</desc>
+
+            <rect x="20" y="20" width="280" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="160" y="45" text-anchor="middle" class="diagram-label" font-weight="700">Northwind Apps</text>
+            <text x="160" y="63" text-anchor="middle" class="diagram-label-muted" font-size="11">B2B SaaS</text>
+
+            <rect x="20" y="150" width="280" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="160" y="175" text-anchor="middle" class="diagram-label" font-weight="700">Riverside Health</text>
+            <text x="160" y="193" text-anchor="middle" class="diagram-label-muted" font-size="11">Hospital network</text>
+
+            <rect x="20" y="280" width="280" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="160" y="305" text-anchor="middle" class="diagram-label" font-weight="700">Meridian Trust</text>
+            <text x="160" y="323" text-anchor="middle" class="diagram-label-muted" font-size="11">Retail bank</text>
+
+            <rect x="560" y="10" width="280" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="700" y="40" text-anchor="middle" class="diagram-label" font-weight="700">GDPR</text>
+
+            <rect x="560" y="95" width="280" height="50" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="700" y="125" text-anchor="middle" class="diagram-label" font-weight="700">SOC 2</text>
+
+            <rect x="560" y="180" width="280" height="50" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="700" y="210" text-anchor="middle" class="diagram-label" font-weight="700">HIPAA Security Rule</text>
+
+            <rect x="560" y="265" width="280" height="50" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="700" y="295" text-anchor="middle" class="diagram-label" font-weight="700">PCI-DSS</text>
+
+            <line x1="300" y1="50" x2="560" y2="35" class="diagram-stroke"/>
+            <line x1="300" y1="50" x2="560" y2="120" class="diagram-stroke" stroke-dasharray="5,4"/>
+            <line x1="300" y1="180" x2="560" y2="205" class="diagram-stroke"/>
+            <line x1="300" y1="310" x2="560" y2="290" class="diagram-stroke"/>
+            <line x1="300" y1="310" x2="560" y2="120" class="diagram-stroke" stroke-dasharray="5,4"/>
+            <line x1="300" y1="310" x2="560" y2="35" class="diagram-stroke" stroke-dasharray="5,4"/>
+
+            <text x="440" y="365" text-anchor="middle" class="diagram-label-muted" font-size="11">Solid = obligation confirmed in this chapter's case-study callouts</text>
+            <text x="440" y="383" text-anchor="middle" class="diagram-label-muted" font-size="11">Dashed = likely or conditional secondary obligation — no org maps to just one framework</text>
+          </svg>
+          <figcaption>Figure 11.4 — Northwind Apps, Riverside Health, and Meridian Trust each carry more than
+          one compliance obligation at once; the same IAM controls (access reviews, MFA, logging) satisfy more
+          than one framework's paperwork simultaneously.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — overlapping obligations, not one framework each</div>
+          <p>It's tempting to assign each org exactly one framework for tidiness — Riverside = HIPAA, Meridian =
+          PCI-DSS, Northwind = GDPR — but real organizations rarely have that clean a boundary. Meridian Trust,
+          as a bank, almost certainly has SOC 2 obligations too (its enterprise partners will ask for the
+          report regardless of PCI-DSS), and if it has any EU retail customers or EU-based staff, some GDPR
+          exposure as well. Northwind needs SOC 2 for the same commercial reason Meridian does — enterprise
+          buyers won't sign without it — on top of its GDPR exposure from EU customers. Don't over-simplify a
+          real client's compliance posture into a single framework; map the actual populations of data and
+          people against the actual list of applicable frameworks, every time.</p>
+        </div>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>No single Keycloak screen says "GDPR" or "PCI-DSS" — compliance is satisfied by combining several
+          Keycloak capabilities this course covers in depth later: the realm Events subsystem for audit
+          evidence (chapter 28), password policy and brute-force detection for credential strength (chapter
+          30), and required actions/authentication flows for enforcing MFA (chapter 25). An auditor's
+          "Requirement 10" checkbox is satisfied by chapter 28's events export, not by any feature labeled
+          "compliance."</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see someone treat "compliance" as a separate subject from the IAM fundamentals already
+          taught, the cause is usually not having built the translation table this chapter provides — almost
+          every compliance demand on an IAM system reduces to AuthN, AuthZ, accounting, or data handling.</li>
+          <li>If you see a GDPR erasure request handled by hard-deleting rows out of an audit log, the cause is
+          not recognizing the retention-vs-erasure tension; pseudonymization, not deletion, is usually the
+          better-reasoned answer for log data specifically — with legal sign-off either way.</li>
+          <li>If you see "minimum necessary" cited as a HIPAA <em>Security</em> Rule requirement in a formal
+          document, the cause is blurring it with the Privacy Rule, where it's actually codified.</li>
+          <li>If you see an ISO 27001 Statement of Applicability citing "A.9.2.1," the cause is reading 2013-
+          edition numbering as if it still applies to the current 2022 edition.</li>
+          <li>If you see a client assigned exactly one compliance framework with no further investigation, the
+          cause is usually not having checked for the overlapping obligations real organizations almost always
+          carry (a second framework, a different jurisdiction, a commercial requirement layered on a legal one).</li>
+          <li>If you see someone cite a pending NPRM or exposure draft (HIPAA's proposed Security Rule overhaul,
+          SOC 2's proposed TSC revision) as if it were already in force, the cause is not checking whether a
+          proposal has actually been finalized before relying on it.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Compliance frameworks don't invent new IAM theory — GDPR, SOC 2, HIPAA, PCI-DSS, and ISO 27001
+          each independently demand authentication, authorization, and accounting under their own names.</li>
+          <li>GDPR's data subject rights (access, erasure, portability) and data minimization apply because
+          identity data is personal data — and erasure requests genuinely conflict with audit-trail retention,
+          a tension without one universal clean answer.</li>
+          <li>SOC 2's Security criterion is the one every report must include, and it wants evidence — access
+          reviews, MFA enforcement, logging — not a policy document.</li>
+          <li>SOC 2's currently-in-force criteria are the 2017 TSC as revised in 2022; a proposed revision
+          exists only as a draft under public comment, not yet in force.</li>
+          <li>The HIPAA Security Rule's technical safeguards (access control, unique user ID, audit controls,
+          authentication) map directly onto AAA; "minimum necessary" is formally a Privacy Rule term that
+          access-control design operationalizes.</li>
+          <li>HIPAA's proposed Security Rule overhaul (2025 NPRM) is not yet final, with its target final-action
+          date having already slipped once — don't treat it as current law.</li>
+          <li>PCI-DSS Requirements 7, 8, and 10 are least privilege, authentication/MFA, and accounting/audit
+          trail, respectively, under PCI-DSS's own numbering.</li>
+          <li>ISO/IEC 27001:2022's Annex A renumbered access-control content into the 5.x/8.x ranges from the
+          2013 edition's 9.x — always confirm which edition a document cites before trusting its control
+          numbers.</li>
+          <li>Real organizations typically carry overlapping compliance obligations, not one framework each —
+          map actual data/people populations against the actual list of applicable frameworks.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Pick any one of the five frameworks and explain, in this course's own vocabulary, what it demands
+            of an IAM system — without using the framework's own jargon in your answer.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Take PCI-DSS. Stripped of its own numbering, it demands: give people access to cardholder systems only on a need-to-know basis (least privilege), make sure every person accessing those systems has their own unique identity and proves it with more than a password (authentication, including MFA), and keep a continuous record of who accessed what inside that environment (accounting/audit trail). None of that required saying "Requirement 7," "Requirement 8," or "Requirement 10" — those numbers are just PCI-DSS's own labels for ideas chapters 3, 5, and 6 already gave you names for.</p>
+          </details></li>
+          <li><details>
+            <summary>Why is there no fully clean resolution to the tension between GDPR's right to erasure and audit-
+            trail retention requirements? What's the commonly used compromise, and why is it a compromise rather
+            than a solution?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Erasure demands deleting a person's data on request, while several frameworks (and sometimes a legal retention obligation) demand keeping audit logs for years — the two requirements point in opposite directions and both can be legally binding at once, so there's no option that fully satisfies both by literal deletion. The common compromise is deleting or anonymizing profile and attribute data while retaining audit log entries in pseudonymized form (a stable internal identifier instead of a name or email). It's a compromise, not a solution, because it still involves a real judgment call about how much identifying information a pseudonymized log can safely retain, and different organizations' legal teams land on different specifics — there's no IAM product default that resolves it automatically.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain the difference between "minimum necessary" as a formal HIPAA term and "least privilege" as
+            a general IAM principle — are they the same thing, related, or something else?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They're related, not identical. Least privilege (chapter 6) is a general IAM/security principle: access should be limited to what's needed for a role or task, full stop, regardless of industry or law. "Minimum necessary" is a specific legal standard codified in HIPAA's Privacy Rule (45 CFR §164.502(b) and §164.514(d)) that narrowly governs PHI use, disclosure, and access requests. In practice, a well-designed least-privilege access model is usually how an organization operationally satisfies minimum necessary — but minimum necessary is the compliance requirement with its own legal scope and citation, while least privilege is the broader engineering principle it borrows from.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter insist that a single organization can have overlapping compliance
+            obligations rather than exactly one framework? Use Meridian Trust or Northwind Apps as your example.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because real organizations' data and user populations rarely map onto exactly one framework's scope. Meridian Trust is required to meet PCI-DSS because it processes card payments, but it also needs a clean SOC 2 report because its enterprise banking partners and fintech integrators won't sign a contract without one, and if it has any EU retail customers or EU-based staff, GDPR applies as well. Treating Meridian as "just a PCI-DSS company" would miss two more compliance programs that the exact same IAM controls — access reviews, MFA, logging — are simultaneously satisfying.</p>
+          </details></li>
+          <li><details>
+            <summary>If you were handed a client's old ISO 27001 documentation citing clause "A.9.4.1," what would you
+            need to check before treating that number as still accurate?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>First, check which ISO/IEC 27001 edition the client is actually certified against. "A.9.4.1" is 2013-edition numbering (information access restriction, under the old 14-category, 114-control structure). If the client has since moved to ISO/IEC 27001:2022 (93 controls across 4 themes), that same content now lives under a renumbered control in the 5.x/8.x range — continuing to cite "A.9.4.1" in a current deliverable would misstate what the client is actually certified against. Confirm the edition first, then map the old number to its 2022 equivalent rather than assuming the two numbering schemes are interchangeable.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter warn against citing the HIPAA NPRM or the SOC 2 exposure draft as if they
+            were already in force? What's the general discipline this is an instance of?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because a proposed rule or standard change isn't binding until it's actually finalized and adopted — at the time this chapter was researched, the HIPAA NPRM's own projected final-action date had already slipped once, and the SOC 2 revision was still an exposure draft under public comment, so neither reflects what an auditor or regulator will actually test against today. The general discipline is this course's own no-invented-facts rule applied to live, changing facts: verify whether something is the currently operative text or only a draft/proposal before asserting it as settled, and if a source disagrees with itself or the state is unclear, say so rather than asserting a precise claim.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://gdpr-info.eu/">GDPR full text (Regulation (EU) 2016/679), consolidated — gdpr-info.eu</a></li>
+          <li><a href="https://www.law.cornell.edu/cfr/text/45/164.502">45 CFR §164.502 — HIPAA Privacy Rule, including the minimum necessary standard (Cornell LII)</a></li>
+          <li><a href="https://www.law.cornell.edu/cfr/text/45/164.312">45 CFR §164.312 — HIPAA Security Rule Technical Safeguards (Cornell LII)</a></li>
+          <li><a href="https://www.pcisecuritystandards.org/document_library/">PCI Security Standards Council — Document Library (official PCI-DSS text)</a></li>
+          <li><a href="https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services">AICPA — SOC Suite of Services and Trust Services Criteria</a></li>
+        </ul>
+      </section>
+
     </div>
-    <h1>11. Compliance for IAM</h1>
-    <p class="lede">A security auditor will never ask you "do you have role-based access control?" They'll
-    ask "can you show me evidence of your Q3 access review," or "how do you enforce least privilege in the
-    cardholder data environment," or "what's your process for the minimum necessary standard." Different
-    words, same concepts this course already taught. This chapter is the translation layer between
-    compliance-speak and the IAM vocabulary you already have.</p>
-
-    <h2>Why this matters</h2>
-    <p>Every IAM specialist eventually sits across a table from an auditor, a customer's security
-    questionnaire, or a regulator's investigator, and has to map what the system actually does onto a
-    checklist written in someone else's vocabulary. Get the mapping wrong — or worse, not realize there is
-    a mapping at all, and treat "compliance" as a separate body of knowledge to learn from scratch — and
-    you'll either fail an audit you could have passed, or over-build controls nobody asked for. This
-    chapter exists so you walk into that conversation already fluent.</p>
-
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">Recall — chapter 1</div>
-      <p>Chapter 1 introduced <strong>Compliance-readiness</strong> in one line: the degree to which an IAM
-      system's audit logging, MFA support, and access controls satisfy regulatory requirements out of the
-      box. This chapter is that one line, deepened — specifically which requirements, from which
-      frameworks, and expressed in which parts of the IAM vocabulary you already have.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <h2>The central argument: no new theory, just new names</h2>
-    <p>Here's the claim this whole chapter rests on, stated plainly up front: <strong>compliance frameworks
-    don't invent new IAM concepts.</strong> GDPR, SOC 2, the HIPAA Security Rule, PCI-DSS, and ISO 27001
-    were written by different bodies, for different industries, at different times, and none of them sat
-    down to design a new theory of identity and access. Instead, each one independently arrived at the same
-    small set of IAM fundamentals — authenticate reliably, authorize by need, record what happened, require
-    strong proof of identity — and then wrote them down using its own vocabulary, its own numbering scheme,
-    and its own enforcement mechanism. A "Requirement 10" in one framework and an "audit-controls standard"
-    in another are, underneath the label, the same accounting concept chapter 3 already taught you.</p>
-
-    <p>That means this chapter isn't a new body of theory to memorize. It's a lookup table: when a
-    framework says X, what IAM concept from chapters 3-6 is it actually demanding? Learn the table, and
-    "compliance" stops being a separate, intimidating subject and becomes an exercise in relabeling things
-    you already understand.</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 920 460" role="img" aria-labelledby="t1 d1">
-        <title id="t1">Compliance frameworks as a translation layer over existing IAM concepts</title>
-        <desc id="d1">A diagram with five framework boxes on the left — GDPR, SOC 2, HIPAA Security Rule,
-        PCI-DSS, ISO 27001 — each with an arrow pointing right into one of four IAM concept boxes on the
-        right: Authentication and MFA, Authorization and least privilege, Accounting and audit trail, and
-        Data handling and minimization. Multiple frameworks point into the same concept boxes, showing that
-        the frameworks converge on the same underlying ideas under different names. A caption states that
-        the arrows represent "demands," not new concepts.</desc>
-        <rect x="20" y="20" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="150" y="50" text-anchor="middle" class="diagram-label" font-weight="700">GDPR</text>
-        <rect x="20" y="95" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="150" y="125" text-anchor="middle" class="diagram-label" font-weight="700">SOC 2 (Security criteria)</text>
-        <rect x="20" y="170" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="150" y="200" text-anchor="middle" class="diagram-label" font-weight="700">HIPAA Security Rule</text>
-        <rect x="20" y="245" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="150" y="275" text-anchor="middle" class="diagram-label" font-weight="700">PCI-DSS</text>
-        <rect x="20" y="320" width="260" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="150" y="350" text-anchor="middle" class="diagram-label" font-weight="700">ISO 27001 (Annex A)</text>
-
-        <rect x="600" y="10" width="300" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="750" y="34" text-anchor="middle" class="diagram-label" font-weight="700">Authentication &amp; MFA</text>
-        <text x="750" y="54" text-anchor="middle" class="diagram-label-muted">ch. 3, 5</text>
-
-        <rect x="600" y="100" width="300" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="750" y="124" text-anchor="middle" class="diagram-label" font-weight="700">Authorization &amp; least privilege</text>
-        <text x="750" y="144" text-anchor="middle" class="diagram-label-muted">ch. 3, 6</text>
-
-        <rect x="600" y="190" width="300" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="750" y="214" text-anchor="middle" class="diagram-label" font-weight="700">Accounting &amp; audit trail</text>
-        <text x="750" y="234" text-anchor="middle" class="diagram-label-muted">ch. 3</text>
-
-        <rect x="600" y="280" width="300" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="750" y="304" text-anchor="middle" class="diagram-label" font-weight="700">Data handling &amp; minimization</text>
-        <text x="750" y="324" text-anchor="middle" class="diagram-label-muted">new to this chapter</text>
-
-        <line x1="280" y1="45" x2="600" y2="40" class="diagram-stroke"/>
-        <line x1="280" y1="45" x2="600" y2="310" class="diagram-stroke"/>
-        <line x1="280" y1="120" x2="600" y2="40" class="diagram-stroke"/>
-        <line x1="280" y1="120" x2="600" y2="130" class="diagram-stroke"/>
-        <line x1="280" y1="120" x2="600" y2="220" class="diagram-stroke"/>
-        <line x1="280" y1="195" x2="600" y2="130" class="diagram-stroke"/>
-        <line x1="280" y1="195" x2="600" y2="220" class="diagram-stroke"/>
-        <line x1="280" y1="270" x2="600" y2="40" class="diagram-stroke"/>
-        <line x1="280" y1="270" x2="600" y2="130" class="diagram-stroke"/>
-        <line x1="280" y1="270" x2="600" y2="220" class="diagram-stroke"/>
-        <line x1="280" y1="345" x2="600" y2="130" class="diagram-stroke"/>
-        <line x1="280" y1="345" x2="600" y2="220" class="diagram-stroke"/>
-
-        <text x="460" y="400" text-anchor="middle" class="diagram-label-muted">Every arrow is a "demand," not a new concept — frameworks converge on the</text>
-        <text x="460" y="420" text-anchor="middle" class="diagram-label-muted">same small set of IAM fundamentals this course already taught, by five different names.</text>
-      </svg>
-      <figcaption>Figure 11.1 — Five compliance frameworks, four underlying IAM concepts. Compliance work is
-      mostly a translation exercise, not new theory.</figcaption>
-    </figure>
-
-    <h2>GDPR: data subject rights over identity data</h2>
-    <p>The <strong>General Data Protection Regulation (GDPR)</strong>, Regulation (EU) 2016/679, has been
-    in force since 25 May 2018 as the EU's baseline data-protection law. As of this writing, the EU is
-    actively negotiating a "Digital Omnibus" package that would amend several GDPR provisions — but the
-    data-protection portion of that package had not reached trilogue and had no adopted text as of the
-    searches done for this chapter; only a related AI-Act-adjacent portion of the omnibus had become law.
-    Treat GDPR's current substantive text (Articles 5, 6, 15, 17, 20 below) as the live rule, and treat any
-    specific Digital Omnibus change as not yet in force — verify against the EU's official legislative
-    tracker before relying on a claim that GDPR's text has changed.</p>
-
-    <p>For an IAM specialist, GDPR isn't really about marketing cookies — it's about the fact that the
-    accounts, profiles, and access logs an IAM system manages are themselves the kind of personal data GDPR
-    regulates. Three things matter most:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>GDPR concepts relevant to an IAM system</caption>
-        <thead><tr><th>GDPR concept</th><th>What it demands of an IAM system</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Data subject rights</strong> — access, erasure, portability</td><td>A person must
-          be able to find out what identity data is held about them (Art. 15), have it corrected or
-          deleted (Art. 17's "right to erasure"), and receive it in a portable format (Art. 20). An IAM
-          system has to be able to locate, export, and delete a specific person's account, profile
-          attributes, and consent records on request.</td></tr>
-          <tr><td><strong>Lawful basis for processing</strong></td><td>Every piece of identity data an IAM
-          system stores needs a documented legal justification (Art. 6) — consent, contract necessity,
-          legal obligation, or legitimate interest. An IAM system can't just collect attributes "because
-          it might be useful later."</td></tr>
-          <tr><td><strong>Data minimization</strong></td><td>Collect and retain only the identity attributes
-          actually needed for the stated purpose (Art. 5(1)(c)) — an onboarding form asking for a user's
-          attribute just because the schema has a free field is a minimization violation waiting to be
-          flagged.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall — the erasure/audit-trail tension</div>
-      <p>There's a genuine, unresolved practical tension here worth naming honestly rather than papering
-      over: GDPR's right to erasure says delete this person's data on request; chapter 3's audit-trail
-      concept — and several of the frameworks below — says retain access logs for years, sometimes under a
-      <em>legal</em> retention obligation. The common resolution in practice is to delete or anonymize
-      identity-linked personal data (profile attributes, contact details) while retaining audit log entries
-      in a pseudonymized form (a stable internal identifier instead of a name/email) — satisfying both
-      the deletion request and the retention requirement without literally deleting history. But this is a
-      real engineering and legal judgment call, not a clean default any IAM product gives you automatically,
-      and different organizations' legal teams land on different specifics. Don't present this as a solved
-      problem to a client — present it as a design decision that needs their legal team's sign-off.</p>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 880 300" role="img" aria-labelledby="t2 d2">
-        <title id="t2">The erasure request vs. audit-trail retention tension</title>
-        <desc id="d2">A single person's identity record box on the left splits into two paths after an
-        erasure request arrives. The top path, labeled profile and attribute data, leads to a box labeled
-        deleted or fully anonymized. The bottom path, labeled audit log entries, leads to a box labeled
-        retained but pseudonymized, replacing the person's name and email with a stable opaque internal
-        identifier. A note underneath states this is a common compromise requiring legal sign-off, not a
-        universal clean resolution.</desc>
-        <rect x="20" y="110" width="220" height="80" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="130" y="142" text-anchor="middle" class="diagram-label" font-weight="700">PERSON'S IDENTITY</text>
-        <text x="130" y="162" text-anchor="middle" class="diagram-label-muted">erasure request received</text>
-
-        <line x1="240" y1="130" x2="430" y2="50" class="diagram-stroke"/>
-        <line x1="240" y1="170" x2="430" y2="230" class="diagram-stroke"/>
-
-        <rect x="430" y="15" width="260" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="560" y="42" text-anchor="middle" class="diagram-label" font-weight="700">Profile &amp; attribute data</text>
-        <text x="560" y="62" text-anchor="middle" class="diagram-label-muted">(chapter 2's identity record)</text>
-
-        <line x1="690" y1="50" x2="780" y2="50" class="diagram-stroke" marker-end="url(#arrow11a)"/>
-        <rect x="780" y="15" width="90" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="825" y="45" text-anchor="middle" class="diagram-label" font-weight="700">Deleted</text>
-        <text x="825" y="63" text-anchor="middle" class="diagram-label-muted">or anonymized</text>
-
-        <rect x="430" y="195" width="260" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="560" y="222" text-anchor="middle" class="diagram-label" font-weight="700">Audit log entries</text>
-        <text x="560" y="242" text-anchor="middle" class="diagram-label-muted">(chapter 3's accounting output)</text>
-
-        <line x1="690" y1="230" x2="780" y2="230" class="diagram-stroke" marker-end="url(#arrow11a)"/>
-        <rect x="780" y="195" width="90" height="70" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="825" y="222" text-anchor="middle" class="diagram-label" font-weight="700">Retained</text>
-        <text x="825" y="242" text-anchor="middle" class="diagram-label-muted">pseudonymized</text>
-
-        <defs>
-          <marker id="arrow11a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-        <text x="440" y="295" text-anchor="middle" class="diagram-label-muted">A common compromise requiring legal sign-off — not a universal, automatic resolution.</text>
-      </svg>
-      <figcaption>Figure 11.2 — Erasure requests and audit-trail retention pull in opposite directions;
-      pseudonymizing log entries instead of deleting them is the common (not universal) compromise.</figcaption>
-    </figure>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Northwind Apps</div>
-      <p>Northwind Apps sells B2B SaaS to customers across the EU, which puts every one of those customers'
-      end users squarely inside GDPR's scope — not because Northwind is European, but because its data
-      subjects are. When a customer's employee asks Northwind to delete their account, Northwind's IAM
-      layer needs a real, tested erasure path that reaches every identity attribute and consent record tied
-      to that person, not just a "deactivate user" button that leaves the underlying row intact.</p>
-    </div>
-
-    <h2>SOC 2: the Trust Services Criteria, Security above all</h2>
-    <p>SOC 2 is an attestation framework defined by the AICPA's <strong>Trust Services Criteria (TSC)</strong>.
-    As of the searches done for this chapter, the TSC currently in force is the 2017 criteria set with
-    points of focus revised in 2022 — that is the version auditors are attesting against today. The AICPA
-    has published an exposure draft proposing a significant revision (reportedly consolidating the Common
-    Criteria from 33 down to 21) with public comment running into January 2027 and a possible effective
-    date for engagements starting in late 2027 — that revision is <em>not yet in force</em> as of this
-    writing. Don't cite specific new criterion numbers from the draft as current; the 2017/2022 criteria
-    are what an auditor will test against today.</p>
-
-    <p>SOC 2 reports against up to five Trust Services Criteria categories (Security, Availability,
-    Processing Integrity, Confidentiality, Privacy); <strong>Security</strong> is the only one required in
-    every SOC 2 report and the one most relevant to IAM. An auditor testing the Security criterion wants
-    concrete evidence, not a policy document, for things this course already named:</p>
-
-    <ul>
-      <li><strong>Access reviews</strong> — evidence that who-has-access-to-what is periodically
-      recertified, not just granted once and forgotten (chapter 10's IGA territory).</li>
-      <li><strong>MFA enforcement</strong> — evidence that privileged and remote access requires more than a
-      password (chapter 5).</li>
-      <li><strong>Logging</strong> — evidence that authentication and access events are recorded and
-      retained (chapter 3's accounting/audit trail).</li>
-    </ul>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Meridian Trust</div>
-      <p>Meridian Trust needs SOC 2 for a different reason than it needs PCI-DSS: PCI-DSS is mandatory
-      because it processes card payments; SOC 2 is commercially necessary because Meridian's enterprise
-      banking partners and fintech integrators will not sign a contract without a clean SOC 2 report in
-      hand. Same IAM controls — access reviews, MFA, logging — doing double duty against two different
-      frameworks' paperwork.</p>
-    </div>
-
-    <h2>The HIPAA Security Rule: safeguards for electronic PHI</h2>
-    <p>The <strong>HIPAA Security Rule</strong> (45 CFR Part 164, Subpart C) sets the baseline for protecting
-    electronic protected health information (ePHI) and has been in force, as last substantially amended by
-    the 2013 Omnibus Rule, for over a decade. HHS published a Notice of Proposed Rulemaking in January 2025
-    proposing a significant overhaul (removing the current "addressable vs. required" distinction among
-    other changes); as of the searches done for this chapter that NPRM had <em>not</em> been finalized, and
-    its projected final-action date had already slipped from an earlier May 2026 target to around July
-    2027, with further slippage considered likely by observers. Everything below describes the
-    <em>currently operative</em> rule, not the proposal — don't present the NPRM's provisions as already in
-    force.</p>
-
-    <p>The Security Rule organizes its requirements into three safeguard categories; the ones with the
-    clearest IAM mapping are the technical safeguards at 45 CFR §164.312:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>HIPAA Security Rule safeguards relevant to IAM</caption>
-        <thead><tr><th>Safeguard</th><th>IAM concept it's demanding</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Access control</strong> (§164.312(a))</td><td>Authorization — technical policies
-          and procedures limiting ePHI access to authorized persons (chapter 6's authorization models).</td></tr>
-          <tr><td><strong>Unique user identification</strong> (§164.312(a), required)</td><td>Every user gets
-          a unique identifier, never a shared login — the baseline chapter 2's identity concept requires
-          before any accounting is even possible.</td></tr>
-          <tr><td><strong>Audit controls</strong> (§164.312(b))</td><td>Accounting/audit trail by another
-          name — hardware, software, and procedural mechanisms that record and examine ePHI system
-          activity (chapter 3).</td></tr>
-          <tr><td><strong>Person or entity authentication</strong> (§164.312(d))</td><td>Authentication —
-          verifying a person or entity is who they claim before granting ePHI access (chapters 3, 5).</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall — minimum necessary is a Privacy Rule term, not a Security Rule term</div>
-      <p>Worth getting precisely right rather than hand-waving: the <strong>minimum necessary standard</strong>
-      is codified at 45 CFR §164.502(b) and §164.514(d) — that's the <em>HIPAA Privacy Rule</em>, a sibling
-      regulation to the Security Rule, not the Security Rule itself. It's easy to blur the two together
-      because they're both HIPAA and both bear directly on IAM access decisions, and in practice
-      compliance teams discuss them in the same breath. But if a document or an auditor cites "minimum
-      necessary" as a Security Rule requirement, that's imprecise — it's a Privacy Rule requirement that an
-      IAM system's access control design happens to be one of the main ways you operationally satisfy.
-      The substance matters regardless of which rule it lives under: covered entities and business
-      associates must make reasonable efforts to limit PHI use, disclosure, and access requests to the
-      minimum needed for the purpose at hand — not "give clinicians broad access because checking narrowly
-      is inconvenient."</p>
-    </div>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Riverside Health</div>
-      <p>Minimum necessary is where chapter 6's ReBAC care-team concept earns its keep concretely: a
-      cardiologist shouldn't have standing access to every patient in the hospital, only to the patients on
-      their current care team. "Minimum necessary" is the compliance <em>requirement</em>; a relationship-
-      based access model that grants access only while a clinician-patient care-team relationship is active
-      is one concrete <em>implementation</em> of that requirement — not the only possible one, but the one
-      this course will build toward in Keycloak-era chapters. Riverside is the epicenter of HIPAA across
-      this course's three case-study orgs precisely because its entire clinical workforce and patient
-      population sit inside this rule's scope.</p>
-    </div>
-
-    <h2>PCI-DSS: three requirements that are IAM concepts by another name</h2>
-    <p>The <strong>Payment Card Industry Data Security Standard (PCI-DSS)</strong> is maintained by the PCI
-    Security Standards Council. As of the searches done for this chapter, <strong>v4.0.1</strong> is the
-    sole currently active version — a minor clarification release over v4.0 (no requirements added or
-    removed), with the transition period for v4.0's previously future-dated new requirements having closed
-    on 31 March 2025 (sources vary on the exact count of requirements that became mandatory that day,
-    somewhere in the high-40s). One source suggested the Council had opened a request-for-comment window on
-    v4.0.1 in mid-2026 to shape a future revision; that could not be independently confirmed from the
-    Council's own site during this chapter's research, so treat it as unconfirmed rather than citing it as
-    fact. Verify against pcisecuritystandards.org directly before asserting a successor version exists.</p>
-
-    <p>Three of PCI-DSS's twelve numbered requirements map directly onto this course's vocabulary:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>PCI-DSS requirements mapped to IAM concepts</caption>
-        <thead><tr><th>PCI-DSS requirement</th><th>IAM concept it's demanding</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Requirement 7</strong> — restrict access to system components and cardholder data
-          by business need-to-know</td><td>Least privilege (chapter 6), stated in PCI-DSS's own words
-          instead of the general security-principle name.</td></tr>
-          <tr><td><strong>Requirement 8</strong> — identify users and authenticate access to system
-          components</td><td>Unique user IDs, MFA for all access into the Cardholder Data Environment, and
-          password/credential strength rules — authentication (chapters 3, 5) with specific numeric teeth
-          attached.</td></tr>
-          <tr><td><strong>Requirement 10</strong> — log and monitor all access to system components and
-          cardholder data</td><td>Accounting and audit trail (chapter 3), by PCI-DSS's own name for the same
-          concept.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 880 320" role="img" aria-labelledby="t3 d3">
-        <title id="t3">PCI-DSS Requirements 7, 8, and 10 scoped to the Cardholder Data Environment</title>
-        <desc id="d3">An outer boundary box labeled Cardholder Data Environment, CDE: systems, people, and
-        processes that store, process, or transmit cardholder data, plus anything connected to them.
-        Inside it, three smaller boxes represent Requirement 7, restrict access by business need to know;
-        Requirement 8, unique user IDs and MFA for all access into the CDE; and Requirement 10, log and
-        monitor all access. Each box has a small label underneath naming the IAM concept it corresponds
-        to: least privilege, authentication, and accounting, respectively.</desc>
-        <rect x="30" y="30" width="820" height="260" rx="14" class="diagram-fill-surface diagram-stroke"/>
-        <text x="440" y="60" text-anchor="middle" class="diagram-label" font-weight="700">CARDHOLDER DATA ENVIRONMENT (CDE)</text>
-        <text x="440" y="80" text-anchor="middle" class="diagram-label-muted">systems, people, and processes that store, process, or transmit cardholder data — plus anything connected to them</text>
-
-        <rect x="70" y="120" width="220" height="130" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="180" y="150" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 7</text>
-        <text x="90" y="175" class="diagram-label-muted">Restrict access by</text>
-        <text x="90" y="193" class="diagram-label-muted">business need-to-know</text>
-        <text x="180" y="225" text-anchor="middle" class="diagram-label-muted">= least privilege (ch. 6)</text>
-
-        <rect x="330" y="120" width="220" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="440" y="150" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 8</text>
-        <text x="350" y="175" class="diagram-label-muted">Unique user IDs,</text>
-        <text x="350" y="193" class="diagram-label-muted">MFA for all CDE access</text>
-        <text x="440" y="225" text-anchor="middle" class="diagram-label-muted">= authentication (ch. 3, 5)</text>
-
-        <rect x="590" y="120" width="220" height="130" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="700" y="150" text-anchor="middle" class="diagram-label" font-weight="700">Requirement 10</text>
-        <text x="610" y="175" class="diagram-label-muted">Log and monitor all</text>
-        <text x="610" y="193" class="diagram-label-muted">access to the CDE</text>
-        <text x="700" y="225" text-anchor="middle" class="diagram-label-muted">= accounting/audit trail (ch. 3)</text>
-      </svg>
-      <figcaption>Figure 11.3 — PCI-DSS Requirements 7, 8, and 10, scoped to the Cardholder Data Environment —
-      least privilege, authentication, and accounting under PCI-DSS's own numbering.</figcaption>
-    </figure>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Meridian Trust</div>
-      <p>Meridian Trust's online banking platform touches payment card data, which puts a defined
-      <strong>Cardholder Data Environment (CDE)</strong> — the systems, people, and processes that store,
-      process, or transmit cardholder data, plus anything connected to them — squarely inside PCI-DSS's
-      scope. Requirement 7's need-to-know restriction is exactly why Meridian's tellers and its wire-
-      transfer approval staff don't share the same access profile, even though both work in retail
-      banking — chapter 6's least-privilege principle, enforced because PCI-DSS requires it by name, not
-      just because it's good practice.</p>
-    </div>
-
-    <h2>ISO 27001: Annex A's access-control controls</h2>
-    <p>The current edition is <strong>ISO/IEC 27001:2022</strong>. It reorganized the standard's Annex A
-    control list significantly from the prior 2013 edition: 2013's 114 controls across 14 categories became
-    2022's <strong>93 controls across 4 themes</strong> (Organizational, People, Physical, Technological).
-    If you see a document citing an "A.9.x" control number, that's 2013-edition numbering — the 2022
-    edition renumbered access-control content into the 5.x and 8.x ranges instead. The access-control-
-    relevant controls, per the secondary sources checked for this chapter (the standard's own text is
-    paywalled, so verify exact wording against a licensed copy of ISO/IEC 27001:2022 and ISO/IEC 27002:2022
-    before citing control text verbatim in a client deliverable):</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>ISO/IEC 27001:2022 Annex A controls relevant to IAM (current numbering)</caption>
-        <thead><tr><th>Control</th><th>IAM concept it's demanding</th></tr></thead>
-        <tbody>
-          <tr><td><strong>A.5.15</strong> — Access control</td><td>The overarching authorization policy
-          (chapter 6) — rules for managing access to information and other assets.</td></tr>
-          <tr><td><strong>A.5.16</strong> — Identity management</td><td>The identity lifecycle (chapter 2) —
-          managing the full life cycle of identities.</td></tr>
-          <tr><td><strong>A.5.17</strong> — Authentication information</td><td>Credential handling
-          (chapter 2/3) — secure allocation and management of passwords and other authentication secrets.</td></tr>
-          <tr><td><strong>A.5.18</strong> — Access rights</td><td>Provisioning/deprovisioning and periodic
-          review of access rights — chapter 10's IGA territory.</td></tr>
-          <tr><td><strong>A.8.2</strong> — Privileged access rights</td><td>A narrower, higher-stakes slice
-          of least privilege (chapter 6), for elevated/administrative access specifically.</td></tr>
-          <tr><td><strong>A.8.5</strong> — Secure authentication</td><td>Authentication mechanisms including
-          MFA (chapters 3, 5).</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="callout callout--deep-dive">
-      <div class="callout-label">Deep dive — numbering carries real risk</div>
-      <p>If you're reviewing an older Statement of Applicability or a vendor's older ISO certification
-      documentation, expect 2013-edition clause numbers like A.9.2.1 (user registration) or A.9.4.1
-      (information access restriction). Treating old and new numbering as interchangeable without mapping
-      them is a realistic way to misstate what a client is actually certified against — always confirm
-      which edition a document is citing before relying on its control numbers.</p>
-    </div>
-
-    <h2>Putting it all together: the framework-to-IAM-concept map</h2>
-    <p>Here's the full lookup table this chapter has been building, one row per framework:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>All five frameworks mapped onto this course's IAM vocabulary</caption>
-        <thead><tr><th>Framework</th><th>Authentication / MFA</th><th>Authorization / least privilege</th><th>Accounting / audit trail</th><th>Data handling</th></tr></thead>
-        <tbody>
-          <tr><td><strong>GDPR</strong></td><td>—</td><td>Data minimization (limits what's collected)</td><td>Tension with erasure rights (see pitfall above)</td><td>Data subject rights, lawful basis, erasure, portability</td></tr>
-          <tr><td><strong>SOC 2 (Security)</strong></td><td>MFA enforcement evidence</td><td>Access review evidence</td><td>Logging evidence</td><td>—</td></tr>
-          <tr><td><strong>HIPAA Security Rule</strong></td><td>Person/entity authentication, unique user ID</td><td>Access control (§164.312(a))</td><td>Audit controls (§164.312(b))</td><td>Minimum necessary is formally a Privacy Rule term, operationalized via access control</td></tr>
-          <tr><td><strong>PCI-DSS</strong></td><td>Requirement 8 (unique IDs, MFA into the CDE)</td><td>Requirement 7 (need-to-know)</td><td>Requirement 10 (log and monitor)</td><td>CDE scoping</td></tr>
-          <tr><td><strong>ISO 27001:2022</strong></td><td>A.8.5 (secure authentication), A.5.17</td><td>A.5.15, A.8.2 (privileged access)</td><td>Implicit in A.5.18's access-rights review</td><td>A.5.16 (identity management)</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — overlapping obligations, not one framework each</div>
-      <p>It's tempting to assign each org exactly one framework for tidiness — Riverside = HIPAA, Meridian =
-      PCI-DSS, Northwind = GDPR — but real organizations rarely have that clean a boundary. Meridian Trust,
-      as a bank, almost certainly has SOC 2 obligations too (its enterprise partners will ask for the
-      report regardless of PCI-DSS), and if it has any EU retail customers or EU-based staff, some GDPR
-      exposure as well. Northwind needs SOC 2 for the same commercial reason Meridian does — enterprise
-      buyers won't sign without it — on top of its GDPR exposure from EU customers. Don't over-simplify a
-      real client's compliance posture into a single framework; map the actual populations of data and
-      people against the actual list of applicable frameworks, every time.</p>
-    </div>
-
-    <div class="callout callout--in-keycloak">
-      <div class="callout-label">In Keycloak</div>
-      <p>No single Keycloak screen says "GDPR" or "PCI-DSS" — compliance is satisfied by combining several
-      Keycloak capabilities this course covers in depth later: the realm Events subsystem for audit
-      evidence (chapter 28), password policy and brute-force detection for credential strength (chapter
-      30), and required actions/authentication flows for enforcing MFA (chapter 25). An auditor's
-      "Requirement 10" checkbox is satisfied by chapter 28's events export, not by any feature labeled
-      "compliance."</p>
-    </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see someone treat "compliance" as a separate subject from the IAM fundamentals already
-      taught, the cause is usually not having built the translation table this chapter provides — almost
-      every compliance demand on an IAM system reduces to AuthN, AuthZ, accounting, or data handling.</li>
-      <li>If you see a GDPR erasure request handled by hard-deleting rows out of an audit log, the cause is
-      not recognizing the retention-vs-erasure tension; pseudonymization, not deletion, is usually the
-      better-reasoned answer for log data specifically — with legal sign-off either way.</li>
-      <li>If you see "minimum necessary" cited as a HIPAA <em>Security</em> Rule requirement in a formal
-      document, the cause is blurring it with the Privacy Rule, where it's actually codified.</li>
-      <li>If you see an ISO 27001 Statement of Applicability citing "A.9.2.1," the cause is reading 2013-
-      edition numbering as if it still applies to the current 2022 edition.</li>
-      <li>If you see a client assigned exactly one compliance framework with no further investigation, the
-      cause is usually not having checked for the overlapping obligations real organizations almost always
-      carry (a second framework, a different jurisdiction, a commercial requirement layered on a legal one).</li>
-      <li>If you see someone cite a pending NPRM or exposure draft (HIPAA's proposed Security Rule overhaul,
-      SOC 2's proposed TSC revision) as if it were already in force, the cause is not checking whether a
-      proposal has actually been finalized before relying on it.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>Compliance frameworks don't invent new IAM theory — GDPR, SOC 2, HIPAA, PCI-DSS, and ISO 27001
-      each independently demand authentication, authorization, and accounting under their own names.</li>
-      <li>GDPR's data subject rights (access, erasure, portability) and data minimization apply because
-      identity data is personal data — and erasure requests genuinely conflict with audit-trail retention,
-      a tension without one universal clean answer.</li>
-      <li>SOC 2's Security criterion is the one every report must include, and it wants evidence — access
-      reviews, MFA enforcement, logging — not a policy document.</li>
-      <li>SOC 2's currently-in-force criteria are the 2017 TSC as revised in 2022; a proposed revision
-      exists only as a draft under public comment, not yet in force.</li>
-      <li>The HIPAA Security Rule's technical safeguards (access control, unique user ID, audit controls,
-      authentication) map directly onto AAA; "minimum necessary" is formally a Privacy Rule term that
-      access-control design operationalizes.</li>
-      <li>HIPAA's proposed Security Rule overhaul (2025 NPRM) is not yet final, with its target final-action
-      date having already slipped once — don't treat it as current law.</li>
-      <li>PCI-DSS Requirements 7, 8, and 10 are least privilege, authentication/MFA, and accounting/audit
-      trail, respectively, under PCI-DSS's own numbering.</li>
-      <li>ISO/IEC 27001:2022's Annex A renumbered access-control content into the 5.x/8.x ranges from the
-      2013 edition's 9.x — always confirm which edition a document cites before trusting its control
-      numbers.</li>
-      <li>Real organizations typically carry overlapping compliance obligations, not one framework each —
-      map actual data/people populations against the actual list of applicable frameworks.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Pick any one of the five frameworks and explain, in this course's own vocabulary, what it demands
-      of an IAM system — without using the framework's own jargon in your answer.</li>
-      <li>Why is there no fully clean resolution to the tension between GDPR's right to erasure and audit-
-      trail retention requirements? What's the commonly used compromise, and why is it a compromise rather
-      than a solution?</li>
-      <li>Explain the difference between "minimum necessary" as a formal HIPAA term and "least privilege" as
-      a general IAM principle — are they the same thing, related, or something else?</li>
-      <li>Why does this chapter insist that a single organization can have overlapping compliance
-      obligations rather than exactly one framework? Use Meridian Trust or Northwind Apps as your example.</li>
-      <li>If you were handed a client's old ISO 27001 documentation citing clause "A.9.4.1," what would you
-      need to check before treating that number as still accurate?</li>
-      <li>Why does this chapter warn against citing the HIPAA NPRM or the SOC 2 exposure draft as if they
-      were already in force? What's the general discipline this is an instance of?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://gdpr-info.eu/">GDPR full text (Regulation (EU) 2016/679), consolidated — gdpr-info.eu</a></li>
-      <li><a href="https://www.law.cornell.edu/cfr/text/45/164.502">45 CFR §164.502 — HIPAA Privacy Rule, including the minimum necessary standard (Cornell LII)</a></li>
-      <li><a href="https://www.law.cornell.edu/cfr/text/45/164.312">45 CFR §164.312 — HIPAA Security Rule Technical Safeguards (Cornell LII)</a></li>
-      <li><a href="https://www.pcisecuritystandards.org/document_library/">PCI Security Standards Council — Document Library (official PCI-DSS text)</a></li>
-      <li><a href="https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services">AICPA — SOC Suite of Services and Trust Services Criteria</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "compliance-for-iam", 15);
+    SlideDeck.init({ chapterSlug: "compliance-for-iam" });
   });
 </script>
 </body>

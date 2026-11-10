@@ -39,8 +39,8 @@ proposal — CLAUDE.md §4 has been rewritten to describe it as the official tem
 already-built chapters (02-30) to match chapter 1 is now the active unit, worked through Part by Part
 via the usual parallel-subagent-then-merge pattern, before Part VI's new content resumes. Each
 conversion agent also re-verifies/fixes diagram geometry and adds a model answer to every self-check
-question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) done
-2026-11-10 — see Done below. Part II (chapters 10-12) is next.
+question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) and Part II
+(chapters 10-12) both done 2026-11-10 — see Done below. Part III (chapters 13-18) is next.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -98,8 +98,8 @@ per CLAUDE.md §4. One sub-item per Part, done via the usual parallel-subagent-t
 agent re-verifies diagram geometry, adds self-check model answers, and is explicitly told to add more
 visuals/examples where it helps, not just re-chunk existing prose.
 10a. ~~Part I (chapters 02-09, 8 chapters)~~ — done 2026-11-10, see Done below.
-10b. Part II (chapters 10-12, 3 chapters) — **next**.
-10c. Part III (chapters 13-18, 6 chapters).
+10b. ~~Part II (chapters 10-12, 3 chapters)~~ — done 2026-11-10, see Done below.
+10c. Part III (chapters 13-18, 6 chapters) — **next**.
 10d. Part IV (chapters 19-26, 8 chapters).
 10e. Part V (chapters 27-30, 4 chapters).
 
@@ -682,6 +682,37 @@ project) remain.
     No other chapter in this round had a two-column pro-con/problem-solution table to apply the class to.
   - This completes the redesign rollout for **Part I** (chapters 02-09, plus chapter 01 built earlier as
     the reference). Part II (chapters 10-12) is next per the Queue.
+
+### Redesign rollout — Part II converted (chapters 10-12)
+- 2026-11-10 chapters 10-12 (3 chapters) converted from the old book format to the chapter-1 slide-deck
+  template — 3 parallel subagents (one per chapter, no shared-file writes), then independently
+  re-verified by the coordinator:
+  - Structural: all 3 files re-parsed cleanly (Python `html.parser`, zero errors), balanced tags
+    confirmed, all required mount points present exactly once, old-template ids absent. Re-served
+    locally and `curl`-confirmed `200` for all 3 chapter pages. No shared data file was touched by any
+    conversion agent (confirmed via `git status --short` showing only the 3 chapter files modified).
+  - Final slide counts: ch10 14, ch11 14, ch12 17.
+  - Self-check: all 17 existing self-check questions across the 3 chapters got a real, chapter-grounded
+    model answer (none left unanswered).
+  - New diagrams added: ch10 +1 (compensating-controls/four-eyes flow), ch11 +1 (overlapping-obligations
+    map tying all three case-study orgs to their applicable frameworks), ch12 +0 (judged its existing 3
+    diagrams + per-concept prose already met the bar, so deepened nothing further).
+  - **Real diagram bugs found and fixed, 3 total**: ch10 Figure 10.2 had a connector line whose last 80px
+    visually cut into the "Jul review" box instead of stopping at its edge — shortened to clear it. Ch12
+    Figure 12.2 (vendor scatter plot) had two real bugs the earlier sitewide audit had missed: an "Okta
+    CIC" box sat entirely underneath a later-drawn opaque "Governance & privileged-access tooling" box
+    (fully hidden), and the vertical axis line ran straight through that same governance box's interior —
+    both fixed by repositioning the Okta CIC box and shortening the axis line. Ch12's agent also
+    correctly re-confirmed the one genuine false positive from the earlier audit (a scatter-plot
+    reference line deliberately bisecting the Keycloak box) and left it alone, adding a caption note
+    making the intent explicit instead.
+  - **Table-compare classes**: none applied in this round — every table across all 3 chapters (GDPR/
+    HIPAA/PCI-DSS/ISO reference tables, the multi-vendor feature table, the provisioning-vs-governance
+    table) is a neutral multi-column reference table, not a two-sided good/bad comparison, so applying
+    the class would have been incorrect. All 3 agents independently reached and correctly justified this
+    same conclusion.
+  - This completes the redesign rollout for **Part II** (chapters 10-12). Part III (chapters 13-18) is
+    next per the Queue.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
