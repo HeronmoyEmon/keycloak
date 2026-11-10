@@ -60,8 +60,9 @@ keycloak/
 ├── labs/                       docker-compose.yml templates, sample app code, SPI Java source,
 │                                one subfolder per lab, referenced by the chapters that need them
 ├── case-studies/cs0N-slug.html the 3 running case studies, full write-ups (one per org in §2.3)
-├── assets/css/book.css, print.css
-├── assets/js/book.js, quiz.js, nav-data.js, glossary-data.js, quiz-data.js, roadmap-data.js
+├── assets/css/book.css, slides.css, roadmap.css, print.css
+├── assets/js/book.js, quiz.js, slides.js, roadmap-view.js, nav-data.js, glossary-data.js, quiz-data.js,
+│                                roadmap-data.js
 ├── tools/check_links.py, validate_quiz.py, validate_glossary.py
 ├── reference/                  seed material (the original README, now `keycloak-admin-notes-seed.md`)
 ├── CLAUDE.md                   this file
@@ -74,32 +75,79 @@ reason to match it since there's no shared chrome between the two sites).
 
 ## 4. Per-chapter content template and minimums
 
-Every chapter page includes, in this order:
+**The site is a slide deck, not a book (redesigned 2026-11-10, approved after chapter 1 — What Is IAM? —
+was built as the reference and the user signed off on the look).** `index.html` is a roadmap.sh-style
+visual roadmap (one node per chapter, grouped by Part along a central spine — `assets/css/roadmap.css` +
+`assets/js/roadmap-view.js`), not a stats/parts-list shell page. Each chapter page is a slide deck, not a
+single long scroll — `assets/css/slides.css` + `assets/js/slides.js`. **Read `chapters/01-what-is-iam.html`
+as the structural reference before converting or building any other chapter**; it is the ground truth for
+exact markup, mount-point ids, and script order, more reliable than prose description of it ever will be.
 
-1. **Header**: chapter number/title, estimated minutes, which Part it belongs to, source(s) digested.
+Every chapter page includes the same content as before, in the same order, just re-chunked into
+`<section class="slide" data-slide="id" data-title="...">` blocks (one per major section — roughly one
+slide per H2, keeping a section's diagram/callout/table together with it, plus trailing slides for
+glossary/takeaways/self-check/quiz/deep-dive) instead of one continuous page:
+
+1. **Header**: chapter number/title, estimated minutes, which Part it belongs to, source(s) digested —
+   on the first slide, alongside "Why this matters".
 2. **Why this matters**: 2-4 sentences grounding the chapter in a real IAM specialist's job, not trivia.
-3. **Concept sections**: prose + tables + diagrams. Concept chapters get "In Keycloak" callouts; Keycloak
-   chapters get a "What concept is this?" recall box.
+3. **Concept sections**: prose + tables + diagrams, one concept-cluster per slide. Concept chapters get
+   "In Keycloak" callouts; Keycloak chapters get a "What concept is this?" recall box.
 4. **Case-study tie-in**: at least one of Northwind/Riverside/Meridian worked into the chapter concretely
    (not just name-dropped).
 5. **Hands-on lab** (where applicable — see §5's chapter table for which chapters get one): numbered
-   steps against a real local Keycloak via that chapter's `labs/` folder, with real command output.
+   steps against a real local Keycloak via that chapter's `labs/` folder, with real command output. A
+   long lab can span more than one slide if that keeps each slide digestible.
 6. **Common mistakes / pitfalls**: things a beginner gets wrong, framed as "if you see X, the cause is Y".
-7. **Takeaways**: 8+ bullets.
-8. **Self-check**: 5+ open-ended questions (no answer shown inline — thinking prompts).
+7. **Takeaways**: 8+ bullets, their own slide.
+8. **Self-check**: 5+ questions, their own slide, each wrapped in `<details><summary>question</summary>
+   <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>...</p></details>`
+   — **hidden by default, revealed by clicking the question** (native disclosure, no JS). Write a real,
+   chapter-grounded model answer for every self-check question; none should be left unanswered. (This
+   changed 2026-11-10 at the user's request — the old design left these as unanswered thinking prompts.)
 9. **Quiz pool**: 15+ questions in `quiz-data.js`, mixing concept/scenario/bug-spotting/compare types,
-   at least 50% scenario-framed (tie to the three orgs).
-10. **Deep dive links**: real links to RFCs/official docs only — verify they resolve.
+   at least 50% scenario-framed (tie to the three orgs) — its own slide, `<div class="quiz-block"
+   id="quiz-mount">`.
+10. **Deep dive links**: real links to RFCs/official docs only — verify they resolve. Own slide.
+
+The outline panel (`#deck-outline-panel`) carries, in order: a "← Back to roadmap" link
+(`.back-to-roadmap`), a progress readout (`#deck-progress-mini`), a **"Mark whole chapter as read" toggle
+button** (`id="mark-all-btn"`, added 2026-11-10 so a reader doesn't have to click every slide individually
+— `slides.js` wires it up automatically, just include the markup), and the per-slide outline list
+(`#slide-outline`). The bottom pager (Previous / Mark as read / Next) bridges to the adjacent chapter at
+the deck's first/last slide, subsuming the old prev/next-chapter footer.
 
 **Minimums**: 3+ diagrams per chapter (inline SVG, accessible — title+desc, legible in light/dark/print),
 15+ new glossary terms for a full topic chapter (operational/shorter chapters like 00 or the exam-prep
-chapters can be lower — judgment call, note it), 15+ quiz questions, 8+ takeaways, 5+ self-check. Check
-new glossary terms against the existing master glossary for name collisions before adding — extend an
-existing term's `chapters` array instead of duplicating, same rule `sde-prep` follows.
+chapters can be lower — judgment call, note it), 15+ quiz questions, 8+ takeaways, 5+ self-check (each
+with a model answer). Check new glossary terms against the existing master glossary for name collisions
+before adding — extend an existing term's `chapters` array instead of duplicating, same rule `sde-prep`
+follows.
 
-**Diagrams**: inline SVG, not ASCII art (the existing seed README used ASCII boxes — fine for a first
-draft, not for the shipped chapter; redraw as real SVG). Each diagram needs an accessible title/desc and
-must read correctly in light, dark, and print themes.
+**Prefer more visuals and examples, not fewer (added 2026-11-10, explicit user preference).** The minimums
+above are a floor, not a target — if an additional diagram, a sharper worked example, or a deeper
+case-study tie-in would make a tricky concept click, add it. This applies when converting an already-built
+chapter to the slide format just as much as when drafting a new one: don't just mechanically re-chunk the
+existing prose into slides if you can see a place where one more diagram, one more concrete example, or
+one more visual element (e.g. a `table-compare` comparison table — see below) would teach the idea better.
+
+**Diagrams**: inline SVG, not ASCII art. Each diagram needs an accessible title/desc and must read
+correctly in light, dark, and print themes (never hardcode a fill/stroke color — use the `diagram-fill-*`/
+`diagram-stroke`/`diagram-label(-muted)`/`diagram-label-on-accent` classes only, which track the theme
+tokens). **Before shipping a diagram, check it for the two bug classes found and fixed across the whole
+site on 2026-11-10**: (1) a connector line/path that visually crosses through a box it isn't actually
+connecting to or from (verify by inspection, or adapt the geometry-check script noted in `BUILD_STATUS.md`
+if a chapter has enough diagrams to warrant it) — curve the line around the box, or restack the layout so
+nothing sits in its path; (2) text whose rendered width exceeds its containing box (rough check: character
+count × font-size × ~0.58 shouldn't exceed the box width by more than ~15%) — split into two lines or
+shorten the text rather than letting it overflow.
+
+**Comparison tables**: a two-column row-by-row comparison (pros/cons, problem/solution, X vs. Y) stays a
+table — don't force it into a diagram just to "be visual," that loses detail or gets cluttered for
+anything beyond 3-4 rows. Instead add `class="table-compare table-compare--pro-con"` (good column first,
+bad column second) or `table-compare--problem-solution"` (bad column first, good column second) to the
+`<table>` — `book.css` already renders a ✓/✗ icon per cell based on whichever modifier matches that
+table's actual column order, no new CSS needed.
 
 ## 5. Full curriculum (50 chapters + capstone)
 

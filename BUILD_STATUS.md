@@ -31,10 +31,15 @@ shared compose file (added port 9000 and `KC_METRICS_ENABLED`), personally re-ve
 (`/health`→200, `/metrics`→200 on 9000; `/health`→404 on 8080, confirming the port split), and
 documented in `labs/docker/README.md`.
 
-**Up next: Part VI — Federation & Integration (chapters 31-36)**, which needs new lab scaffolding
-(`labs/spring-boot-resource-server/`, `labs/react-spa/`) built alongside chapters 34-35 rather than
-up front, per the Queue's existing note. Full chapter briefs to be drafted here per CLAUDE.md §6 when
-that unit starts.
+**Redesign approved 2026-11-10 ("looks good") — now rolling out to chapters 02-30, ahead of Part VI.**
+The slide-deck + roadmap redesign (see the Done-section design note below for full detail: slide
+chunking, `#mark-all-btn`, click-to-reveal self-check answers, `table-compare` icons, the diagram
+bug classes to check for, and the "prefer more visuals/examples" standing rule) is no longer a pending
+proposal — CLAUDE.md §4 has been rewritten to describe it as the official template. Converting the 29
+already-built chapters (02-30) to match chapter 1 is now the active unit, worked through Part by Part
+via the usual parallel-subagent-then-merge pattern, before Part VI's new content resumes. Each
+conversion agent also re-verifies/fixes diagram geometry and adds a model answer to every self-check
+question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) in progress.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -86,10 +91,21 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 10. ~~Chapters 27-30~~ — done 2026-11-10 (4 parallel subagents, each pre-assigned an isolated Docker
     project/port, then centrally merged; see Done below).
 
-### Part VI (federation & integration) — up next
+### Slide-deck/roadmap redesign rollout — in progress, ahead of Part VI
+Converting all 29 already-built chapters (02-30) to the slide-deck template chapter 1 established,
+per CLAUDE.md §4. One sub-item per Part, done via the usual parallel-subagent-then-merge pattern; each
+agent re-verifies diagram geometry, adds self-check model answers, and is explicitly told to add more
+visuals/examples where it helps, not just re-chunk existing prose.
+10a. Part I (chapters 02-09, 8 chapters) — **in progress**.
+10b. Part II (chapters 10-12, 3 chapters).
+10c. Part III (chapters 13-18, 6 chapters).
+10d. Part IV (chapters 19-26, 8 chapters).
+10e. Part V (chapters 27-30, 4 chapters).
+
+### Part VI (federation & integration) — queued after the redesign rollout
 11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
     not before — no point scaffolding a lab before its chapter is drafted).
-12. Chapters 31-36.
+12. Chapters 31-36 — built as slide decks from the start, no conversion needed.
 
 ### Part VII (fine-grained authorization)
 13. Chapters 37-38.
@@ -657,9 +673,9 @@ project) remain.
   and alternate port, while keeping the chapter's reader-facing documented commands as the plain form.
   No chapter content was compromised, but recommend standardizing this (assign each parallel lab-bearing
   chapter its own project name/port up front in the brief) for Part V's parallel rounds.
-- **Major pending design change (2026-11-10), not yet approved**: at the user's explicit request, the
-  site is moving away from CLAUDE.md §3/§4's "book" page model (one long scrollable chapter page, a
-  global 50-chapter sidebar on every page) toward two new things:
+- **Major design change (2026-11-10), approved** — see CLAUDE.md §4 for the now-official template.
+  At the user's explicit request, the site moved away from the old "book" page model (one long
+  scrollable chapter page, a global 50-chapter sidebar on every page) toward two new things:
   1. **`index.html` is now a roadmap.sh-style visual roadmap** (vertical path, grouped by Part, one
      chapter per node, clickable once built, showing a progress ring/checkmark once slides are marked
      read) instead of the old shell/stat-tiles/parts-list landing page. New files:
@@ -695,17 +711,35 @@ project) remain.
     null-guards — no edits needed to book.js itself).
   - **Scope decision (the user chose this explicitly over converting everything at once, or leaving
     00-30 as-is)**: build the new template + convert ONE chapter (01 — What Is IAM?) as a live
-    reference, verify it works, then stop and show the user before touching the other 29 already-built
-    chapters. Verified via Python's `html.parser` (14 unique slides, balanced tags) and via a full
-    jsdom simulation of the real page (slide switching, `localStorage` round-trip, outline navigation,
-    pager state, the chapter-to-chapter bridge at slide 0/N-1 all confirmed working) — no browser tool
-    exists in this environment, so this jsdom simulation is the strongest verification available short
-    of the user's own eyes.
-  - **Not yet done, pending the user's review of chapter 01**: converting chapters 02-30 to the new
-    slide format (CLAUDE.md §4's old per-chapter template, "Done" entries above, and the skim-reference
-    convention in CLAUDE.md §7 all still describe the old book model — update CLAUDE.md itself once the
-    new design is approved, so future sessions don't resurrect the old template). All future new
-    chapters (31+) should use the new slide template from the start once approved.
+    reference first, verify it works, then stop and show the user before touching the other 29
+    already-built chapters. Verified via Python's `html.parser` (14 unique slides, balanced tags) and
+    via a full jsdom simulation of the real page (slide switching, `localStorage` round-trip, outline
+    navigation, pager state, the chapter-to-chapter bridge at slide 0/N-1 all confirmed working) — no
+    browser tool exists in this environment, so this jsdom simulation is the strongest verification
+    available short of the user's own eyes.
+  - **Iterated on chapter 1 based on real feedback before rolling out further** (all 2026-11-10, each
+    its own commit): roadmap spine-badge color went through several rounds (blue → rejected → shown 8
+    blue shades → shown 8 terracotta shades → Clay `#9C5F45` chosen → tried Muted Clay `#8F6049` →
+    rolled back to Clay) — kept as `--milestone-bg`/`--milestone-contrast` tokens in `book.css` so this
+    stays a one-line change if tried again. Fixed two real diagram bugs the user caught by eye that a
+    script alone wouldn't have found without being told what to look for: connector lines crossing
+    through boxes (found by building a geometry-check script and running it against all 31 chapters —
+    see `/tmp` scratchpad from that session for the script if it's ever needed again, or rewrite it,
+    it's short) and text overflowing its box (same script, character-count × font-size estimate).
+    Fixed a table-header-contrast bug (`thead th` used `--bg-alt`, body rows had no background at all
+    and just showed the page's `--bg` through — nearly identical values once the palette lightened) and
+    added `table-compare--pro-con`/`table-compare--problem-solution` modifier classes that render a ✓/✗
+    icon per cell. Added click-to-reveal model answers to self-check (native `<details>`/`<summary>`,
+    no JS) and a "Mark whole chapter as read" button. Fixed a real bug where marking slides read didn't
+    update the roadmap until the page re-ran its own JS — covered with `storage`/`pageshow`/`focus`/
+    `visibilitychange` listeners since the failure mode turned out to be a plain tab-switch-back, not
+    the bfcache case fixed first.
+  - **New standing rule (2026-11-10, user's explicit instruction)**: converting a chapter to the slide
+    format is not just mechanical re-chunking — add more diagrams, sharper worked examples, or deeper
+    case-study ties wherever they'd make a concept clearer. The existing minimums (3+ diagrams, etc.)
+    are a floor, not a target. See CLAUDE.md §4's own copy of this rule.
+  - **Now rolling out to chapters 02-30**, Part by Part, via the usual parallel-subagent-then-merge
+    pattern — see "Current unit" above for live status and the Queue below for the Part-by-Part plan.
 
 ## Cross-volume / shared-asset notes
 
