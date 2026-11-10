@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAM Threat Landscape — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "iam-threat-landscape";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part I — IAM Foundations</span>
+      <span class="badge minutes">~35 min</span>
+    </div>
+    <h1>9. IAM Threat Landscape</h1>
+    <p class="lede">Everything built in chapters 3 through 8 — authentication, directories, MFA,
+    authorization models, SSO and federation, tokens and sessions — is also, from an attacker's point of
+    view, a surface to attack. This chapter closes Part I by walking through five threats every IAM
+    specialist has to design against, and naming exactly where in this course the defense for each one
+    lives, so the chapters still ahead read as answers to a problem you've already seen, not abstract
+    best practice.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist isn't only the person who configures a login screen — they're the person an
+    incident responder calls when a botnet is hammering the login endpoint with breached passwords, or
+    when a phishing campaign has just harvested forty employees' credentials in an afternoon. If you can't
+    say, specifically, which part of the authentication or session architecture a given attack exploits,
+    you can't argue for the control that stops it, and you can't explain to a security auditor why a
+    control is there at all. This chapter exists so that chapter 5's MFA, chapter 18's OAuth/OIDC
+    hardening, chapter 29's session design, and chapter 30's Keycloak brute-force settings land later in
+    this course as direct answers to named attacks, not as homework for its own sake.</p>
+
+    <h2>The other half of the story</h2>
+    <p>Chapters 3 through 8 built the vocabulary for how identity is supposed to work: the formal AuthN /
+    AuthZ / accounting split (chapter 3), directories that store identities (chapter 4), the factors that
+    prove who someone is (chapter 5), the models that decide what they're allowed to do (chapter 6), how
+    one login spans many applications (chapter 7), and the tokens and sessions that carry proof of all of
+    it around (chapter 8). Every one of those is also a place an attacker can push on:</p>
+    <ul>
+      <li><strong>AuthN/AuthZ (ch. 3)</strong> — credential stuffing and phishing both attack the
+      authentication step directly; once AuthN is bypassed, a weak authorization model decides how much
+      damage follows.</li>
+      <li><strong>Directories (ch. 4)</strong> — a compromised directory account doesn't just leak a
+      password, it hands the attacker everything that directory entry is trusted for.</li>
+      <li><strong>MFA (ch. 5)</strong> — phishing and MFA fatigue exist specifically to defeat the extra
+      factor, not just the password underneath it.</li>
+      <li><strong>Authorization models (ch. 6)</strong> — least-privilege design is what limits the blast
+      radius once an attacker is in, regardless of which threat below got them there.</li>
+      <li><strong>SSO &amp; federation (ch. 7)</strong> — the same property that makes SSO convenient
+      (one session, many apps) makes a stolen SSO session dangerous: it's one theft away from access to
+      everything that session was trusted for.</li>
+      <li><strong>Tokens &amp; sessions (ch. 8)</strong> — token theft, token replay, and session
+      hijacking attack this layer directly, and the "revocation problem" that chapter introduced — a
+      stateless bearer token can't easily be invalidated before it expires — is exactly why they're
+      dangerous, not just theoretical.</li>
+    </ul>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 870 340" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Where each threat in this chapter hits the authentication and session pipeline</title>
+        <desc id="d1">A horizontal pipeline of five stages: Login form, Credential check, MFA step, Token
+        or session issued, Active session, connected left to right by arrows. Below the pipeline, five
+        threat labels each have an arrow pointing up into the stage or stages they target: Credential
+        stuffing targets the login form and credential check boundary; Phishing targets both the login
+        form (password theft) and the MFA step (fraudulent approval); MFA fatigue / push bombing targets
+        the MFA step; Token theft / replay targets the token or session issued stage; Session hijacking
+        targets the active session stage.</desc>
+
+        <rect x="20" y="40" width="140" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="90" y="75" text-anchor="middle" class="diagram-label">Login form</text>
+
+        <rect x="180" y="40" width="140" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="250" y="75" text-anchor="middle" class="diagram-label" font-size="11">Credential check</text>
+
+        <rect x="340" y="40" width="140" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="410" y="75" text-anchor="middle" class="diagram-label">MFA step</text>
+
+        <rect x="500" y="40" width="160" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="580" y="68" text-anchor="middle" class="diagram-label" font-size="11">Token / session</text>
+        <text x="580" y="84" text-anchor="middle" class="diagram-label" font-size="11">issued</text>
+
+        <rect x="680" y="40" width="160" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="760" y="75" text-anchor="middle" class="diagram-label">Active session</text>
+
+        <defs>
+          <marker id="arrowThrPipe" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+          </marker>
+          <marker id="arrowThrUp" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 Z" class="diagram-fill-accent-strong"></path>
+          </marker>
+        </defs>
+        <line x1="160" y1="70" x2="178" y2="70" class="diagram-stroke" marker-end="url(#arrowThrPipe)"></line>
+        <line x1="320" y1="70" x2="338" y2="70" class="diagram-stroke" marker-end="url(#arrowThrPipe)"></line>
+        <line x1="480" y1="70" x2="498" y2="70" class="diagram-stroke" marker-end="url(#arrowThrPipe)"></line>
+        <line x1="660" y1="70" x2="678" y2="70" class="diagram-stroke" marker-end="url(#arrowThrPipe)"></line>
+
+        <rect x="10" y="220" width="170" height="44" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="95" y="246" text-anchor="middle" class="diagram-label" font-size="11">Credential stuffing</text>
+
+        <rect x="200" y="220" width="150" height="44" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="275" y="246" text-anchor="middle" class="diagram-label" font-size="11">Phishing</text>
+
+        <rect x="370" y="220" width="150" height="44" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="445" y="238" text-anchor="middle" class="diagram-label" font-size="10">MFA fatigue /</text>
+        <text x="445" y="252" text-anchor="middle" class="diagram-label" font-size="10">push bombing</text>
+
+        <rect x="540" y="220" width="150" height="44" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="615" y="238" text-anchor="middle" class="diagram-label" font-size="10">Token theft /</text>
+        <text x="615" y="252" text-anchor="middle" class="diagram-label" font-size="10">replay</text>
+
+        <rect x="710" y="220" width="150" height="44" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="785" y="246" text-anchor="middle" class="diagram-label" font-size="11">Session hijacking</text>
+
+        <line x1="95" y1="218" x2="170" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+        <line x1="275" y1="218" x2="160" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+        <line x1="275" y1="218" x2="410" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+        <line x1="445" y1="218" x2="410" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+        <line x1="615" y1="218" x2="580" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+        <line x1="785" y1="218" x2="760" y2="102" class="diagram-stroke" marker-end="url(#arrowThrUp)"></line>
+      </svg>
+      <figcaption>Figure 9.1 — Five threats mapped onto the authentication/session pipeline they each
+      target. Phishing is drawn twice because it can go after either the password or the MFA approval.</figcaption>
+    </figure>
+
+    <h2>Credential stuffing</h2>
+    <p><strong>Credential stuffing</strong> is the automated, large-scale reuse of credential lists leaked
+    from <em>other</em> sites' breaches against a login form, betting that some fraction of users reused
+    the same email/password pair. The attacker doesn't need to guess or crack anything — they already
+    have real, working username/password pairs; the only open question is which of your users reused one
+    of them. Attempted at the scale of millions of credential pairs through botnets and residential proxy
+    networks, even a 0.1–2% hit rate (the typical range reported across public credential-stuffing
+    incident write-ups) produces thousands of compromised accounts.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 780 300" role="img" aria-labelledby="t2 d2">
+        <title id="t2">The credential stuffing pipeline, from a breached-password dump to account takeover</title>
+        <desc id="d2">A breach corpus leaked from another, unrelated site feeds an automated bot or proxy
+        network, which fires the same username/password pairs at the victim organization's login
+        endpoint. Most attempts fail because the password wasn't reused there, but the fraction where it
+        was reused succeeds, and at the scale of millions of attempts that small fraction becomes many
+        account takeovers.</desc>
+        <rect x="15" y="30" width="190" height="60" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="110" y="55" text-anchor="middle" class="diagram-label" font-size="11">Breach corpus</text>
+        <text x="110" y="71" text-anchor="middle" class="diagram-label-muted" font-size="10">(leaked from another site)</text>
+
+        <rect x="255" y="30" width="210" height="60" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="360" y="55" text-anchor="middle" class="diagram-label" font-size="11">Automated login attempts</text>
+        <text x="360" y="71" text-anchor="middle" class="diagram-label-muted" font-size="10">bot / residential proxy network</text>
+
+        <rect x="525" y="30" width="230" height="60" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="640" y="55" text-anchor="middle" class="diagram-label" font-size="11">Victim login endpoint</text>
+        <text x="640" y="71" text-anchor="middle" class="diagram-label-muted" font-size="10">(your application)</text>
+
+        <defs>
+          <marker id="arrowCS" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+          </marker>
+        </defs>
+        <line x1="205" y1="60" x2="253" y2="60" class="diagram-stroke" marker-end="url(#arrowCS)"></line>
+        <line x1="465" y1="60" x2="523" y2="60" class="diagram-stroke" marker-end="url(#arrowCS)"></line>
+
+        <line x1="600" y1="92" x2="420" y2="165" class="diagram-stroke" marker-end="url(#arrowCS)"></line>
+        <line x1="680" y1="92" x2="620" y2="165" class="diagram-stroke" marker-end="url(#arrowCS)"></line>
+
+        <rect x="230" y="170" width="220" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="340" y="194" text-anchor="middle" class="diagram-label" font-size="11">Password not reused</text>
+        <text x="340" y="210" text-anchor="middle" class="diagram-label-muted" font-size="10">attempt fails (majority of cases)</text>
+
+        <rect x="500" y="170" width="220" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="610" y="194" text-anchor="middle" class="diagram-label" font-size="11">Password reused</text>
+        <text x="610" y="210" text-anchor="middle" class="diagram-label-muted" font-size="10">login succeeds (small %, but at scale)</text>
+
+        <line x1="610" y1="225" x2="610" y2="245" class="diagram-stroke" marker-end="url(#arrowCS)"></line>
+        <rect x="500" y="245" width="220" height="45" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="610" y="272" text-anchor="middle" class="diagram-label" font-size="11">Account takeover</text>
+      </svg>
+      <figcaption>Figure 9.2 — Credential stuffing never needs to break a password; it only needs a user
+      who reused one.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>A realm's <em>Brute Force Detection</em> settings — failure-count threshold, wait-time increment,
+      permanent-lockout option — are exactly this defense, configured in chapter 30. Nothing is installed
+      yet, but the knobs you'll turn later are a failure counter per account, a growing delay between
+      retries, and an optional permanent lockout after repeated failures.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study</div>
+      <p><span class="org-chip meridian">Meridian Trust</span> notices a sudden spike in failed logins
+      against its online banking portal — hundreds of thousands of attempts over a weekend, spread across
+      thousands of IP addresses, each trying exactly one username/password pair before moving on. Fraud
+      analytics later confirms the pattern: the credentials being tried match a password dump from an
+      unrelated retail website breach, and a measurable fraction of Meridian's own customers had reused
+      their banking password there. No password was cracked; Meridian's hashing and storage were never in
+      play. The incident is contained by rate-limiting and lockout, but it motivates mandatory MFA for
+      banking logins — the step-up authentication this course sets up for Meridian back in chapter 2.</p>
+    </div>
+
+    <h2>Phishing</h2>
+    <p><strong>Phishing</strong> is tricking a user into handing over credentials — or approving a
+    fraudulent MFA prompt — via a convincing fake login page, email, or message that impersonates someone
+    the user trusts. Unlike credential stuffing, phishing doesn't need the user to have reused a password
+    anywhere; it manufactures a brand-new, valid credential disclosure directly from the target. The more
+    advanced variant, <strong>adversary-in-the-middle (AiTM) phishing</strong>, proxies the real login
+    page live and relays whatever the victim enters — including a one-time MFA code — straight through to
+    the real service in real time, which is why OTP-based MFA alone doesn't stop it.</p>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study</div>
+      <p><span class="org-chip riverside">Riverside Health</span> clinicians receive an email that looks
+      like it comes from the hospital's own IT help desk, warning that their "clinical systems account
+      will be locked in 24 hours" unless they verify it through a linked page. The page is a pixel-for-
+      pixel copy of the real single sign-on login screen, hosted on a lookalike domain. Several clinicians,
+      juggling patient care and a plausible-sounding deadline, enter their credentials; a smaller number,
+      prompted by the fake page's follow-up screen, also approve what looks like a routine MFA push. The
+      attacker now holds valid credentials and, for the small number who approved the prompt, a live
+      session — all without touching Riverside's actual infrastructure at any point.</p>
+    </div>
+
+    <h2>Token theft and replay</h2>
+    <p><strong>Token theft</strong> is stealing a valid bearer token — through a client-side
+    vulnerability, a misconfigured storage location, or an intercepted network request — and
+    <strong>replaying</strong> it before it expires. Chapter 8 introduced the defining property of a
+    bearer token: whoever holds it can use it, and a stateless token can't easily be invalidated before
+    its natural expiry — the "revocation problem." Token theft is why that problem isn't academic: once a
+    token is stolen, its lifetime is a countdown the legitimate owner usually doesn't control, and a
+    long-lived token gives the attacker a correspondingly long window.</p>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study</div>
+      <p><span class="org-chip northwind">Northwind Apps</span> — a B2B SaaS platform — learns that one of
+      its enterprise customers built its own browser-based integration against Northwind's API, and that
+      integration has a cross-site scripting (XSS) flaw in code Northwind never wrote and doesn't control.
+      An attacker who exploits that flaw can read whatever that customer's browser session is holding,
+      including the bearer token Northwind issued for API access. Northwind's own application code is
+      never at fault, but Northwind's blast radius is: the stolen token is scoped to that customer's data
+      and lives until it expires, during which the attacker can act as that customer's integration against
+      Northwind's API. It's a clean illustration that a SaaS provider inherits real risk from customer-side
+      code it doesn't write, and that the token lifetime and scope <em>Northwind</em> chose are what
+      determine how bad someone else's bug gets to be.</p>
+    </div>
+
+    <h2>Session hijacking</h2>
+    <p><strong>Session hijacking</strong> is stealing a session identifier or cookie — rather than a
+    password or a bearer token — and using it to impersonate an already-authenticated session. The
+    mechanism differs from token theft (a session ID looked up server-side versus a self-contained token),
+    but the consequence is the same: whoever holds the identifier is treated as the legitimate user until
+    the session is invalidated. Because SSO (chapter 7) deliberately makes one session span many
+    applications, a hijacked SSO session can be more consequential than a single stolen password ever
+    was — it's one theft away from everything that session was trusted for.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 700 260" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Two different mechanisms, token theft and session hijacking, converge on the same outcome</title>
+        <desc id="d3">Left path: token theft, for example via an XSS bug reading a bearer token from
+        browser storage, leads to the attacker replaying that token as a bearer credential, leading to
+        acting as the user until the token expires or is revoked. Right path: session hijacking, stealing
+        a session cookie or identifier, leads to the attacker presenting that cookie to the server, leading
+        to acting as the user until the session is invalidated. Both paths converge on the same bottom
+        outcome: the attacker impersonates an active identity.</desc>
+        <rect x="20" y="20" width="280" height="50" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="160" y="40" text-anchor="middle" class="diagram-label" font-size="11">Token theft</text>
+        <text x="160" y="56" text-anchor="middle" class="diagram-label-muted" font-size="10">e.g. XSS reads token from storage</text>
+
+        <rect x="400" y="20" width="280" height="50" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="540" y="40" text-anchor="middle" class="diagram-label" font-size="11">Session hijacking</text>
+        <text x="540" y="56" text-anchor="middle" class="diagram-label-muted" font-size="10">steals session cookie / identifier</text>
+
+        <defs>
+          <marker id="arrowSH" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+          </marker>
+        </defs>
+        <line x1="160" y1="70" x2="160" y2="105" class="diagram-stroke" marker-end="url(#arrowSH)"></line>
+        <line x1="540" y1="70" x2="540" y2="105" class="diagram-stroke" marker-end="url(#arrowSH)"></line>
+
+        <rect x="20" y="108" width="280" height="45" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="160" y="134" text-anchor="middle" class="diagram-label" font-size="10">Attacker replays token as bearer credential</text>
+
+        <rect x="400" y="108" width="280" height="45" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="540" y="134" text-anchor="middle" class="diagram-label" font-size="10">Attacker presents cookie to the server</text>
+
+        <line x1="160" y1="153" x2="300" y2="200" class="diagram-stroke" marker-end="url(#arrowSH)"></line>
+        <line x1="540" y1="153" x2="400" y2="200" class="diagram-stroke" marker-end="url(#arrowSH)"></line>
+
+        <rect x="170" y="205" width="360" height="50" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="350" y="226" text-anchor="middle" class="diagram-label" font-size="11">Same outcome: attacker impersonates</text>
+        <text x="350" y="242" text-anchor="middle" class="diagram-label" font-size="11">an active identity until it's cut off</text>
+      </svg>
+      <figcaption>Figure 9.3 — Token theft and session hijacking use different mechanics but produce the
+      same result: whoever holds the credential is treated as the user.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak's per-realm session view lets an administrator revoke a user's active sessions on
+      demand, and short default access-token lifetimes limit a stolen token's window — both covered in
+      chapter 29. The broader OAuth 2.0 Security Best Current Practice guidance this course applies to
+      Keycloak clients — sender-constrained tokens, PKCE-everywhere, safe token storage — is chapter 18.</p>
+    </div>
+
+    <h2>MFA fatigue / push bombing</h2>
+    <p><strong>MFA fatigue</strong>, also called <strong>push bombing</strong>, is repeatedly sending MFA
+    approval push notifications to a target — often late at night or in rapid bursts — until a tired,
+    confused, or simply annoyed user approves one by mistake, assuming it's a glitch rather than an active
+    attack. It requires the attacker to already have a valid password (often from credential stuffing or
+    phishing); the push bombing is specifically how they get past the second factor once the first one is
+    in hand.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 760 230" role="img" aria-labelledby="t4 d4">
+        <title id="t4">A push-bombing timeline: repeated MFA approval requests minutes apart until one is approved</title>
+        <desc id="d4">A horizontal timeline shows five MFA push notifications sent at 23:58, 23:59, 00:01,
+        00:02, and 00:04. The first four are ignored or denied by the target. The fifth, at 00:04, is
+        approved out of fatigue, and an arrow leads from it to a box reading "attacker signs in."</desc>
+        <line x1="40" y1="110" x2="720" y2="110" class="diagram-stroke"></line>
+
+        <circle cx="100" cy="110" r="10" class="diagram-fill-warning diagram-stroke"></circle>
+        <text x="100" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">23:58</text>
+        <text x="100" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">push sent</text>
+
+        <circle cx="240" cy="110" r="10" class="diagram-fill-warning diagram-stroke"></circle>
+        <text x="240" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">23:59</text>
+        <text x="240" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">ignored</text>
+
+        <circle cx="380" cy="110" r="10" class="diagram-fill-warning diagram-stroke"></circle>
+        <text x="380" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">00:01</text>
+        <text x="380" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">ignored</text>
+
+        <circle cx="520" cy="110" r="10" class="diagram-fill-warning diagram-stroke"></circle>
+        <text x="520" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">00:02</text>
+        <text x="520" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">denied</text>
+
+        <circle cx="660" cy="110" r="12" class="diagram-fill-danger diagram-stroke"></circle>
+        <text x="660" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">00:04</text>
+        <text x="660" y="140" text-anchor="middle" class="diagram-label" font-size="11">approved (fatigue)</text>
+
+        <defs>
+          <marker id="arrowMFA" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+          </marker>
+        </defs>
+        <line x1="660" y1="150" x2="660" y2="178" class="diagram-stroke" marker-end="url(#arrowMFA)"></line>
+        <rect x="550" y="182" width="220" height="38" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="660" y="206" text-anchor="middle" class="diagram-label" font-size="11">Attacker signs in</text>
+      </svg>
+      <figcaption>Figure 9.4 — MFA fatigue wins by outlasting the user's patience, not by defeating the
+      cryptography behind the second factor.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study</div>
+      <p>At <span class="org-chip meridian">Meridian Trust</span>, an employee whose password was already
+      compromised in the same credential-stuffing wave described above starts receiving MFA push
+      notifications at 23:58 — four of them in six minutes, well outside their normal login hours. Half-
+      asleep and assuming a glitch in the banking app, they approve the fifth one just to make the
+      notifications stop. The attacker, who had the password but not the second factor until that moment,
+      is now signed in with full approval.</p>
+    </div>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Authentication flows can require a WebAuthn/passkey step instead of (or alongside) an OTP push —
+      a factor that has nothing to approve by tapping "yes" and is correspondingly immune to fatigue-based
+      bombing. Chapter 5 introduces why it's phishing- and fatigue-resistant; chapter 30 configures it.</p>
+    </div>
+
+    <h2>Threat-to-defense map</h2>
+    <p>None of the five threats above are left unanswered by this course — each has a primary defense,
+    and a chapter that builds it. Treat this table as the rest of Part I's and this course's answer key,
+    not a list of unsolved problems.</p>
+    <div class="table-wrap">
+      <table>
+        <caption>Each threat in this chapter, its primary defense, and where this course builds it</caption>
+        <thead>
+          <tr><th>Threat</th><th>Primary defense</th><th>Where it's taught</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Credential stuffing</td><td>Rate limiting, lockout thresholds, breached-password checks, MFA as a second line</td><td>Chapter 30 (Keycloak brute-force protection); chapter 5 (MFA)</td></tr>
+          <tr><td>Phishing (credential + MFA approval)</td><td>Phishing-resistant authentication (WebAuthn / passkeys)</td><td>Chapter 5 (factors); chapter 30 (configuring it in Keycloak)</td></tr>
+          <tr><td>Token theft / replay</td><td>Short-lived, sender-constrained tokens; OAuth/OIDC security best current practice</td><td>Chapter 18 (OAuth/OIDC security BCPs); chapter 29 (Keycloak token &amp; session lifetimes)</td></tr>
+          <tr><td>Session hijacking</td><td>Secure session/cookie handling, on-demand session revocation, re-authentication for sensitive actions</td><td>Chapter 29 (sessions deep dive); chapter 18 (secure token/cookie handling)</td></tr>
+          <tr><td>MFA fatigue / push bombing</td><td>Phishing-resistant MFA (no approve/deny prompt to fatigue); risk-based step-up</td><td>Chapter 5 (risk-based &amp; phishing-resistant MFA); chapter 30 (Keycloak MFA config)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>It's tempting to read every incident above as a user-error story — someone reused a password,
+      someone clicked a link, someone tapped "approve" half asleep. Resist that framing. In every case the
+      organization had a system-level choice available that would have removed the user's ability to make
+      that mistake at all (rate limiting, phishing-resistant MFA, short token lifetimes, session
+      revocation). Blaming the user is a way of avoiding the control that was actually missing.</p>
+    </div>
+
+    <ul class="common-mistakes">
+      <li>If login attempts fail silently with no lockout or slowdown, the cause is missing rate-limiting
+      or brute-force protection, not bad luck — see chapter 30.</li>
+      <li>If MFA is OTP-only, the cause is a factor that adversary-in-the-middle phishing can relay in
+      real time; WebAuthn/passkeys close that gap, OTP alone does not — see chapter 5.</li>
+      <li>If a stolen access token keeps working for hours or days after it's reported stolen, the cause
+      is a token lifetime set too long with no practical revocation path, not an unavoidable fact of
+      bearer tokens — see chapters 18 and 29.</li>
+      <li>If a push-bombed user eventually approves out of fatigue, the cause is an MFA method that allows
+      unlimited, unrate-limited retries, not carelessness on the user's part.</li>
+      <li>If a SaaS provider treats a breach as entirely "the customer's fault" because the vulnerable
+      code was the customer's, the cause is usually that the provider's own token scope and lifetime
+      choices are what let that customer-side bug reach provider-side data at all.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>Every threat in this chapter targets a specific layer built in chapters 3-8 — none of this is
+      random; attackers go after login, MFA approval, tokens, or sessions because that's where proof of
+      identity actually lives.</li>
+      <li>Credential stuffing doesn't break passwords — it exploits password reuse across sites the
+      victim organization never controlled.</li>
+      <li>Phishing increasingly targets the MFA approval step, not just the password, which is why
+      OTP-based MFA is not phishing-proof the way WebAuthn/passkeys are.</li>
+      <li>A stolen bearer token or session identifier is just as dangerous as a stolen password — anyone
+      holding it can act as the user until it's revoked or it expires.</li>
+      <li>The "revocation problem" from chapter 8 — a stateless bearer token can't easily be invalidated
+      before expiry — is precisely why token theft is dangerous in practice, not just in theory.</li>
+      <li>MFA fatigue/push bombing exploits a UX decision (unlimited push retries), not a weakness in the
+      user who eventually approves one.</li>
+      <li>A SaaS provider's blast radius can include vulnerabilities in a customer's own integration code
+      it doesn't control, if the tokens it issues to that customer aren't scoped or short-lived enough to
+      contain the damage.</li>
+      <li>Every threat here has a named defense taught later in this course — chapter 5, chapter 18,
+      chapter 29, chapter 30 — this chapter is motivation, not a dead end.</li>
+      <li>Least-privilege authorization (chapter 6) limits how much damage a single stolen credential or
+      session can do, even after authentication itself has been compromised.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Pick one threat from this chapter and trace it back to which of chapters 3-8's concepts it
+      exploits, and explain why that concept being present is also what makes the attack possible.</li>
+      <li>Why doesn't adding more OTP-based MFA prompts fully solve phishing? What category of
+      authentication factor closes the gap, and why?</li>
+      <li>Explain in your own words why a stolen bearer token is dangerous specifically because of the
+      "revocation problem" introduced in chapter 8, not just because it's "stolen data."</li>
+      <li>Northwind Apps' incident in this chapter wasn't caused by Northwind's own code. Should Northwind
+      still bear responsibility for reducing the blast radius? Why or why not?</li>
+      <li>Pick one row from the threat-to-defense table and argue whether that later chapter's defense
+      alone would be sufficient, or whether it needs to be combined with another chapter's defense to
+      actually stop the threat.</li>
+      <li>If you were advising Meridian Trust after its credential-stuffing wave, would you recommend an
+      immediate forced password reset for all customers, mandatory MFA, or both — and what trade-off are
+      you weighing in that choice?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Credential_Stuffing_Prevention_Cheat_Sheet.html">OWASP Cheat Sheet Series — "Credential Stuffing Prevention Cheat Sheet"</a></li>
+      <li><a href="https://owasp.org/www-community/attacks/Credential_stuffing">OWASP — "Credential stuffing" attack reference</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html">OWASP Cheat Sheet Series — "Session Management Cheat Sheet"</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Cheat Sheet Series — "Authentication Cheat Sheet"</a></li>
+      <li><a href="https://attack.mitre.org/techniques/T1621/">MITRE ATT&amp;CK — T1621, "Multi-Factor Authentication Request Generation" (push bombing)</a></li>
+      <li><a href="https://attack.mitre.org/techniques/T1110/004/">MITRE ATT&amp;CK — T1110.004, "Brute Force: Credential Stuffing"</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc9700.html">RFC 9700 — "Best Current Practice for OAuth 2.0 Security" (the token-hardening practices chapter 18 applies in depth)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "iam-threat-landscape", 15);
+  });
+</script>
+</body>
+</html>

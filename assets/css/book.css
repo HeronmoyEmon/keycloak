@@ -338,6 +338,37 @@ tbody tr:hover { background: var(--accent-soft); }
 .chapter-nav .dir { color: var(--text-muted); font-size: 0.8em; display: block; }
 .chapter-nav .next { text-align: right; margin-left: auto; }
 
+/* ---------- 11b. Search/filter controls, stat tiles, progress chips ---------- */
+.controls-row { display: flex; gap: 0.6em; flex-wrap: wrap; margin: 1em 0 1.5em; }
+.search-input, .filter-select {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.55em 0.8em; font-size: 0.95em; font-family: inherit;
+}
+.search-input { flex: 1; min-width: 200px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8em; margin: 1.3em 0; }
+.stat-tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1em; text-align: center; box-shadow: var(--shadow);
+}
+.stat-tile .stat-value { font-size: 1.8em; font-weight: 800; color: var(--accent-strong); display: block; }
+.stat-tile .stat-label { font-size: 0.8em; color: var(--text-muted); }
+.progress-chip {
+  display: flex; align-items: center; gap: 0.5em; padding: 0.4em 0.6em; border-radius: 8px;
+  background: var(--bg-alt); margin: 0.3em 0; font-size: 0.92em;
+}
+.progress-chip input[type="checkbox"] { width: 1.1em; height: 1.1em; accent-color: var(--accent); }
+.progress-chip.done { background: var(--success-soft); }
+.part-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1.2em; margin: 1.2em 0; box-shadow: var(--shadow);
+}
+.part-card h3 { margin-top: 0; }
+.gate-badge { background: var(--warning-soft); color: var(--warning); border-radius: 999px; padding: 0.15em 0.65em; font-size: 0.75em; font-weight: 800; }
+.glossary-entry { border-bottom: 1px solid var(--border); padding: 0.9em 0; }
+.glossary-entry:last-child { border-bottom: none; }
+.glossary-entry dt { font-weight: 800; font-size: 1.05em; }
+.glossary-entry .term-meta { font-size: 0.78em; color: var(--text-muted); margin-left: 0.5em; }
+
 /* ---------- 12. Mobile ---------- */
 @media (max-width: 860px) {
   .sidebar-toggle { display: inline-flex; }

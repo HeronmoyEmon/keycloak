@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorization Models — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "authorization-models";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part I — IAM Foundations</span>
+      <span class="badge minutes">~40 min</span>
+    </div>
+    <h1>6. Authorization Models</h1>
+    <p class="lede">Chapter 3 drew the line between authentication and authorization — knowing who
+    someone is versus deciding what they can do. This chapter is entirely about the second half: the five
+    major ways a system can structure "what they can do" decisions, what each one costs you, and why real
+    systems usually end up running more than one of them at once.</p>
+
+    <h2>Why this matters</h2>
+    <p>Every access-control bug you will ever investigate as an IAM specialist traces back to one of these
+    models being chosen poorly, implemented sloppily, or applied where a different model would have fit
+    the problem better. "Just add a permission check" is not a design — it's a decision about which model
+    you're implicitly using, whether you named it or not. Knowing the five models by name, and knowing
+    their trade-offs cold, is what lets you read an unfamiliar authorization system in ten minutes instead
+    of an afternoon, and it's the exact lens chapter 23 uses when Keycloak's own roles and groups turn out
+    to be a concrete RBAC implementation, and chapters 37-38 use when its Authorization Services turn out
+    to support ABAC- and ReBAC-flavored policies on top of that.</p>
+
+    <h2>A reminder: authorization decides, attributes and permissions are the raw material</h2>
+    <p>Chapter 3 defined <strong>Authorization (AuthZ)</strong> as the general question "what is this
+    already-authenticated identity allowed to do?" Chapter 2 defined an <strong>Attribute</strong> as a
+    fact recorded about an identity that isn't itself proof of anything — department, job title, account
+    tier. Neither of those chapters told you <em>how</em> a system should structure the logic that turns
+    attributes and permissions into a yes/no decision. That's what the five models below are: five
+    different answers to the same structural question, each with a different unit of account (a list, a
+    role, an attribute, a rule, a relationship) and a different place where the complexity lives.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Every authorization model answers the same question — "can subject <em>S</em> perform action
+      <em>A</em> on resource <em>R</em>?" — by choosing <strong>where the decision logic lives</strong>:
+      attached directly to the resource (ACL), indirected through a role (RBAC), computed from attributes
+      at decision time (ABAC), evaluated against an explicit rule set (PBAC), or walked through a graph of
+      relationships (ReBAC). None of them is "more correct" in the abstract — each is a better or worse
+      fit depending on how many subjects, resources, and distinct access patterns you actually have.</p>
+    </div>
+
+    <h2>1. ACL — Access Control List</h2>
+    <p>An <strong>Access Control List (ACL)</strong> attaches permissions directly to a resource, listing
+    exactly which subjects can do what to it. A shared folder that lets you add "Dana: read, Priya: read
+    and write" on a per-file basis is an ACL in its purest, most familiar form — it's the model most
+    operating-system file permissions and early document-sharing tools use, because it maps so directly to
+    "who can touch this one thing."</p>
+    <p><strong>Worked example:</strong> Riverside Health's old paper-record room used an ACL in spirit — a
+    sign-out sheet pinned to each patient's physical chart, naming exactly which clinicians were allowed
+    to pull that specific file. It worked fine for one room with a few hundred charts. It does not survive
+    contact with an electronic system holding hundreds of thousands of charts and thousands of clinicians:
+    maintaining a correct list on <em>every single chart</em>, kept in sync as clinicians rotate onto and
+    off of wards, becomes an entry per chart per clinician — the classic ACL scaling trap.</p>
+    <p><strong>Main trade-off:</strong> ACLs are the simplest model to understand and to audit for one
+    resource at a time, but they scale as roughly <code>N resources × M subjects</code> entries. Add a new
+    employee and you may need to touch every resource they should reach; add a new resource and you may
+    need to touch every subject who should reach it. Nothing is computed or inferred — every grant is
+    listed explicitly, which is exactly what makes ACLs expensive at scale and exactly what makes them easy
+    to reason about at small scale.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 260" role="img" aria-labelledby="t1 d1">
+        <title id="t1">An access control list attaching permissions directly to each resource</title>
+        <desc id="d1">Three resource boxes — Chart A, Chart B, Chart C — each with its own attached list of named subjects and their permissions. Chart A lists Dr. Lee: read-write, Nurse Cho: read. Chart B lists Dr. Lee: read-write, Dr. Patel: read. Chart C lists Nurse Cho: read, Dr. Patel: read-write. No shared structure connects the three lists — each resource's permissions are maintained independently, illustrating the N-resources-by-M-subjects scaling problem.</desc>
+        <rect x="30" y="40" width="170" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="115" y="60" text-anchor="middle" class="diagram-label" font-weight="700">Chart A</text>
+        <text x="115" y="82" text-anchor="middle" class="diagram-label-muted" font-size="11">Dr. Lee: read-write</text>
+        <text x="115" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">Nurse Cho: read</text>
+
+        <rect x="235" y="40" width="170" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="320" y="60" text-anchor="middle" class="diagram-label" font-weight="700">Chart B</text>
+        <text x="320" y="82" text-anchor="middle" class="diagram-label-muted" font-size="11">Dr. Lee: read-write</text>
+        <text x="320" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">Dr. Patel: read</text>
+
+        <rect x="440" y="40" width="170" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="525" y="60" text-anchor="middle" class="diagram-label" font-weight="700">Chart C</text>
+        <text x="525" y="82" text-anchor="middle" class="diagram-label-muted" font-size="11">Nurse Cho: read</text>
+        <text x="525" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">Dr. Patel: read-write</text>
+
+        <text x="320" y="185" text-anchor="middle" class="diagram-label-muted" font-size="12">Each list is maintained independently —</text>
+        <text x="320" y="203" text-anchor="middle" class="diagram-label-muted" font-size="12">a new clinician means touching every chart they need, one at a time</text>
+        <rect x="90" y="222" width="460" height="28" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="320" y="241" text-anchor="middle" class="diagram-label" font-size="11">Scales as N resources × M subjects</text>
+      </svg>
+      <figcaption>Figure 6.1 — ACL: permissions live on the resource, listed per subject, with no shared
+      structure between resources.</figcaption>
+    </figure>
+
+    <h2>2. RBAC — Role-Based Access Control</h2>
+    <p><strong>Role-Based Access Control (RBAC)</strong> adds one level of indirection: instead of
+    attaching permissions to subjects directly, permissions attach to <em>roles</em>, and subjects are
+    assigned to roles. Checking access becomes "does this subject hold a role that carries this
+    permission?" instead of "is this exact subject on this exact list?" The practical win is that roles
+    are reused across many resources and many subjects at once — define "billing-admin" once, grant it the
+    permissions it needs once, and then assigning or revoking that one role for a person changes their
+    access everywhere that role is checked.</p>
+    <p><strong>Worked example:</strong> <span class="org-chip northwind">Northwind Apps</span> is a
+    multi-tenant SaaS product — every customer organization gets its own tenant, and every tenant has its
+    own "admin" role for managing that tenant's users and settings. Critically, this is <em>per-tenant</em>
+    RBAC: a customer's admin role only grants authority within that customer's own tenant, never across
+    tenants. The role name "admin" is reused thousands of times across thousands of customers, but each
+    assignment is scoped — Acme Corp's admin can't touch Globex Inc.'s data just because both tenants
+    happen to use a role with the same name. That scoping is what keeps RBAC safe in a multi-tenant
+    product; a flat, unscoped role would be a serious bug (see the Pitfall below).</p>
+    <p><strong>Main trade-off:</strong> RBAC scales far better than ACLs for organizations with recognizable
+    job functions — most employees fit cleanly into a small number of roles. It breaks down when access
+    genuinely depends on something that isn't a stable job function: a transaction limit that changes by
+    account, a chart access that depends on who's currently on a care team this week, a time-of-day
+    restriction. Forcing those cases into roles produces "role explosion" — a role for every combination of
+    condition you need, until the role list is longer and harder to reason about than the ACLs it was meant
+    to replace.</p>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak's realm roles and client roles, assigned to users directly or via groups, are a direct
+      RBAC implementation — chapter 23 covers creating roles, composite roles, and group-based role
+      assignment hands-on against a running realm.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 260" role="img" aria-labelledby="t2 d2">
+        <title id="t2">RBAC: subjects assigned to roles, roles carrying permissions on resources</title>
+        <desc id="d2">Three user circles on the left — Alice, Bob, Carol — each connected to one of two role boxes in the middle: Tenant Admin or Tenant Viewer. Each role box connects on the right to the permissions it carries: Tenant Admin carries manage users and edit settings; Tenant Viewer carries view dashboard. Adding a new user only requires connecting them to an existing role, not redefining permissions.</desc>
+        <circle cx="70" cy="60" r="22" class="diagram-fill-accent diagram-stroke"></circle>
+        <text x="70" y="65" text-anchor="middle" class="diagram-label" font-size="11">Alice</text>
+        <circle cx="70" cy="135" r="22" class="diagram-fill-accent diagram-stroke"></circle>
+        <text x="70" y="140" text-anchor="middle" class="diagram-label" font-size="11">Bob</text>
+        <circle cx="70" cy="210" r="22" class="diagram-fill-accent diagram-stroke"></circle>
+        <text x="70" y="215" text-anchor="middle" class="diagram-label" font-size="11">Carol</text>
+
+        <rect x="240" y="40" width="160" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+        <text x="320" y="70" text-anchor="middle" class="diagram-label" fill="#fff" font-size="12">Tenant Admin</text>
+        <rect x="240" y="175" width="160" height="50" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="320" y="205" text-anchor="middle" class="diagram-label" font-size="12">Tenant Viewer</text>
+
+        <line x1="92" y1="60" x2="238" y2="62" class="diagram-stroke"></line>
+        <line x1="92" y1="130" x2="238" y2="90" class="diagram-stroke"></line>
+        <line x1="92" y1="212" x2="238" y2="200" class="diagram-stroke"></line>
+
+        <rect x="460" y="20" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="535" y="44" text-anchor="middle" class="diagram-label" font-size="11">Manage users</text>
+        <rect x="460" y="70" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="535" y="94" text-anchor="middle" class="diagram-label" font-size="11">Edit settings</text>
+        <rect x="460" y="190" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="535" y="214" text-anchor="middle" class="diagram-label" font-size="11">View dashboard</text>
+
+        <line x1="400" y1="55" x2="458" y2="40" class="diagram-stroke"></line>
+        <line x1="400" y1="70" x2="458" y2="88" class="diagram-stroke"></line>
+        <line x1="400" y1="200" x2="458" y2="208" class="diagram-stroke"></line>
+      </svg>
+      <figcaption>Figure 6.2 — RBAC: users are assigned to roles, and roles (not users directly) carry
+      permissions — one indirection that makes large user populations manageable.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>A role name is not automatically scoped to anything. "Tenant Admin" sounds safely contained, but
+      if the underlying permission check only verifies "does this user hold the Tenant Admin role" without
+      also verifying "...for <em>this specific tenant</em>," every tenant admin across the entire platform
+      can administer every tenant. The bug isn't RBAC itself — it's RBAC implemented without carrying the
+      resource-scope context through to the permission check. See this chapter's quiz for a worked version
+      of exactly this bug.</p>
+    </div>
+
+    <h2>3. ABAC — Attribute-Based Access Control</h2>
+    <p><strong>Attribute-Based Access Control (ABAC)</strong> computes the authorization decision at
+    request time from attributes — facts about the subject, the resource, and sometimes the environment —
+    rather than from a pre-assigned role or a pre-written list. This is the model that puts chapter 2's
+    <strong>Attribute</strong> concept directly to work: anything you'd have called an attribute there
+    (department, account tier, risk score, time zone) becomes a live input to an access decision here.</p>
+    <p><strong>Worked example:</strong> <span class="org-chip meridian">Meridian Trust</span> lets tellers
+    approve wire transfers, but not all tellers up to the same amount. A teller's authorized transfer
+    ceiling depends on an <em>account-risk attribute</em> attached to the customer's account — a
+    low-risk, long-standing account might let a teller approve transfers up to $5,000 unassisted, while a
+    flagged or newly opened account caps that same teller at $500 before a supervisor attribute is also
+    required. No role captures this cleanly, because the limit isn't a property of the teller's job title —
+    it's computed from the combination of the teller's attributes (clearance level) and the account's
+    attributes (risk score) at the moment of the request.</p>
+    <p><strong>Main trade-off:</strong> ABAC handles exactly the cases RBAC struggles with — decisions that
+    depend on data that changes per request, not on a stable job function — without role explosion. The
+    cost is that the decision logic is no longer a short, readable list of role-to-permission mappings; it's
+    a function over potentially many attributes, which is harder to audit at a glance ("why was this
+    request allowed?" now requires evaluating the same attribute computation the system did) and depends
+    on those attributes being accurate, available, and trustworthy at decision time.</p>
+
+    <h2>4. PBAC — Policy-Based Access Control</h2>
+    <p><strong>Policy-Based Access Control (PBAC)</strong> makes the decision logic itself the first-class
+    unit: explicit, often human-readable policy rules — "allow if condition X and condition Y, unless
+    condition Z" — are evaluated against a request to produce an allow/deny decision, frequently combining
+    several attributes and conditions in one rule.</p>
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — a genuinely fuzzy boundary</div>
+      <p>Be skeptical of any source that draws a crisp, confident line between ABAC and PBAC — in practice
+      the terms overlap heavily, and different vendors and papers use them inconsistently. A reasonable
+      working distinction, not a rigid one: ABAC emphasizes <em>what the decision is computed from</em>
+      (attributes of subject/resource/environment), while PBAC emphasizes <em>how the decision logic is
+      packaged and evaluated</em> (as an explicit, often centrally managed policy/rule set, frequently
+      written in a dedicated policy language). Most real PBAC systems are evaluating policies written
+      <em>over</em> attributes — which means most PBAC is, in practice, one way of implementing ABAC, not a
+      wholly separate model. Treat the two names as describing overlapping emphases rather than two
+      cleanly separable categories, and say so if you ever have to explain this to someone else.</p>
+    </div>
+    <p><strong>Worked example:</strong> a policy engine evaluating "allow transfer if requester.role ==
+    teller AND amount &lt;= account.risk_adjusted_limit AND account.flagged == false" is a policy — an
+    explicit, inspectable rule — but it's also pure ABAC in substance, since every input to the rule is an
+    attribute. The PBAC framing becomes more distinct when an organization centralizes many such rules in
+    one policy engine or policy language (so policies can be authored, versioned, and audited independently
+    of the applications that call them) rather than scattering attribute checks through application code.</p>
+    <p><strong>Main trade-off:</strong> centralizing decision logic as explicit policy makes it auditable
+    and changeable without redeploying every application that depends on it — a real operational win at
+    scale. The cost is standing up and governing a policy engine (and, usually, a policy authoring
+    language) as its own piece of infrastructure, with its own failure modes if that engine becomes
+    unavailable or its policies drift out of sync with what applications actually expect.</p>
+
+    <h2>5. ReBAC — Relationship-Based Access Control</h2>
+    <p><strong>Relationship-Based Access Control (ReBAC)</strong> bases the decision on relationships
+    between subjects and resources — modeled as a graph — rather than on roles or attribute values alone.
+    The canonical question isn't "what role does this subject hold?" but "what is this subject's
+    <em>relationship</em> to this specific resource?" — is the subject the <em>owner</em> of the document,
+    a <em>member</em> of the team that owns it, or on the <em>care team</em> for this particular patient?</p>
+    <p><strong>Worked example:</strong> <span class="org-chip riverside">Riverside Health</span> needs to
+    decide who can open a given patient's chart. A role like "clinician" is far too broad — it would let
+    every clinician in the hospital network open every patient's chart, which is both a privacy problem and
+    a HIPAA compliance problem. The actual rule is relational: a clinician can open a chart only if they
+    are currently <em>on the care team</em> for that specific patient — a relationship that changes
+    constantly as patients are admitted, transferred between wards, and discharged. Modeling "is on the
+    care team for" as an edge in a relationship graph, and checking that edge at access time, is exactly
+    what RBAC's flat roles can't express without an unworkable explosion of patient-specific roles.</p>
+    <p><strong>Main trade-off:</strong> ReBAC expresses exactly the fine-grained, relationship-driven access
+    patterns that both ACLs and RBAC handle poorly at scale, and it maps naturally onto how people actually
+    reason about access ("I can see this because I'm on the team," not "I can see this because of an
+    abstract permission"). The cost is real infrastructure: maintaining a relationship graph that stays
+    accurate as relationships change constantly, and evaluating potentially multi-hop graph traversals at
+    request time, which is a different (and often harder) engineering problem than looking up a role or an
+    attribute.</p>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak doesn't ship a dedicated graph-based ReBAC engine, but its Authorization Services
+      (UMA 2.0-based fine-grained permissions, chapter 37) can express attribute- and relationship-flavored
+      policies on top of its resource/scope/policy model. Chapter 38 covers ABAC/ReBAC patterns with
+      Keycloak directly, plus a brief comparison against dedicated engines like OPA and Cedar.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 260" role="img" aria-labelledby="t3 d3">
+        <title id="t3">ReBAC: access decided by relationships in a graph, not by role or attribute alone</title>
+        <desc id="d3">A graph with a patient chart node in the center, connected by labeled relationship edges to three clinician nodes. Dr. Lee connects via an "on care team" edge (allowed). Nurse Cho connects via an "on care team" edge (allowed). Dr. Patel has no edge to this patient's chart at all (denied), despite also being a clinician elsewhere in the hospital.</desc>
+        <rect x="255" y="100" width="150" height="55" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+        <text x="330" y="123" text-anchor="middle" class="diagram-label" fill="#fff" font-size="12">Patient X's</text>
+        <text x="330" y="140" text-anchor="middle" class="diagram-label" fill="#fff" font-size="12">chart</text>
+
+        <circle cx="90" cy="60" r="26" class="diagram-fill-success diagram-stroke"></circle>
+        <text x="90" y="65" text-anchor="middle" class="diagram-label" font-size="11">Dr. Lee</text>
+        <line x1="112" y1="75" x2="258" y2="112" class="diagram-stroke"></line>
+        <text x="175" y="78" text-anchor="middle" class="diagram-label-muted" font-size="10">on care team</text>
+
+        <circle cx="90" cy="200" r="26" class="diagram-fill-success diagram-stroke"></circle>
+        <text x="90" y="205" text-anchor="middle" class="diagram-label" font-size="11">Nurse Cho</text>
+        <line x1="112" y1="185" x2="258" y2="145" class="diagram-stroke"></line>
+        <text x="175" y="185" text-anchor="middle" class="diagram-label-muted" font-size="10">on care team</text>
+
+        <circle cx="550" cy="130" r="26" class="diagram-fill-danger diagram-stroke"></circle>
+        <text x="550" y="135" text-anchor="middle" class="diagram-label" font-size="11">Dr. Patel</text>
+        <text x="550" y="168" text-anchor="middle" class="diagram-label-muted" font-size="10">no edge to this chart</text>
+        <text x="550" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">(denied, despite being</text>
+        <text x="550" y="196" text-anchor="middle" class="diagram-label-muted" font-size="10">a clinician elsewhere)</text>
+
+        <text x="320" y="235" text-anchor="middle" class="diagram-label-muted" font-size="11">Access follows the relationship, not a blanket "clinician" role</text>
+      </svg>
+      <figcaption>Figure 6.3 — ReBAC: a clinician's access to one patient's chart depends on a specific,
+      changeable care-team relationship, not on a role shared by every clinician in the network.</figcaption>
+    </figure>
+
+    <h2>Cross-cutting: Zero Trust and least privilege</h2>
+    <p>The five models above are structures for <em>how</em> a decision gets made. Zero Trust and least
+    privilege are principles about <em>how generous</em> any of those decisions should be, and they apply
+    regardless of which model is in use underneath.</p>
+    <ul>
+      <li><strong>Zero Trust</strong> — "never trust, always verify." No request is trusted by default just
+      because it came from inside a corporate network, from an already-authenticated session, or from a
+      system that was checked once earlier. Every request to a protected resource is (re-)verified on its
+      own terms.</li>
+      <li><strong>Least privilege</strong> — grant a subject only the minimum access needed to do its job,
+      for only as long as it's needed, and nothing more "just in case." A teller who occasionally needs
+      elevated approval authority gets it for that transaction, not as a standing grant forever.</li>
+    </ul>
+    <p>Both principles are model-agnostic: an ACL built on least-privilege grants is safer than a generous
+    one; an RBAC role set designed around least privilege has narrow, specific roles instead of a few broad
+    ones; ABAC and PBAC rules that default-deny and only grant what a specific attribute combination
+    justifies embody both principles directly. ReBAC's relationship-scoped access (only the current care
+    team, not every clinician) is arguably the most natural least-privilege expression of all five models,
+    since the graph is already structured around "who specifically needs this," not "who might."</p>
+
+    <h2>Comparing the five models</h2>
+    <div class="table-wrap">
+      <table>
+        <caption>Authorization models compared: granularity, scalability, and typical fit</caption>
+        <thead>
+          <tr><th>Model</th><th>Decision based on</th><th>Granularity</th><th>Scalability</th><th>Typical use case</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ACL</td><td>Explicit per-resource, per-subject list</td><td>Very fine (one resource at a time)</td><td>Poor — grows as N resources × M subjects</td><td>Small resource counts, file/document sharing, one-off exceptions</td></tr>
+          <tr><td>RBAC</td><td>Role assigned to subject</td><td>Coarse (per role)</td><td>Good for stable job functions; degrades with role explosion</td><td>Workforce access tied to job function — admin, viewer, editor</td></tr>
+          <tr><td>ABAC</td><td>Attributes of subject, resource, environment</td><td>Fine, dynamic (per request)</td><td>Good — no per-resource or per-role entries to maintain</td><td>Decisions that depend on changing data: risk score, account tier, time of day</td></tr>
+          <tr><td>PBAC</td><td>Explicit policy/rule evaluation (often over attributes)</td><td>Fine, as expressive as the policy language</td><td>Good, with policy-engine governance overhead</td><td>Centrally authored, auditable rules spanning many applications</td></tr>
+          <tr><td>ReBAC</td><td>Relationships in a graph</td><td>Very fine, relationship-scoped</td><td>Good for access that follows relationships; graph infra required</td><td>Access that follows who's connected to what right now — care teams, ownership, team membership</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — all three orgs, side by side</div>
+      <p><span class="org-chip northwind">Northwind Apps</span> uses per-tenant RBAC because its access
+      question is mostly "what job does this user have within their own tenant" — a stable, role-shaped
+      question, as long as every role assignment carries the tenant scope with it.
+      <span class="org-chip meridian">Meridian Trust</span> layers ABAC on top of roles because "how much
+      can this teller approve" isn't a property of the job title alone — it's computed from the account's
+      risk attribute at the moment of the request.
+      <span class="org-chip riverside">Riverside Health</span> needs ReBAC for chart access because the
+      right question isn't "is this person a clinician" but "is this specific person on this specific
+      patient's care team right now" — a relationship, not a role or a static attribute. None of the three
+      organizations uses only one model; each reaches for the model that fits the specific decision it's
+      making.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>Checking only "does this subject hold role X" without also checking the scope that role applies
+      to — the Northwind-style per-tenant RBAC bug described above.</li>
+      <li>Reaching for RBAC role explosion (dozens of near-duplicate roles) to express what is actually an
+      attribute- or relationship-based condition, instead of switching models for that one decision.</li>
+      <li>Treating ABAC and PBAC as if the literature defines a clean, universal boundary between them —
+      it doesn't; the honest answer is "overlapping, vendor-dependent terms," not a crisp rule.</li>
+      <li>Building a ReBAC-shaped access pattern (care-team style, ownership-style) on top of a flat role
+      check and then patching the gaps with ad-hoc exceptions instead of modeling the relationship
+      directly.</li>
+      <li>Assuming Zero Trust and least privilege are themselves an authorization model — they're
+      principles for how generous any of the five actual models should be, not a sixth model.</li>
+      <li>Granting standing access "to save time later" instead of scoping it to when it's actually needed
+      — the most common real-world violation of least privilege, independent of which model is in use.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>Every authorization model answers the same question — can subject S do action A on resource R —
+      by choosing where the decision logic lives.</li>
+      <li>ACL attaches permissions directly to resources; it's the simplest model to reason about but
+      scales poorly as N resources × M subjects.</li>
+      <li>RBAC adds an indirection layer — roles — that scales well for stable job functions but suffers
+      role explosion when access depends on conditions that aren't really job functions.</li>
+      <li>ABAC computes decisions from attributes of the subject, resource, and environment at request
+      time, directly extending chapter 2's Attribute concept into an access-control mechanism.</li>
+      <li>PBAC centralizes decision logic as explicit, auditable policy rules — and in practice heavily
+      overlaps with ABAC, since most policies are evaluated over attributes; the ABAC/PBAC boundary is
+      genuinely fuzzy across vendors and literature.</li>
+      <li>ReBAC bases decisions on relationships in a graph — ownership, team membership, care-team status
+      — and fits access patterns that roles and attributes alone express poorly.</li>
+      <li>Zero Trust ("never trust, always verify") and least privilege (grant only the minimum needed) are
+      cross-cutting principles that apply regardless of which of the five models is underneath.</li>
+      <li>Real organizations mix models: Northwind's per-tenant RBAC, Meridian's ABAC transaction limits,
+      and Riverside's ReBAC care-team relationships each fit a different shape of access decision.</li>
+      <li>Keycloak's roles/groups implement RBAC directly (chapter 23); its Authorization Services support
+      ABAC- and ReBAC-flavored policies (chapters 37-38).</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Pick an app you use regularly and identify which of the five models its access control most
+      resembles. Is it a clean fit, or does it feel forced into a model that doesn't suit the decision?</li>
+      <li>Explain, in your own words, why a role-based system scoped only to "does this subject hold role
+      X" (without checking which tenant or resource that role applies to) is a security bug, not a feature
+      gap.</li>
+      <li>Give an example, not from this chapter, of an access decision that depends on a relationship
+      rather than a role or a static attribute.</li>
+      <li>Why might an organization choose to centralize its ABAC-style rules into an explicit policy
+      engine (moving toward PBAC) rather than leaving attribute checks scattered through each
+      application's code?</li>
+      <li>How do Zero Trust and least privilege change the way you'd design an ACL, versus an RBAC system,
+      versus a ReBAC system? Are they applied the same way in all three, or differently?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://csrc.nist.gov/glossary/term/role_based_access_control">NIST Computer Security Resource Center — "role based access control" glossary entry</a></li>
+      <li><a href="https://csrc.nist.gov/glossary/term/attribute_based_access_control">NIST Computer Security Resource Center — "attribute based access control" glossary entry</a></li>
+      <li><a href="https://csrc.nist.gov/pubs/sp/800/162/final">NIST SP 800-162 — "Guide to Attribute Based Access Control (ABAC) Definition and Considerations"</a></li>
+      <li><a href="https://www.nist.gov/publications/zero-trust-architecture">NIST SP 800-207 — "Zero Trust Architecture"</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "authorization-models", 15);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication Factors &amp; MFA — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "authentication-factors-mfa";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part I — IAM Foundations</span>
+      <span class="badge minutes">~40 min</span>
+    </div>
+    <h1>5. Authentication Factors &amp; MFA</h1>
+    <p class="lede">"Enable MFA" is one-line advice that hides a surprising amount of nuance: which
+    factors, combined how, resistant to which attacks, and asked for how often? This chapter opens up
+    that one line — the three classical factor categories, how a one-time code is conjured out of thin
+    air without ever being transmitted in advance, why a hardware key or passkey resists phishing in a
+    way a typed code cannot, and how modern systems decide to ask for more proof only when the situation
+    actually looks risky.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist is routinely asked to pick an MFA strategy under real constraints: a hospital
+    floor where clinicians can't fumble with a phone between patients, a bank that must stop a fraudulent
+    wire transfer without annoying every legitimate login, a SaaS company whose enterprise customers
+    demand phishing-resistant authentication in their security questionnaire. Getting this wrong in
+    either direction — too little friction and credentials get phished, too much and people route around
+    the control entirely — is one of the most consequential day-to-day decisions in the job.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall — chapter 1</div>
+      <p>Chapter 1 defined multi-factor authentication in one line: requiring more than one proof of
+      identity, typically something you know plus something you have or are. That's correct but
+      incomplete — it doesn't say <em>which</em> combinations actually resist which attacks, how a
+      one-time code is generated without being sent over the wire in advance, or why some "second
+      factors" (a typed code) are far weaker against phishing than others (a hardware key). This chapter
+      builds the rest of that picture.</p>
+    </div>
+
+    <h2>Factor categories: knowledge, possession, inherence — and now, context</h2>
+    <p>Every authentication factor falls into one of three classical categories, each defined by what
+    kind of proof it offers and, just as importantly, what it's vulnerable to losing:</p>
+    <div class="table-wrap">
+      <table>
+        <caption>The three classical factor categories</caption>
+        <thead><tr><th>Category</th><th>Proof offered</th><th>Typical examples</th><th>What it loses to</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Knowledge factor</strong></td><td>Something you know</td>
+          <td>Password, PIN, security question</td>
+          <td>Phishing, guessing, reuse across sites, shoulder-surfing</td></tr>
+          <tr><td><strong>Possession factor</strong></td><td>Something you have</td>
+          <td>Phone with an authenticator app, hardware security key, badge, SIM</td>
+          <td>Theft, loss, SIM-swap (for SMS specifically), cloning (for weak possession tokens)</td></tr>
+          <tr><td><strong>Inherence factor</strong></td><td>Something you are</td>
+          <td>Fingerprint, face, iris, voice</td>
+          <td>Spoofing of a low-quality sensor, and — unlike a password — can't be rotated if compromised</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A growing fourth category doesn't fit the "factor" framing cleanly but matters just as much:
+    <strong>context and behavioral signals</strong> — the device being used, its location, the network
+    it's on, typing rhythm, time of day. These aren't proof that credential-checking relies on directly;
+    they're <em>evidence about the situation</em> that a system uses to decide whether the factors it
+    already has are enough, or whether to ask for more. That decision is risk-based authentication,
+    covered later in this chapter.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 360" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The three classical authentication factor categories, plus context signals</title>
+        <desc id="d1">Three equal-sized boxes labeled Knowledge factor, Possession factor, and Inherence
+        factor, each listing its examples, with a bracket beneath them stating that combining two or more
+        of these three different categories is what makes authentication multi-factor. A fourth box to
+        the right, Context and behavior signal, is visually distinct and has an arrow pointing down to a
+        note stating it feeds risk-based and adaptive authentication rather than being counted as a
+        traditional factor.</desc>
+        <rect x="20" y="40" width="200" height="150" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="120" y="68" text-anchor="middle" class="diagram-label" font-weight="700">KNOWLEDGE</text>
+        <text x="120" y="88" text-anchor="middle" class="diagram-label-muted">Something you know</text>
+        <text x="40" y="114" class="diagram-label-muted">Password</text>
+        <text x="40" y="134" class="diagram-label-muted">PIN</text>
+        <text x="40" y="154" class="diagram-label-muted">Security question</text>
+
+        <rect x="240" y="40" width="200" height="150" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="340" y="68" text-anchor="middle" class="diagram-label" font-weight="700">POSSESSION</text>
+        <text x="340" y="88" text-anchor="middle" class="diagram-label-muted">Something you have</text>
+        <text x="260" y="114" class="diagram-label-muted">Authenticator app</text>
+        <text x="260" y="134" class="diagram-label-muted">Hardware security key</text>
+        <text x="260" y="154" class="diagram-label-muted">Badge / smart card</text>
+
+        <rect x="460" y="40" width="200" height="150" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="560" y="68" text-anchor="middle" class="diagram-label" font-weight="700">INHERENCE</text>
+        <text x="560" y="88" text-anchor="middle" class="diagram-label-muted">Something you are</text>
+        <text x="480" y="114" class="diagram-label-muted">Fingerprint</text>
+        <text x="480" y="134" class="diagram-label-muted">Face</text>
+        <text x="480" y="154" class="diagram-label-muted">Iris / voice</text>
+
+        <path d="M 20,210 L 660,210" class="diagram-stroke"/>
+        <path d="M 20,210 L 20,220" class="diagram-stroke"/>
+        <path d="M 660,210 L 660,220" class="diagram-stroke"/>
+        <text x="340" y="236" text-anchor="middle" class="diagram-label-muted">Combine two or more of these three categories — that's what "multi-factor" means</text>
+
+        <rect x="700" y="40" width="180" height="150" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="790" y="68" text-anchor="middle" class="diagram-label" font-weight="700">CONTEXT / BEHAVIOR</text>
+        <text x="790" y="88" text-anchor="middle" class="diagram-label-muted">Something about the</text>
+        <text x="790" y="104" text-anchor="middle" class="diagram-label-muted">situation</text>
+        <text x="715" y="128" class="diagram-label-muted">Device, location</text>
+        <text x="715" y="148" class="diagram-label-muted">Network, typing rhythm</text>
+
+        <line x1="790" y1="190" x2="790" y2="280" class="diagram-stroke" marker-end="url(#arrowf1)"/>
+        <text x="790" y="305" text-anchor="middle" class="diagram-label-muted">Feeds risk-based /</text>
+        <text x="790" y="323" text-anchor="middle" class="diagram-label-muted">adaptive authentication</text>
+        <defs>
+          <marker id="arrowf1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 5.1 — Three classical factor categories combine for MFA; context/behavior signals feed a different decision, covered later in this chapter.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>Two passwords is not MFA, even if one is "the account password" and the other is "a PIN" — both
+      are knowledge factors, so compromising the thing that makes passwords weak (phishing, reuse,
+      guessing) compromises both at once. Genuine MFA requires factors from <em>different</em> categories,
+      so that defeating one doesn't automatically defeat the other.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Riverside Health</div>
+      <p>Riverside Health's clinicians authenticate to shared clinical workstations with a <strong>badge
+      tap</strong> — a possession factor, often paired with a short PIN. The entire design optimizes for
+      speed: a clinician moving between patients can't afford a typed password and a six-digit code every
+      time. The trade-off is explicit and accepted: a lost or borrowed badge is a real risk, and badge-tap
+      systems lean hard on short session timeouts, workstation-level controls, and audit logging (chapter
+      3) to compensate for the weaker guarantee a single possession factor gives on its own compared to a
+      true multi-factor combination.</p>
+    </div>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Chapter 30 configures exactly this: Keycloak's Authentication flows let you require an OTP
+      credential alongside a password, and its credential types cover WebAuthn and passkeys as registered
+      credentials on a user. The admin console's Required Actions (e.g. "Configure OTP") is where a user
+      is first enrolled in a second factor.</p>
+    </div>
+
+    <h2>OTP mechanics: TOTP and HOTP, conceptually</h2>
+    <p>The most common possession-factor implementation is the six-digit code from an authenticator app.
+    It feels like magic — the app and the server agree on a number neither one just sent the other — but
+    the mechanism is a straightforward idea: at enrollment, the server and the app establish a
+    <strong>shared secret</strong> once (often via a QR code), and never transmit it again. From then on,
+    each side independently combines that secret with a <strong>moving factor</strong> — something both
+    sides can compute without communicating — through a one-way function, and the two results match if
+    and only if both sides hold the same secret. The exact cryptographic function (an HMAC) is chapter
+    16's territory; what matters here is the shape of the trick.</p>
+    <p>The two standard variants differ only in what the moving factor is:</p>
+    <div class="table-wrap">
+      <table>
+        <caption>TOTP vs. HOTP</caption>
+        <thead><tr><th></th><th>Moving factor</th><th>Code changes when</th><th>Main weakness</th></tr></thead>
+        <tbody>
+          <tr><td><strong>TOTP</strong> (Time-based One-Time Password)</td><td>Current time, rounded to a
+          step (commonly 30 seconds)</td><td>Every time step elapses, automatically</td>
+          <td>Requires both sides' clocks to stay reasonably in sync</td></tr>
+          <tr><td><strong>HOTP</strong> (HMAC-based One-Time Password)</td><td>A counter that increments
+          each time a code is used</td><td>Only when a code is actually consumed</td>
+          <td>Server and device counters can drift out of sync if a code is generated but never used</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 340" role="img" aria-labelledby="t2 d2">
+        <title id="t2">How TOTP/HOTP let two sides agree on a code without sending the secret</title>
+        <desc id="d2">A device box and a server box each independently hold the same shared secret,
+        established once at enrollment and never sent again. Each box combines its copy of the secret
+        with the same moving factor — the current time for TOTP or a counter for HOTP — through a one-way
+        function to produce a six digit code. An equals sign in the middle shows the two codes are
+        compared, and a note states the secret itself is never transmitted during this comparison.</desc>
+        <rect x="20" y="30" width="330" height="260" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="185" y="58" text-anchor="middle" class="diagram-label" font-weight="700">DEVICE (authenticator app)</text>
+        <rect x="45" y="75" width="280" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="185" y="100" text-anchor="middle" class="diagram-label-muted">Shared secret (set once at enrollment)</text>
+        <text x="185" y="140" text-anchor="middle" class="diagram-label-muted">+</text>
+        <rect x="45" y="150" width="280" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="185" y="175" text-anchor="middle" class="diagram-label-muted">Moving factor: time step (TOTP) or counter (HOTP)</text>
+        <line x1="185" y1="190" x2="185" y2="220" class="diagram-stroke" marker-end="url(#arrowf2)"/>
+        <rect x="95" y="225" width="180" height="40" rx="6" class="diagram-fill-accent diagram-stroke"/>
+        <text x="185" y="250" text-anchor="middle" class="diagram-label" font-weight="700">6-digit code</text>
+
+        <rect x="530" y="30" width="330" height="260" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="695" y="58" text-anchor="middle" class="diagram-label" font-weight="700">SERVER</text>
+        <rect x="555" y="75" width="280" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="695" y="100" text-anchor="middle" class="diagram-label-muted">Shared secret (its own copy, from enrollment)</text>
+        <text x="695" y="140" text-anchor="middle" class="diagram-label-muted">+</text>
+        <rect x="555" y="150" width="280" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="695" y="175" text-anchor="middle" class="diagram-label-muted">Same moving factor, computed independently</text>
+        <line x1="695" y1="190" x2="695" y2="220" class="diagram-stroke" marker-end="url(#arrowf2)"/>
+        <rect x="605" y="225" width="180" height="40" rx="6" class="diagram-fill-accent diagram-stroke"/>
+        <text x="695" y="250" text-anchor="middle" class="diagram-label" font-weight="700">6-digit code</text>
+
+        <text x="440" y="250" text-anchor="middle" class="diagram-label" font-weight="700" font-size="20">=</text>
+        <text x="440" y="300" text-anchor="middle" class="diagram-label-muted">Codes compared — the secret itself is never sent during this exchange</text>
+        <defs>
+          <marker id="arrowf2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 5.2 — Both sides compute the same code independently from a shared secret plus a moving factor; the secret itself never travels again after enrollment.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>If a user's TOTP codes "stop working" after their phone's clock drifts or after a time-zone
+      change, the cause is almost always clock skew between the device and the server, not a corrupted
+      secret — most TOTP validators tolerate a small window of drift precisely because of this. Resetting
+      the shared secret is rarely the right fix; resyncing the device's clock usually is.</p>
+    </div>
+
+    <h2>WebAuthn, FIDO2, and passkeys: phishing-resistant by construction</h2>
+    <p>A typed OTP code is still something a user can be tricked into typing into the wrong place. If an
+    attacker stands up a lookalike login page, a victim who types in their password and a one-time code
+    hands the attacker both — and the attacker replays them against the real site within the code's short
+    validity window. This is a real, common attack pattern, and it's why "has MFA" and "is
+    phishing-resistant" are not the same claim.</p>
+    <p><strong>WebAuthn</strong> is a web standard (from the W3C) for public-key-based authentication
+    built into browsers; <strong>FIDO2</strong> is the broader set of standards it's part of, covering how
+    a browser talks to an authenticator device. A <strong>passkey</strong> is the user-facing name for a
+    FIDO2/WebAuthn credential designed to sync across a person's own devices via their platform account,
+    so it feels like "just logging in" rather than "carrying a security key." Under the hood, all three
+    rest on the same idea: at registration, the device generates a public/private key pair. The
+    <strong>private key never leaves the device</strong> (often protected further by a secure hardware
+    element); the public key is handed to the server. At login, the server sends a challenge; the device
+    signs it with the private key, and critically, that signature is cryptographically bound to the exact
+    origin (domain) that issued the challenge.</p>
+    <p>That origin-binding is the whole point: a lookalike phishing domain cannot obtain a valid signature
+    for the real site's origin, no matter how convincingly it copies the page, because the signing
+    operation itself refuses to run for the wrong origin. There is nothing for the user to be tricked into
+    typing or copying — the secret that matters (the private key) never leaves the device and is never
+    something a human sees or handles at all.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 380" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Why typed OTP codes are phishable but WebAuthn/passkeys are not</title>
+        <desc id="d3">Top row shows a typed OTP flow: a user types a password and one-time code into a
+        lookalike phishing site, the attacker immediately captures and replays both against the real
+        site, and access succeeds — marked as a failure state in danger color. Bottom row shows a
+        WebAuthn or passkey flow: the real site sends a challenge bound to its own exact origin, the
+        device signs it with a private key that never leaves the device, and that signature is only valid
+        for the real site's origin, so a lookalike site presenting a different origin cannot obtain a
+        usable signature at all — marked as a success state.</desc>
+        <rect x="20" y="20" width="860" height="150" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="40" y="46" class="diagram-label" font-weight="700">TYPED OTP, PHISHED</text>
+        <rect x="40" y="60" width="200" height="90" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="140" y="90" text-anchor="middle" class="diagram-label-muted">User types password</text>
+        <text x="140" y="110" text-anchor="middle" class="diagram-label-muted">+ OTP code into</text>
+        <text x="140" y="130" text-anchor="middle" class="diagram-label-muted">lookalike site</text>
+        <line x1="240" y1="105" x2="340" y2="105" class="diagram-stroke" marker-end="url(#arrowf3)"/>
+        <rect x="340" y="60" width="200" height="90" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="440" y="90" text-anchor="middle" class="diagram-label-muted">Attacker captures</text>
+        <text x="440" y="110" text-anchor="middle" class="diagram-label-muted">both values, instantly</text>
+        <text x="440" y="130" text-anchor="middle" class="diagram-label-muted">replays them</text>
+        <line x1="540" y1="105" x2="640" y2="105" class="diagram-stroke" marker-end="url(#arrowf3)"/>
+        <rect x="640" y="60" width="220" height="90" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="750" y="90" text-anchor="middle" class="diagram-label" font-weight="700">Logs in as the victim</text>
+        <text x="750" y="112" text-anchor="middle" class="diagram-label-muted">on the real site —</text>
+        <text x="750" y="132" text-anchor="middle" class="diagram-label-muted">attack succeeds</text>
+
+        <rect x="20" y="200" width="860" height="160" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="40" y="226" class="diagram-label" font-weight="700">WEBAUTHN / PASSKEY</text>
+        <rect x="40" y="240" width="200" height="100" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="140" y="270" text-anchor="middle" class="diagram-label-muted">Real site sends a</text>
+        <text x="140" y="290" text-anchor="middle" class="diagram-label-muted">challenge bound to</text>
+        <text x="140" y="310" text-anchor="middle" class="diagram-label-muted">its exact origin</text>
+        <line x1="240" y1="290" x2="340" y2="290" class="diagram-stroke" marker-end="url(#arrowf3)"/>
+        <rect x="340" y="240" width="200" height="100" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="440" y="270" text-anchor="middle" class="diagram-label-muted">Device signs it with a</text>
+        <text x="440" y="290" text-anchor="middle" class="diagram-label-muted">private key that never</text>
+        <text x="440" y="310" text-anchor="middle" class="diagram-label-muted">leaves the device</text>
+        <line x1="540" y1="290" x2="640" y2="290" class="diagram-stroke" marker-end="url(#arrowf3)"/>
+        <rect x="640" y="240" width="220" height="100" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="750" y="265" text-anchor="middle" class="diagram-label" font-weight="700">Signature only valid</text>
+        <text x="750" y="287" text-anchor="middle" class="diagram-label-muted">for the real origin —</text>
+        <text x="750" y="307" text-anchor="middle" class="diagram-label-muted">a lookalike site gets</text>
+        <text x="750" y="327" text-anchor="middle" class="diagram-label-muted">nothing usable</text>
+        <defs>
+          <marker id="arrowf3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 5.3 — A typed OTP code can be phished and replayed; a WebAuthn/passkey signature is cryptographically bound to the real site's origin, so a lookalike site cannot obtain a usable one.</figcaption>
+    </figure>
+
+    <div class="callout callout--deep-dive">
+      <div class="callout-label">Worth knowing, not memorizing precisely</div>
+      <p>WebAuthn and FIDO2 are active, evolving standards — exact capabilities (e.g. which passkey
+      syncing providers are supported, platform-specific behavior) change over time. Treat the mechanism
+      described here — origin-bound public-key signatures, private key never leaving the device — as the
+      durable concept; verify current specifics against the W3C/FIDO Alliance sites in the deep dive
+      section when it matters for a real decision.</p>
+    </div>
+
+    <h2>Risk-based (adaptive) authentication and step-up authentication</h2>
+    <p>Asking for a second factor on every single login, forever, is one extreme; never asking is the
+    other. <strong>Risk-based authentication</strong> (also called adaptive authentication) sits between
+    them: a system evaluates contextual signals — is this a known device? a usual location? is the action
+    being attempted sensitive? — and raises or lowers how much proof it demands accordingly. When a
+    session that already passed normal login is asked for one additional factor specifically because of
+    an elevated-risk moment, that's <strong>step-up authentication</strong>: not a replacement for the
+    original login, an extra check layered on top of it, triggered by risk rather than by a fixed
+    schedule.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 320" role="img" aria-labelledby="t4 d4">
+        <title id="t4">Risk-based authentication deciding whether to step up</title>
+        <desc id="d4">Signals including known device, usual location, and action sensitivity feed into a
+        risk engine. A branch for low risk leads to proceed with the existing session. A branch for
+        elevated risk leads to a step-up challenge requiring an additional factor, which then leads to the
+        sensitive action being approved only after that extra factor succeeds.</desc>
+        <rect x="20" y="30" width="220" height="130" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="130" y="56" text-anchor="middle" class="diagram-label" font-weight="700">SIGNALS</text>
+        <text x="40" y="82" class="diagram-label-muted">Known device?</text>
+        <text x="40" y="102" class="diagram-label-muted">Usual location?</text>
+        <text x="40" y="122" class="diagram-label-muted">Sensitive action requested?</text>
+        <line x1="240" y1="95" x2="330" y2="95" class="diagram-stroke" marker-end="url(#arrowf4)"/>
+
+        <rect x="330" y="50" width="160" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="410" y="80" text-anchor="middle" class="diagram-label" font-weight="700">RISK</text>
+        <text x="410" y="100" text-anchor="middle" class="diagram-label" font-weight="700">ENGINE</text>
+        <text x="410" y="122" text-anchor="middle" class="diagram-label-muted">scores the session</text>
+
+        <line x1="490" y1="75" x2="590" y2="40" class="diagram-stroke" marker-end="url(#arrowf4)"/>
+        <line x1="490" y1="110" x2="590" y2="200" class="diagram-stroke" marker-end="url(#arrowf4)"/>
+
+        <rect x="590" y="10" width="250" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="715" y="34" text-anchor="middle" class="diagram-label" font-weight="700">LOW RISK</text>
+        <text x="715" y="54" text-anchor="middle" class="diagram-label-muted">Proceed — no extra prompt</text>
+
+        <rect x="590" y="175" width="250" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="715" y="199" text-anchor="middle" class="diagram-label" font-weight="700">ELEVATED RISK</text>
+        <text x="715" y="219" text-anchor="middle" class="diagram-label-muted">Step-up: ask for one more factor</text>
+
+        <line x1="715" y1="235" x2="715" y2="270" class="diagram-stroke" marker-end="url(#arrowf4)"/>
+        <rect x="590" y="275" width="250" height="40" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="715" y="300" text-anchor="middle" class="diagram-label-muted">Sensitive action approved after step-up succeeds</text>
+        <defs>
+          <marker id="arrowf4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 5.4 — Risk-based authentication raises the bar only when signals suggest it should; step-up authentication is that extra bar, applied mid-session.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Meridian Trust</div>
+      <p>Meridian Trust's online banking lets a customer log in, check balances, and review statements
+      with their normal factor combination — password plus a registered device signal is usually enough,
+      because none of that is especially damaging if something is slightly off. The moment that same
+      customer initiates a <strong>wire transfer</strong>, the risk calculation changes: a large,
+      irreversible transfer is exactly the sensitive action that justifies step-up authentication.
+      Meridian's system evaluates signals (is this a new payee? an unusual amount? a device never seen on
+      this account before?) and, if any combination crosses its threshold, interrupts the transfer flow to
+      demand an additional factor — commonly a push approval or OTP — before the funds move. A customer
+      transferring $20 to a payee they've paid monthly for two years from their usual phone sees no extra
+      prompt at all; the same customer attempting a first-time $20,000 transfer from an unrecognized
+      browser does, and that difference is the entire point of risk-based auth rather than a flat "always
+      require MFA for wire transfers" rule, which would frustrate the first case for no security benefit.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see two factors from the same category (two passwords, or a password plus a security
+      question) being called "MFA," the cause is a misunderstanding of what makes multi-factor
+      authentication strong — it's the different categories, not the raw count of prompts.</li>
+      <li>If you see a user locked out claiming their "OTP secret must be corrupted" right after a trip or
+      daylight-saving change, the cause is almost always clock drift on a TOTP device, not a broken
+      secret.</li>
+      <li>If you see a security questionnaire marking SMS one-time codes as equivalent to a hardware
+      security key, the cause is treating "has a second factor" and "is phishing-resistant" as the same
+      property, when SMS and typed OTP codes remain phishable in a way origin-bound WebAuthn signatures
+      are not.</li>
+      <li>If you see every single action in an application demanding a fresh MFA prompt, the cause is
+      usually a missing risk-based layer — treating all actions as equally sensitive instead of reserving
+      step-up for the ones that actually warrant it, which trains users to click through prompts without
+      reading them.</li>
+      <li>If you see "biometric login" described as something that can be "reset" the way a password can,
+      the cause is forgetting that inherence factors can't be rotated the way a credential can — a
+      compromised fingerprint template is a very different kind of incident than a leaked password.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>The three classical authentication factor categories are knowledge, possession, and inherence —
+      genuine MFA combines two or more from <em>different</em> categories, not just two prompts.</li>
+      <li>Context and behavioral signals (device, location, typing pattern) aren't a traditional factor;
+      they feed risk decisions about whether to demand more proof.</li>
+      <li>TOTP and HOTP both work by having two sides independently combine a shared secret with a moving
+      factor — the secret itself is established once at enrollment and never transmitted again.</li>
+      <li>TOTP's moving factor is time (vulnerable to clock drift); HOTP's is a counter (vulnerable to
+      counter desync if a generated code is never used).</li>
+      <li>WebAuthn is the browser-level public-key authentication standard; FIDO2 is the broader standard
+      family it belongs to; a passkey is the user-facing, syncable form of a FIDO2/WebAuthn credential.</li>
+      <li>WebAuthn/passkey signatures are cryptographically bound to the exact origin that issued the
+      challenge, which is precisely why they resist phishing in a way typed OTP codes do not.</li>
+      <li>Risk-based (adaptive) authentication raises or lowers the bar based on contextual signals
+      instead of applying a flat rule to every login.</li>
+      <li>Step-up authentication is an extra factor demanded mid-session, triggered by an elevated-risk
+      signal (a sensitive action, an unfamiliar device) rather than requested on a fixed schedule.</li>
+      <li>Possession-factor choices involve real trade-offs — Riverside Health's badge tap optimizes for
+      clinical speed at the cost of weaker guarantees than a full multi-factor combination.</li>
+      <li>Meridian Trust's wire-transfer step-up shows risk-based auth in a concrete, worked form: routine
+      actions pass with the normal factor set, unusual high-value actions trigger an additional check.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, without naming a specific product, why "password plus security question" is weaker MFA
+      than "password plus hardware key," even though both involve two prompts.</li>
+      <li>Walk through, in your own words, how a TOTP app and a server can agree on the same six-digit
+      code without the secret being sent between them at login time.</li>
+      <li>Why does an attacker who successfully phishes a password and a typed OTP code gain nothing by
+      phishing a WebAuthn-protected login the same way?</li>
+      <li>Describe a situation at Northwind Apps (not Meridian or Riverside) where step-up authentication
+      would make sense, and name which contextual signal would most plausibly trigger it.</li>
+      <li>Riverside Health's badge-tap system accepts a weaker authentication guarantee in exchange for
+      speed. What compensating controls make that an acceptable trade-off rather than a reckless one?</li>
+      <li>If HOTP counters on the server and the device fall out of sync, what does that imply about how
+      the code was generated versus how it was used?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc4226">RFC 4226 — HOTP: An HMAC-Based One-Time Password Algorithm</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6238">RFC 6238 — TOTP: Time-Based One-Time Password Algorithm</a></li>
+      <li><a href="https://www.w3.org/TR/webauthn-3/">W3C Web Authentication (WebAuthn) Level 3 specification</a></li>
+      <li><a href="https://fidoalliance.org/fido2/">FIDO Alliance — FIDO2 overview</a></li>
+      <li><a href="https://pages.nist.gov/800-63-3/sp800-63b.html">NIST SP 800-63B — Authentication and Lifecycle Management (authenticator types, assurance levels)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "authentication-factors-mfa", 15);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Directory Services &amp; Identity Stores — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "directory-services";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part I — IAM Foundations</span>
+      <span class="badge minutes">~35 min</span>
+    </div>
+    <h1>4. Directory Services &amp; Identity Stores</h1>
+    <p class="lede">Before any organization buys an IAM product, it almost always already has a
+    directory — a list of employees, their departments, their phone extensions, and the password that
+    gets them onto the corporate network. This chapter is about that older, more boring-sounding layer:
+    what a directory service actually is, the vendor-agnostic LDAP/X.500 vocabulary for talking about it,
+    and Active Directory, the product that holds this data for most of the world's workforces. None of
+    this is Keycloak-specific — it's the thing Keycloak (and every other IAM product) has to connect to,
+    not replace.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist who only knows "modern" IAM — tokens, OAuth, a shiny admin console — will be
+    stuck the first time a client says "our users are already in AD, we're not re-entering ten thousand
+    employees by hand." That sentence comes up constantly in real engagements, and the honest answer is
+    never "migrate everyone" — it's "connect to what's already there." Understanding directory services is
+    what lets you have that conversation competently, and it's the concept that chapter 7 (federation) and
+    chapter 32 (Keycloak's LDAP/AD user federation) exist to put into practice.</p>
+
+    <h2>What a directory service is, and why it came first</h2>
+    <p>A <strong>directory service</strong> is a specialized data store optimized for one job: holding
+    records about people, systems, and resources, and answering lookups against them quickly — "who is
+    jane.doe," "what department is she in," "is this the right password for her." It is read-heavy,
+    hierarchically organized, and built for lookups rather than for transactions — closer to a phone book
+    than to a bank ledger. That shape predates the modern IAM product category by decades: once an
+    organization has more than a handful of employees, it needs *some* authoritative list of who they are,
+    independent of any particular application.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Directory services aren't a competitor to IAM — they're usually the thing IAM sits on top of. Most
+      organizations already have a directory (frequently Active Directory) holding their workforce before
+      they ever evaluate an IAM product. The IAM system's job is to authenticate and authorize against that
+      existing population, not to become a second, competing copy of it.</p>
+    </div>
+
+    <h2>LDAP and X.500: the vendor-agnostic vocabulary</h2>
+    <p><strong>X.500</strong> is an ITU-T standard, from the directory-services world of the 1980s, that
+    defines a comprehensive (and heavyweight) model for directories and the protocols to access them.
+    <strong>LDAP</strong> (Lightweight Directory Access Protocol) is, as its name says, a lighter-weight
+    protocol for accessing directories that follow that same basic data model, running over ordinary
+    TCP/IP instead of X.500's original heavyweight stack. LDAP is the protocol you'll actually encounter in
+    practice — it's what Keycloak speaks in chapter 32, and what most directory products (including Active
+    Directory) expose for interoperability — so the rest of this chapter uses LDAP's vocabulary, inherited
+    from X.500's data model.</p>
+
+    <p>A directory organizes its data as a tree, and every record in that tree follows the same basic
+    shape:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Core LDAP/X.500 vocabulary</caption>
+        <thead><tr><th>Term</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Directory Information Tree (DIT)</strong></td><td>The hierarchical structure the
+          whole directory is organized into — a tree of entries, typically shaped around an organization's
+          domain and internal structure.</td></tr>
+          <tr><td><strong>Entry</strong></td><td>One record in the tree — a person, a group, a device.
+          Roughly analogous to a row, except entries live in a tree instead of a flat table.</td></tr>
+          <tr><td><strong>Distinguished Name (DN)</strong></td><td>The full, unique path to one entry from
+          the root of the tree — the entry's unique address inside the DIT.</td></tr>
+          <tr><td><strong>Relative Distinguished Name (RDN)</strong></td><td>The single component of a DN
+          that distinguishes an entry from its siblings under the same parent — the DN is just a chain of
+          RDNs read from the entry up to the root.</td></tr>
+          <tr><td><strong>objectClass</strong></td><td>A declaration, on an entry, of what kind of thing it
+          is and which attributes it's allowed or required to carry — e.g. <code>person</code>,
+          <code>organizationalPerson</code>, <code>inetOrgPerson</code>. An entry can have more than one.</td></tr>
+          <tr><td><strong>Attribute</strong></td><td>A named value on an entry — <code>cn</code> (common
+          name), <code>mail</code>, <code>telephoneNumber</code>. This is the same general concept chapter
+          2 introduced (a fact recorded about an identity that isn't itself proof of anything) — a
+          directory attribute is simply that concept's concrete form inside an LDAP entry.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 380" role="img" aria-labelledby="t1 d1">
+        <title id="t1">A Directory Information Tree for Riverside Health</title>
+        <desc id="d1">A tree diagram. The root node is dc=riversidehealth,dc=org. Two organizational-unit
+        children branch from it: ou=Clinicians and ou=Staff. Under ou=Clinicians are two leaf entries,
+        cn=Dr. Amara Chen and cn=Dr. Liam Osei. Under ou=Staff is one leaf entry, cn=Priya Nair. A caption
+        below notes that each leaf entry's distinguished name is the full path from that entry up to the
+        root.</desc>
+        <rect x="330" y="15" width="240" height="55" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="450" y="38" text-anchor="middle" class="diagram-label" font-weight="700">dc=riversidehealth,dc=org</text>
+        <text x="450" y="56" text-anchor="middle" class="diagram-label-muted">root of the DIT</text>
+
+        <line x1="400" y1="70" x2="230" y2="130" class="diagram-stroke"/>
+        <line x1="500" y1="70" x2="670" y2="130" class="diagram-stroke"/>
+
+        <rect x="110" y="130" width="240" height="55" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="230" y="153" text-anchor="middle" class="diagram-label" font-weight="700">ou=Clinicians</text>
+        <text x="230" y="171" text-anchor="middle" class="diagram-label-muted">organizational unit</text>
+
+        <rect x="550" y="130" width="240" height="55" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="670" y="153" text-anchor="middle" class="diagram-label" font-weight="700">ou=Staff</text>
+        <text x="670" y="171" text-anchor="middle" class="diagram-label-muted">organizational unit</text>
+
+        <line x1="180" y1="185" x2="130" y2="250" class="diagram-stroke"/>
+        <line x1="280" y1="185" x2="340" y2="250" class="diagram-stroke"/>
+        <line x1="670" y1="185" x2="670" y2="250" class="diagram-stroke"/>
+
+        <rect x="20" y="250" width="220" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="130" y="276" text-anchor="middle" class="diagram-label" font-weight="700">cn=Dr. Amara Chen</text>
+        <text x="130" y="296" text-anchor="middle" class="diagram-label-muted">leaf entry</text>
+
+        <rect x="250" y="250" width="220" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="360" y="276" text-anchor="middle" class="diagram-label" font-weight="700">cn=Dr. Liam Osei</text>
+        <text x="360" y="296" text-anchor="middle" class="diagram-label-muted">leaf entry</text>
+
+        <rect x="560" y="250" width="220" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="670" y="276" text-anchor="middle" class="diagram-label" font-weight="700">cn=Priya Nair</text>
+        <text x="670" y="296" text-anchor="middle" class="diagram-label-muted">leaf entry</text>
+
+        <text x="450" y="355" text-anchor="middle" class="diagram-label-muted">Dr. Chen's full DN: cn=Dr. Amara Chen,ou=Clinicians,dc=riversidehealth,dc=org — the whole path up to the root.</text>
+      </svg>
+      <figcaption>Figure 4.1 — A Directory Information Tree: organizational units group entries, and an
+      entry's Distinguished Name is its full path to the root.</figcaption>
+    </figure>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 340" role="img" aria-labelledby="t2 d2">
+        <title id="t2">Anatomy of one directory entry</title>
+        <desc id="d2">A single entry box on the left, labeled by its distinguished name, with lines
+        pointing to three boxes on the right: its objectClass values of person, organizationalPerson, and
+        inetOrgPerson; its attributes cn, sn, mail, and department, noted as the same general Attribute
+        concept from chapter 2; and a reminder that the DN itself is the entry's unique address, not an
+        attribute.</desc>
+        <rect x="20" y="130" width="230" height="90" rx="10" class="diagram-fill-accent diagram-stroke"/>
+        <text x="135" y="162" text-anchor="middle" class="diagram-label" font-weight="700">ONE ENTRY</text>
+        <text x="135" y="182" text-anchor="middle" class="diagram-label-muted">DN: cn=Dr. Amara Chen,</text>
+        <text x="135" y="200" text-anchor="middle" class="diagram-label-muted">ou=Clinicians,dc=...,dc=org</text>
+
+        <line x1="250" y1="160" x2="470" y2="45" class="diagram-stroke"/>
+        <line x1="250" y1="175" x2="470" y2="175" class="diagram-stroke"/>
+        <line x1="250" y1="195" x2="470" y2="295" class="diagram-stroke"/>
+
+        <rect x="470" y="10" width="370" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="490" y="34" class="diagram-label" font-weight="700">objectClass</text>
+        <text x="490" y="56" class="diagram-label-muted">person, organizationalPerson, inetOrgPerson</text>
+
+        <rect x="470" y="140" width="370" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="490" y="164" class="diagram-label" font-weight="700">Attributes</text>
+        <text x="490" y="186" class="diagram-label-muted">cn, sn, mail, department: Cardiology</text>
+        <text x="490" y="206" class="diagram-label-muted">same Attribute concept as chapter 2 — facts,</text>
+        <text x="490" y="222" class="diagram-label-muted">not proof of anything on their own</text>
+
+        <rect x="470" y="260" width="370" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="490" y="284" class="diagram-label" font-weight="700">DN is not an attribute</text>
+        <text x="490" y="302" class="diagram-label-muted">it's the entry's unique address in the DIT</text>
+      </svg>
+      <figcaption>Figure 4.2 — One entry declares what kind of thing it is (objectClass), carries facts
+      about itself (attributes), and is addressed by its Distinguished Name.</figcaption>
+    </figure>
+
+    <h2>The bind operation: where directories meet authentication</h2>
+    <p>LDAP defines several operations (search, compare, add, modify, delete), but the one that matters
+    most for IAM is <strong>bind</strong>. Binding means a client connects to the directory and presents a
+    DN and a credential — typically a password — and the directory checks whether that credential is
+    correct for that DN. A <strong>simple bind</strong> with a DN and password is, functionally, an
+    authentication attempt: the directory is being asked "is this the right password for this entry?" the
+    same question an IAM system asks internally, just phrased in LDAP's own vocabulary. An
+    <strong>anonymous bind</strong> connects without presenting any credential at all — useful for
+    unauthenticated read-only lookups, and a real security risk if left open on a directory that was
+    never meant to allow it.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 260" role="img" aria-labelledby="t3 d3">
+        <title id="t3">The LDAP bind operation as an authentication attempt</title>
+        <desc id="d3">A client box sends a bind request containing a distinguished name and a password to a
+        directory server box. The directory server compares the password against the stored credential for
+        that entry and returns one of two outcomes: bind succeeds, meaning the client is now authenticated
+        as that entry, or bind fails, meaning invalid credentials, with no information revealed about which
+        part was wrong.</desc>
+        <rect x="20" y="90" width="200" height="80" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="120" y="122" text-anchor="middle" class="diagram-label" font-weight="700">CLIENT</text>
+        <text x="120" y="142" text-anchor="middle" class="diagram-label-muted">app or user</text>
+
+        <line x1="220" y1="115" x2="400" y2="115" class="diagram-stroke" marker-end="url(#arrow4)"/>
+        <text x="310" y="100" text-anchor="middle" class="diagram-label-muted">bind: DN + password</text>
+
+        <rect x="400" y="60" width="240" height="140" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="520" y="90" text-anchor="middle" class="diagram-label" font-weight="700">DIRECTORY SERVER</text>
+        <text x="420" y="116" class="diagram-label-muted">compares password against</text>
+        <text x="420" y="134" class="diagram-label-muted">the stored credential for</text>
+        <text x="420" y="152" class="diagram-label-muted">that entry's DN</text>
+
+        <line x1="640" y1="100" x2="760" y2="55" class="diagram-stroke" marker-end="url(#arrow4)"/>
+        <line x1="640" y1="150" x2="760" y2="205" class="diagram-stroke" marker-end="url(#arrow4)"/>
+
+        <rect x="690" y="20" width="150" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="765" y="46" text-anchor="middle" class="diagram-label" font-weight="700">BIND OK</text>
+        <text x="765" y="64" text-anchor="middle" class="diagram-label-muted">authenticated</text>
+
+        <rect x="690" y="180" width="150" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="765" y="206" text-anchor="middle" class="diagram-label" font-weight="700">BIND FAILS</text>
+        <text x="765" y="224" text-anchor="middle" class="diagram-label-muted">invalid credentials</text>
+
+        <defs>
+          <marker id="arrow4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 4.3 — A simple bind is a password check against a directory entry — the same AuthN
+      question (chapter 3), asked in LDAP's terms.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>A bind succeeding only proves the password was correct for that DN — it says nothing about what
+      that entry is allowed to do. Treating "bind succeeded" as "access granted" conflates authentication
+      and authorization exactly the way chapter 3 warned against; a real system still has to make a
+      separate authorization decision afterward.</p>
+    </div>
+
+    <h2>Active Directory: the dominant enterprise directory product</h2>
+    <p><strong>Active Directory (AD)</strong> is Microsoft's directory product, and it is the directory
+    most workforces actually run on — if an organization has Windows-joined machines, there's a very good
+    chance AD is the authoritative store for its employee population. AD implements the same general
+    directory-service shape described above (it exposes an LDAP interface among others), with its own
+    vocabulary layered on top:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Active Directory vocabulary mapped to generic LDAP concepts</caption>
+        <thead><tr><th>AD term</th><th>What it means</th><th>Generic LDAP equivalent</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Domain</strong></td><td>A security and administrative boundary — a set of users,
+          computers, and policies managed together, identified by a DNS-style name such as
+          <code>riversidehealth.local</code>.</td><td>Roughly, the root of a DIT for that organization.</td></tr>
+          <tr><td><strong>Organizational Unit (OU)</strong></td><td>A container used to group users,
+          computers, or groups within a domain for the purpose of applying policy and delegating
+          administration — e.g. an OU for Clinicians, a separate OU for IT Staff.</td><td>Analogous to
+          the generic <code>ou</code> entries in an LDAP DIT.</td></tr>
+          <tr><td><strong>Domain Controller (DC)</strong></td><td>A server that holds a copy of the domain's
+          directory data and services authentication requests against it.</td><td>The directory server
+          itself.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>One more fact worth knowing and nothing more: AD's native authentication protocol is
+    <strong>Kerberos</strong>, not a simple LDAP bind — that's how a domain-joined Windows machine actually
+    authenticates a logged-in user behind the scenes. Kerberos is its own ticket-based protocol with real
+    depth (key distribution centers, ticket-granting tickets, mutual authentication), and it is
+    deliberately out of scope for this course — you only need to know it exists and that it's AD's native
+    mechanism, not LDAP bind, so you aren't left wondering later why "AD authentication" and "LDAP bind"
+    aren't quite the same conversation.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 320" role="img" aria-labelledby="t4 d4">
+        <title id="t4">An Active Directory domain structure</title>
+        <desc id="d4">A domain controller box for the domain riversidehealth.local sits above two
+        organizational unit boxes, OU=Clinicians and OU=ITStaff, each containing user objects. A note
+        states that domain-joined machines actually authenticate using Kerberos, AD's native protocol, not
+        a plain LDAP bind, and that Kerberos itself is out of scope for this course.</desc>
+        <rect x="300" y="10" width="280" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="440" y="36" text-anchor="middle" class="diagram-label" font-weight="700">DOMAIN CONTROLLER</text>
+        <text x="440" y="56" text-anchor="middle" class="diagram-label-muted">domain: riversidehealth.local</text>
+
+        <line x1="380" y1="70" x2="220" y2="120" class="diagram-stroke"/>
+        <line x1="500" y1="70" x2="660" y2="120" class="diagram-stroke"/>
+
+        <rect x="90" y="120" width="260" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="220" y="146" text-anchor="middle" class="diagram-label" font-weight="700">OU=Clinicians</text>
+        <text x="110" y="172" class="diagram-label-muted">user: Dr. Amara Chen</text>
+        <text x="110" y="192" class="diagram-label-muted">user: Dr. Liam Osei</text>
+        <text x="110" y="222" class="diagram-label-muted">policy applies per-OU</text>
+
+        <rect x="530" y="120" width="260" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="660" y="146" text-anchor="middle" class="diagram-label" font-weight="700">OU=ITStaff</text>
+        <text x="550" y="172" class="diagram-label-muted">user: Priya Nair</text>
+        <text x="550" y="222" class="diagram-label-muted">different policy than Clinicians</text>
+
+        <text x="440" y="290" text-anchor="middle" class="diagram-label-muted">Day-to-day Windows login actually uses Kerberos, AD's native protocol — out of scope here, LDAP bind is the concept that matters for this course.</text>
+      </svg>
+      <figcaption>Figure 4.4 — An AD domain groups users into OUs for policy and administration; Kerberos,
+      not LDAP bind, is what a domain-joined machine actually uses for day-to-day login.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Riverside Health</div>
+      <p>Riverside Health's entire clinician workforce — doctors, nurses, administrative staff — lives in
+      an on-prem Active Directory that long predates any IAM modernization project. Shift schedules,
+      department assignments, and badge-linked accounts are already there. When Riverside eventually
+      connects Keycloak (chapter 32), the goal is never to copy ten thousand clinicians into a new user
+      store — it's to have Keycloak authenticate against the AD that's already authoritative, so nurses
+      keep using the same credentials they've always had, and HR keeps managing joiners/leavers in the
+      one place it already does.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps</div>
+      <p>Northwind Apps also runs an Active Directory — but only for its own internal staff (engineers,
+      support, sales). Its SaaS customers' end users — the thousands of people at hundreds of customer
+      companies who log into Northwind's product — are <em>not</em> in that AD at all. They live in a
+      completely separate CIAM identity store, because they aren't Northwind employees and have no
+      business being managed alongside Northwind's own workforce directory. This is the workforce-directory
+      vs. CIAM-store split in concrete form: same company, two populations, two stores, two very different
+      sets of governance rules.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 280" role="img" aria-labelledby="t5 d5">
+        <title id="t5">Northwind Apps: two separate identity stores, deliberately not connected</title>
+        <desc id="d5">Two boxes side by side with no connecting line between them, emphasizing their
+        separation. The left box, Active Directory, workforce, holds Northwind's own employees such as
+        engineers, support staff, and sales. The right box, CIAM identity store, customer end users, holds
+        thousands of users across hundreds of customer companies who log into the Northwind product. A
+        caption states that these are deliberately separate populations with separate governance.</desc>
+        <rect x="40" y="70" width="350" height="160" rx="10" class="diagram-fill-info diagram-stroke"/>
+        <text x="215" y="100" text-anchor="middle" class="diagram-label" font-weight="700">ACTIVE DIRECTORY (workforce)</text>
+        <text x="60" y="130" class="diagram-label-muted">Northwind's own employees:</text>
+        <text x="60" y="150" class="diagram-label-muted">engineers, support, sales</text>
+        <text x="60" y="180" class="diagram-label-muted">Managed by Northwind's own IT/HR —</text>
+        <text x="60" y="198" class="diagram-label-muted">joiner-mover-leaver for Northwind staff</text>
+
+        <rect x="490" y="70" width="350" height="160" rx="10" class="diagram-fill-success diagram-stroke"/>
+        <text x="665" y="100" text-anchor="middle" class="diagram-label" font-weight="700">CIAM STORE (customer end users)</text>
+        <text x="510" y="130" class="diagram-label-muted">Thousands of users across</text>
+        <text x="510" y="150" class="diagram-label-muted">hundreds of customer companies</text>
+        <text x="510" y="180" class="diagram-label-muted">Not Northwind employees — governed</text>
+        <text x="510" y="198" class="diagram-label-muted">by completely different rules</text>
+
+        <text x="440" y="255" text-anchor="middle" class="diagram-label-muted">No line between these boxes on purpose — deliberately separate populations, deliberately separate stores.</text>
+      </svg>
+      <figcaption>Figure 4.5 — Northwind Apps keeps its workforce directory and its CIAM customer store
+      completely separate — the same split chapter 12 will name formally as Workforce IAM vs. CIAM.</figcaption>
+    </figure>
+
+    <h2>Why this matters for federation</h2>
+    <p>Put the pieces together and the motivation for two later chapters becomes obvious: an organization
+    almost never wants to migrate an existing directory's population into a separate IAM product — that's
+    slow, risky, and creates two copies of the truth that will drift apart. Instead, the IAM system
+    connects to the directory that's already authoritative. Chapter 7 names this pattern formally as
+    <strong>federation</strong>; chapter 32 is where you'll configure Keycloak's actual LDAP/AD
+    <strong>user federation</strong> feature and watch it happen for real.</p>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak's <strong>User Federation</strong> provider lets a realm authenticate against an existing
+      LDAP directory or Active Directory instead of storing passwords itself — Keycloak performs a bind
+      against the directory on the user's behalf. Chapter 32 sets this up end to end, against a real
+      containerized LDAP server, including attribute mapping and sync settings.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see someone treat "LDAP" and "Active Directory" as synonyms, the cause is usually not
+      realizing LDAP is a vendor-agnostic protocol and AD is one (very common) product that happens to speak
+      it alongside its own native mechanisms.</li>
+      <li>If you see a successful bind being treated as proof the user is authorized for something, the
+      cause is conflating authentication and authorization again — a bind only proves the password was
+      correct, nothing about permissions.</li>
+      <li>If you see a directory configured to allow anonymous bind in production with no clear reason, the
+      cause is usually a default nobody revisited, not a deliberate security decision.</li>
+      <li>If you see a project plan that includes "migrate all AD users into the new IAM tool," the cause is
+      usually not having considered federation as the alternative — ask why the existing directory can't
+      just be connected to instead.</li>
+      <li>If you see someone expecting a DN to behave like a stable, memorable username, the cause is
+      forgetting that a DN encodes an entry's position in the tree — move the entry (e.g. a different OU)
+      and its DN can change.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>A directory service is a read-optimized store for people/system/resource records, and most
+      organizations have one before they adopt any IAM product.</li>
+      <li>X.500 is the heavyweight 1980s directory standard; LDAP is the lightweight, TCP/IP-based protocol
+      most real directories (including Active Directory) actually speak.</li>
+      <li>A Directory Information Tree (DIT) organizes entries hierarchically; a Distinguished Name (DN) is
+      an entry's full, unique path from the root.</li>
+      <li>An entry's objectClass values declare what kind of thing it is; its attributes are facts about
+      it — the same general Attribute concept from chapter 2, in concrete LDAP form.</li>
+      <li>The bind operation is literally an authentication attempt: a DN plus a credential, checked by the
+      directory — but a successful bind proves nothing about authorization.</li>
+      <li>Active Directory is the dominant enterprise directory product; domains and organizational units
+      (OUs) are its structure for grouping and policy.</li>
+      <li>Kerberos is AD's native authentication protocol for day-to-day login — worth knowing it exists,
+      deliberately out of this course's depth.</li>
+      <li>Federation (chapter 7) and Keycloak's user federation (chapter 32) exist specifically to connect
+      an IAM system to an existing directory instead of migrating its population.</li>
+      <li>Workforce directories and CIAM identity stores are often two completely separate systems inside
+      the same organization, as Northwind Apps illustrates.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>In your own words, explain why most organizations had a directory before they ever evaluated an
+      IAM product.</li>
+      <li>Walk through the difference between an entry's Distinguished Name, its objectClass values, and its
+      attributes, using an example that isn't Dr. Amara Chen.</li>
+      <li>Why does a successful LDAP bind not automatically mean the user is authorized to do anything? Tie
+      your answer back to chapter 3's AuthN/AuthZ distinction.</li>
+      <li>Describe, at a high level, why Riverside Health would prefer connecting Keycloak to its existing
+      Active Directory over migrating every clinician into a new user store.</li>
+      <li>Explain why Northwind Apps keeps its internal staff directory and its customer-facing CIAM store
+      completely separate, rather than putting everyone in one Active Directory.</li>
+      <li>What's the one fact this chapter wants you to retain about Kerberos, and why does the chapter
+      deliberately not go deeper?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc4511">RFC 4511 — Lightweight Directory Access Protocol (LDAP): The Protocol</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc4512">RFC 4512 — LDAP: Directory Information Models</a></li>
+      <li><a href="https://www.itu.int/rec/T-REC-X.500">ITU-T Recommendation X.500 — The Directory: Overview of Concepts, Models and Services</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview">Microsoft Learn — Active Directory Domain Services Overview</a></li>
+      <li><a href="https://ldap.com/the-ldap-bind-operation/">ldap.com — The LDAP Bind Operation</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "directory-services", 15);
+  });
+</script>
+</body>
+</html>
