@@ -52,6 +52,7 @@ window.SlideDeck = (function () {
     var prevBtn = document.getElementById("pager-prev");
     var nextBtn = document.getElementById("pager-next");
     var markBtn = document.getElementById("pager-mark");
+    var markAllBtn = document.getElementById("mark-all-btn");
     var outlineToggle = document.getElementById("outline-toggle");
     var outlinePanel = document.getElementById("deck-outline-panel");
 
@@ -59,6 +60,15 @@ window.SlideDeck = (function () {
       var n = 0;
       slides.forEach(function (s) { if (state.done[s.dataset.slide]) n++; });
       return n;
+    }
+
+    function allRead() { return doneCount() === total; }
+
+    function renderMarkAll() {
+      if (!markAllBtn) return;
+      var done = allRead();
+      markAllBtn.textContent = done ? "Whole chapter marked as read ✓" : "Mark whole chapter as read";
+      markAllBtn.classList.toggle("is-done", done);
     }
 
     function renderOutline() {
@@ -128,6 +138,7 @@ window.SlideDeck = (function () {
       renderOutline();
       renderProgress();
       renderPager();
+      renderMarkAll();
       writeState(chapterSlug, state);
       try { history.replaceState(null, "", "#" + slides[current].dataset.slide); } catch (e) { /* ignore */ }
     }
@@ -152,6 +163,13 @@ window.SlideDeck = (function () {
       markBtn.addEventListener("click", function () {
         var id = slides[current].dataset.slide;
         state.done[id] = !state.done[id];
+        render();
+      });
+    }
+    if (markAllBtn) {
+      markAllBtn.addEventListener("click", function () {
+        var newValue = !allRead();
+        slides.forEach(function (s) { state.done[s.dataset.slide] = newValue; });
         render();
       });
     }

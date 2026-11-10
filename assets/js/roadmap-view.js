@@ -200,9 +200,13 @@
     redrawTimer = setTimeout(drawConnectors, 150);
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function refresh() {
     renderStats();
     renderTrack();
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    refresh();
     window.addEventListener("resize", scheduleRedraw);
     var themeBtn = document.getElementById("theme-toggle");
     if (themeBtn) themeBtn.addEventListener("click", scheduleRedraw);
@@ -210,5 +214,14 @@
     if (fontBtn) fontBtn.addEventListener("click", scheduleRedraw);
     // Fonts/webfonts loading after first paint can shift leaf heights; redraw once more shortly after load.
     window.addEventListener("load", scheduleRedraw);
+  });
+
+  // Returning to this page via the browser's Back/Forward button restores it from the bfcache: the
+  // browser repaints the exact DOM it froze on the way out and does NOT re-fire DOMContentLoaded or
+  // re-run this script, so progress marked read on a chapter page in between would still show the
+  // stale, unmarked roadmap. `pageshow` fires on every reveal of the page, including a bfcache
+  // restore (event.persisted === true there) — re-read localStorage and redraw every time it fires.
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) refresh();
   });
 })();

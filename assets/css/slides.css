@@ -28,6 +28,15 @@
 .deck-progress-mini .mini-track {
   background: var(--border); border-radius: 999px; height: 0.45em; overflow: hidden; margin-top: 0.4em;
 }
+
+.mark-all-btn {
+  width: 100%; font: 700 0.86em/1.3 inherit; padding: 0.6em 0.7em; border-radius: 8px;
+  border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--accent-strong); cursor: pointer;
+}
+.mark-all-btn:hover { background: var(--accent); color: var(--accent-contrast); }
+.mark-all-btn.is-done {
+  border-style: solid; border-color: var(--success); background: var(--success-soft); color: var(--success);
+}
 .deck-progress-mini .mini-fill { background: var(--success); height: 100%; border-radius: 999px; transition: width 0.25s ease; }
 
 #slide-outline { list-style: none; margin: 0; padding: 0; }

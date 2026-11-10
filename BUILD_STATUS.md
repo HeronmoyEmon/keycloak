@@ -667,14 +667,27 @@ project) remain.
   2. **Chapter pages are now slide decks, not single-scroll books**: each chapter's existing content is
      unchanged but re-chunked into `<section class="slide" data-slide="id" data-title="...">` blocks,
      one shown at a time, with a left outline panel (this chapter's slides only, not the global 50-
-     chapter list — that panel also carries a "← Back to roadmap" link), a bottom pager (Previous /
-     Mark as read / Next), and a "Slide N of M" position label. The pager's Previous/Next buttons bridge
-     to the adjacent chapter when at the first/last slide, subsuming the old `#chapter-nav-footer`
-     mechanism. New files: `assets/css/slides.css`, `assets/js/slides.js`. Progress persists to
-     `localStorage["iam:read:<slug>"] = {total, done: {slideId: true, ...}}`, which `roadmap-view.js`
-     reads (without loading any chapter page) to compute per-chapter and overall progress on the
-     roadmap. Pattern adapted (clean-room, not copied) from a `localStorage`-backed "mark as
-     learned"/per-lesson-pager pattern the user pointed at as a reference.
+     chapter list — that panel also carries a "← Back to roadmap" link, a "Mark whole chapter as read"
+     toggle button — `#mark-all-btn`, added 2026-11-10 after the user asked for a one-click way to mark
+     every slide in a chapter instead of each individually — and the per-slide outline list), a bottom
+     pager (Previous / Mark as read / Next), and a "Slide N of M" position label. The pager's Previous/
+     Next buttons bridge to the adjacent chapter when at the first/last slide, subsuming the old
+     `#chapter-nav-footer` mechanism. New files: `assets/css/slides.css`, `assets/js/slides.js`. Progress
+     persists to `localStorage["iam:read:<slug>"] = {total, done: {slideId: true, ...}}`, which
+     `roadmap-view.js` reads (without loading any chapter page) to compute per-chapter and overall
+     progress on the roadmap. Pattern adapted (clean-room, not copied) from a `localStorage`-backed "mark
+     as learned"/per-lesson-pager pattern the user pointed at as a reference. **Every future chapter
+     conversion must include the `#mark-all-btn` markup** inside `#deck-outline-panel` (between the
+     back-to-roadmap link and `#deck-progress-mini`/`#slide-outline`) — `slides.js` already no-ops
+     safely if it's missing, but the feature should be present on every chapter, not just chapter 1.
+  - **Bug fixed 2026-11-10**: marking every slide in a chapter as read did not update the roadmap's
+    progress ring until a hard refresh. Root cause: navigating back to `index.html` via the browser's
+    Back button (or the sidebar's "← Back to roadmap" link, depending on the browser's heuristics) can
+    restore the page from the **bfcache** — the exact DOM/JS state frozen on the way out, repainted
+    without re-firing `DOMContentLoaded` or re-running `roadmap-view.js`, so the freshly-written
+    `localStorage` progress was never re-read. Fixed by also listening for the `pageshow` event (which
+    fires on every reveal of the page, with `event.persisted === true` specifically on a bfcache
+    restore) and re-running the stats/track render in that case.
   - `book.js`/`quiz.js`/`glossary-data.js`/`quiz-data.js`/`nav-data.js` are all **unchanged** — the new
     chapter template still loads them in the same order and still calls `QuizEngine.renderQuiz(...)`;
     `book.js`'s old `buildSidebar()`/`buildChapterFooter()` simply no-op on the new template since it no
