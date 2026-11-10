@@ -17,16 +17,16 @@
    own background in each theme, not copied from light theme). */
 :root {
   --bg: #f5efe1;
-  --bg-alt: #eceedf;
+  --bg-alt: #f1f2e8;
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --text: #27241f;
   --text-muted: #6b6456;
-  --border: #e3d9c7;
+  --border: #ece4d5;
   --accent: #8c6b52;
   --accent-strong: #6b4e39;
   --accent-contrast: #ffffff;
-  --accent-soft: #d9c4b0;
+  --accent-soft: #ecdfd0;
   --success: #3c8562;
   --success-soft: #e1eee5;
   --warning: #b2770e;
@@ -35,8 +35,11 @@
   --danger-soft: #f6e1de;
   --info: #3f8fa8;
   --info-soft: #dceef1;
-  --milestone-bg: #bbdce5;
-  --milestone-contrast: #204552;
+  /* Milestone badges are deliberately the one bold, saturated element on the roadmap — everything
+     else leans pale/pastel, so the Part markers need real depth of their own to read as anchors
+     rather than blending into the page; white text needs a genuinely dark fill to sit on. */
+  --milestone-bg: #3d7690;
+  --milestone-contrast: #ffffff;
   --code-bg: #2b2a22;
   --code-text: #f0ecdd;
   --line-strong: #8a8166;
@@ -67,8 +70,8 @@
   --danger-soft: #3b1916;
   --info: #7fd0de;
   --info-soft: #15323a;
-  --milestone-bg: #bbdce5;
-  --milestone-contrast: #16272d;
+  --milestone-bg: #3d7690;
+  --milestone-contrast: #ffffff;
   --code-bg: #121008;
   --code-text: #eae2ce;
   --line-strong: #8d8166;
@@ -86,7 +89,7 @@
   --accent: #8c6b52;
   --accent-strong: #6b4e39;
   --accent-contrast: #ffffff;
-  --accent-soft: #d9c4b0;
+  --accent-soft: #ecdfd0;
   --success: #3f6b35;
   --success-soft: #e4ecd9;
   --warning: #8a5c0a;
@@ -95,8 +98,8 @@
   --danger-soft: #f1dcd6;
   --info: #2c6670;
   --info-soft: #dcebe8;
-  --milestone-bg: #bbdce5;
-  --milestone-contrast: #204552;
+  --milestone-bg: #3d7690;
+  --milestone-contrast: #ffffff;
   --code-bg: #2a2015;
   --code-text: #ecdfc4;
   --line-strong: #5c4a30;
@@ -124,8 +127,8 @@
     --danger-soft: #3b1916;
     --info: #7fd0de;
     --info-soft: #15323a;
-    --milestone-bg: #bbdce5;
-    --milestone-contrast: #16272d;
+    --milestone-bg: #3d7690;
+    --milestone-contrast: #ffffff;
     --code-bg: #121008;
     --code-text: #eae2ce;
     --line-strong: #8d8166;

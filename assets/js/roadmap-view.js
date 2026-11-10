@@ -146,7 +146,7 @@
     svg.setAttribute("height", mapRect.height);
     svg.setAttribute("viewBox", "0 0 " + mapRect.width + " " + mapRect.height);
 
-    var STANDOFF = 14; // px of breathing room between a box edge and where its connector line starts/ends
+    var STANDOFF = 22; // px of breathing room between a box edge and where its connector line starts/ends
     var paths = [];
     var rows = Array.prototype.slice.call(document.querySelectorAll(".road-row"));
     rows.forEach(function (row) {

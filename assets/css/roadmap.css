@@ -40,7 +40,7 @@
 .road-row {
   position: relative; z-index: 1;
   display: grid; grid-template-columns: 1fr 230px 1fr;
-  align-items: center; column-gap: 48px; margin-bottom: 16px;
+  align-items: center; column-gap: 72px; margin-bottom: 16px;
 }
 .road-row:last-child { margin-bottom: 0; }
 
