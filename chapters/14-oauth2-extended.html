@@ -156,7 +156,8 @@
 
         <line x1="400" y1="430" x2="210" y2="430" class="diagram-stroke" marker-end="url(#arrowD1)"/>
         <rect x="20" y="445" width="580" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="310" y="475" text-anchor="middle" class="diagram-label" font-weight="700">access_token + id_token + refresh_token — real tokens, zero browser round trip on the device itself</text>
+        <text x="310" y="468" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">access_token + id_token + refresh_token</text>
+        <text x="310" y="484" text-anchor="middle" class="diagram-label-muted" font-size="11">real tokens, zero browser round trip on the device itself</text>
 
         <rect x="630" y="370" width="250" height="125" rx="8" class="diagram-fill-warning diagram-stroke"/>
         <text x="650" y="394" class="diagram-label" font-weight="700">WHAT NEVER HAPPENED</text>
@@ -515,7 +516,8 @@
         <rect x="460" y="135" width="400" height="50" rx="8" class="diagram-fill-warning diagram-stroke"/>
         <text x="660" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">Introspect again: checks signature + exp only — both still good</text>
         <rect x="460" y="195" width="400" height="50" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="660" y="225" text-anchor="middle" class="diagram-label" font-weight="700">active: true — verified live, exactly this way, in this chapter's lab</text>
+        <text x="660" y="218" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">active: true</text>
+        <text x="660" y="234" text-anchor="middle" class="diagram-label-muted" font-size="11">verified live, exactly this way, in this chapter's lab</text>
 
         <text x="440" y="300" text-anchor="middle" class="diagram-label-muted" font-size="11">Same revocation call, same wire protocol, two completely different real outcomes — the token's own design decides which one you get.</text>
 
