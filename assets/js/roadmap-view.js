@@ -156,46 +156,38 @@
       var side = row.getAttribute("data-side");
       var dir = side === "right" ? 1 : -1;
       var badgeRect = badge.getBoundingClientRect();
-      var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left + dir * STANDOFF;
-      var by = (badgeRect.top + badgeRect.height / 2) - mapRect.top;
+      var badgeX = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left + dir * STANDOFF;
+      var badgeTop = badgeRect.top - mapRect.top;
 
       var leaves = Array.prototype.slice.call(cluster.querySelectorAll(".road-leaf"));
       if (!leaves.length) return;
 
-      // A cluster's leaves all share the same column edge — only their y differs — so one shared
-      // "trunk" line down that edge plus a short straight stub per leaf reads far cleaner than N
-      // individual curves all converging on the same point next to the badge, especially for a big
-      // Part like IAM Foundations (9 chapters): that fan of curves was the congestion.
-      var firstLeafRect = leaves[0].getBoundingClientRect();
-      var lx = (side === "right" ? firstLeafRect.left : firstLeafRect.right) - mapRect.left - dir * STANDOFF;
-      var leafYs = leaves.map(function (leaf) {
+      var leafPoints = leaves.map(function (leaf) {
         var r = leaf.getBoundingClientRect();
-        return (r.top + r.height / 2) - mapRect.top;
+        return {
+          x: (side === "right" ? r.left : r.right) - mapRect.left - dir * STANDOFF,
+          y: (r.top + r.height / 2) - mapRect.top
+        };
       });
-      var stemTop = Math.min.apply(null, leafYs);
-      var stemBottom = Math.max.apply(null, leafYs);
-      var stemX = bx + (lx - bx) * 0.55;
-      var stemMidY = (stemTop + stemBottom) / 2;
-      var approachMidX = (bx + stemX) / 2;
+      var minY = Math.min.apply(null, leafPoints.map(function (p) { return p.y; }));
+      var maxY = Math.max.apply(null, leafPoints.map(function (p) { return p.y; }));
 
-      // One curved approach from the badge to the trunk's vertical center.
-      paths.push(
-        '<path class="road-connector" d="M' + bx.toFixed(1) + ',' + by.toFixed(1) +
-        ' C ' + approachMidX.toFixed(1) + ',' + by.toFixed(1) + ' ' + approachMidX.toFixed(1) + ',' + stemMidY.toFixed(1) +
-        ' ' + stemX.toFixed(1) + ',' + stemMidY.toFixed(1) + '"></path>'
-      );
-      // The trunk itself (degenerates to nothing for a single-chapter Part — fine, no gap results).
-      if (stemTop !== stemBottom) {
+      // Individual curved line per chapter, roadmap.sh-style — but instead of pinching every curve
+      // through the exact same point on the badge (which is what bunched up for a big Part like IAM
+      // Foundations with 9 chapters), spread each curve's starting point across the badge's own edge,
+      // proportional to where that chapter sits within the cluster's vertical span. Lines fan out
+      // gently from the start instead of all passing through one spot.
+      var inset = Math.min(badgeRect.height * 0.22, 9);
+      leafPoints.forEach(function (leaf, i) {
+        var t = (maxY === minY) ? 0.5 : (leaf.y - minY) / (maxY - minY);
+        var by = badgeTop + inset + t * (badgeRect.height - inset * 2);
+        var split = 0.5 + ((i % 3) - 1) * 0.1;
+        var c1x = badgeX + (leaf.x - badgeX) * split;
+        var c2x = badgeX + (leaf.x - badgeX) * (1 - split);
         paths.push(
-          '<path class="road-connector" d="M' + stemX.toFixed(1) + ',' + stemTop.toFixed(1) +
-          ' L ' + stemX.toFixed(1) + ',' + stemBottom.toFixed(1) + '"></path>'
-        );
-      }
-      // A short straight stub from the trunk to each leaf — flat and non-overlapping by construction.
-      leafYs.forEach(function (ly) {
-        paths.push(
-          '<path class="road-connector" d="M' + stemX.toFixed(1) + ',' + ly.toFixed(1) +
-          ' L ' + lx.toFixed(1) + ',' + ly.toFixed(1) + '"></path>'
+          '<path class="road-connector" d="M' + badgeX.toFixed(1) + ',' + by.toFixed(1) +
+          ' C ' + c1x.toFixed(1) + ',' + by.toFixed(1) + ' ' + c2x.toFixed(1) + ',' + leaf.y.toFixed(1) +
+          ' ' + leaf.x.toFixed(1) + ',' + leaf.y.toFixed(1) + '"></path>'
         );
       });
     });
