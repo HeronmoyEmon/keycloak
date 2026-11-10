@@ -1,9 +1,13 @@
 /* Visual roadmap landing page renderer. Clean-room build (CLAUDE.md §2.6).
-   Reads window.COURSE_NAV (nav-data.js) for the chapter list, and scans
-   localStorage["iam:read:<slug>"] (written by slides.js on each chapter
-   page) to compute per-chapter and overall slide-read progress. Never
-   invents a total slide count for a chapter that hasn't been opened yet —
-   those chapters simply show as "not started" rather than 0/N. */
+   Renders a roadmap.sh-style mind-map spine: one node per Part down a central
+   trunk, each sprouting a cluster of chapter "leaves" on an alternating side.
+   Connector curves between a Part's spine node and its chapter leaves are
+   drawn at runtime from real getBoundingClientRect() measurements (box
+   heights vary with content/theme/font-scale, so they can't be hardcoded),
+   using one shared absolutely-positioned SVG overlay. Reads window.COURSE_NAV
+   (nav-data.js) for the chapter list, and scans localStorage["iam:read:<slug>"]
+   (written by slides.js on each chapter page) for per-chapter progress. Never
+   invents a total slide count for a chapter that hasn't been opened yet. */
 (function () {
   "use strict";
 
@@ -52,46 +56,37 @@
     }).join("");
   }
 
-  function nodeHtml(c) {
+  function leafHtml(c) {
     var num = pad2(c.number);
+    var labBadge = c.hasLab ? '<span class="road-leaf-lab">lab</span>' : "";
     if (!c.built) {
       return (
-        '<li class="road-node locked">' +
-        '<span class="road-card">' +
-        '<span class="road-marker"><span class="road-marker-inner">' + num + '</span></span>' +
-        '<span class="road-card-body">' +
-        '<span class="road-card-title">' + c.title + '</span>' +
-        '<span class="road-card-meta"><span class="badge minutes">Coming soon</span></span>' +
-        '</span></span></li>'
+        '<li class="road-leaf locked">' +
+        '<span class="road-leaf-static">' +
+        '<span class="road-leaf-num">' + num + '</span>' +
+        '<span class="road-leaf-title">' + c.title + labBadge + '</span>' +
+        '<span class="road-leaf-status"></span>' +
+        '</span></li>'
       );
     }
     var href = "chapters/" + num + "-" + c.slug + ".html";
     var p = readProgress(c.slug);
     var stateClass = "built";
-    var marker = '<span class="road-marker-inner">' + num + '</span>';
-    var progressText = "";
-    var markerStyle = "";
+    var statusStyle = "";
     if (p && p.total) {
-      if (p.done >= p.total) {
-        stateClass = "complete";
-        marker = '<span class="road-marker-inner">✓</span>';
-        progressText = '<span class="road-card-progress-text">All ' + p.total + ' slides read</span>';
-      } else if (p.done > 0) {
+      if (p.done >= p.total) stateClass = "complete";
+      else if (p.done > 0) {
         stateClass = "in-progress";
-        var pct = Math.round((p.done / p.total) * 100);
-        markerStyle = ' style="--pct:' + pct + '"';
-        progressText = '<span class="road-card-progress-text">' + p.done + ' / ' + p.total + ' slides read</span>';
+        statusStyle = ' style="--pct:' + Math.round((p.done / p.total) * 100) + '"';
       }
     }
-    var labBadge = c.hasLab ? '<span class="badge lab">lab</span>' : "";
     return (
-      '<li class="road-node ' + stateClass + '">' +
-      '<a class="road-card" href="' + href + '">' +
-      '<span class="road-marker"' + markerStyle + '>' + marker + '</span>' +
-      '<span class="road-card-body">' +
-      '<span class="road-card-title">' + c.title + '</span>' +
-      '<span class="road-card-meta"><span class="badge minutes">' + c.minutes + ' min</span>' + labBadge + progressText + '</span>' +
-      '</span></a></li>'
+      '<li class="road-leaf ' + stateClass + '">' +
+      '<a class="road-leaf-link" href="' + href + '">' +
+      '<span class="road-leaf-num">' + num + '</span>' +
+      '<span class="road-leaf-title">' + c.title + labBadge + '</span>' +
+      '<span class="road-leaf-status"' + statusStyle + '></span>' +
+      '</a></li>'
     );
   }
 
@@ -106,19 +101,92 @@
       byPart[c.part].push(c);
     });
 
-    var html = '<ol class="road-list">' + order.map(function (partName) {
+    var rowsHtml = order.map(function (partName, i) {
       var chapters = byPart[partName];
+      var side = (i % 2 === 0) ? "right" : "left";
       var builtCount = chapters.filter(function (c) { return c.built; }).length;
-      var header =
-        '<li class="road-group-header"><h2>' + partName + '</h2>' +
-        '<span class="road-group-progress">' + builtCount + ' / ' + chapters.length + ' chapters available</span></li>';
-      return header + chapters.map(nodeHtml).join("");
-    }).join("") + '</ol>';
-    mount.innerHTML = html;
+      var bits = partName.split(" — ");
+      var partNum = bits[0] || partName;
+      var partDesc = bits[1] || "";
+      var leaves = '<ul class="road-leaf-cluster">' + chapters.map(leafHtml).join("") + '</ul>';
+      var empty = '<div class="road-leaf-cluster-empty"></div>';
+      var spine =
+        '<div class="road-spine-node"><div class="road-part-badge">' + partNum +
+        (partDesc ? '<span class="road-part-desc">' + partDesc + '</span>' : "") +
+        '<span class="road-part-progress">' + builtCount + ' / ' + chapters.length + ' built</span>' +
+        '</div></div>';
+      return '<div class="road-row" data-side="' + side + '">' +
+        (side === "left" ? leaves : empty) + spine + (side === "right" ? leaves : empty) +
+        '</div>';
+    }).join("");
+
+    mount.innerHTML =
+      '<div class="road-map" id="road-map">' +
+      '<svg class="road-svg-layer" id="road-svg-layer"></svg>' +
+      '<div class="road-rows" id="road-rows">' +
+      '<div class="road-spine-line"></div>' +
+      rowsHtml +
+      '</div></div>';
+
+    drawConnectors();
+  }
+
+  function drawConnectors() {
+    var svg = document.getElementById("road-svg-layer");
+    var mapEl = document.getElementById("road-map");
+    if (!svg || !mapEl) return;
+
+    var isMobile = false;
+    try { isMobile = window.matchMedia && window.matchMedia("(max-width: 760px)").matches; } catch (e) { /* ignore */ }
+    if (isMobile) { svg.innerHTML = ""; return; }
+
+    var mapRect = mapEl.getBoundingClientRect();
+    if (!mapRect.width || !mapRect.height) return; // not laid out yet (e.g. hidden tab) — nothing to draw
+    svg.setAttribute("width", mapRect.width);
+    svg.setAttribute("height", mapRect.height);
+    svg.setAttribute("viewBox", "0 0 " + mapRect.width + " " + mapRect.height);
+
+    var paths = [];
+    var rows = Array.prototype.slice.call(document.querySelectorAll(".road-row"));
+    rows.forEach(function (row) {
+      var badge = row.querySelector(".road-part-badge");
+      var cluster = row.querySelector(".road-leaf-cluster");
+      if (!badge || !cluster) return;
+      var side = row.getAttribute("data-side");
+      var badgeRect = badge.getBoundingClientRect();
+      var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left;
+      var by = (badgeRect.top + badgeRect.height / 2) - mapRect.top;
+      var leaves = Array.prototype.slice.call(cluster.querySelectorAll(".road-leaf"));
+      leaves.forEach(function (leaf) {
+        var leafRect = leaf.getBoundingClientRect();
+        var lx = (side === "right" ? leafRect.left : leafRect.right) - mapRect.left;
+        var ly = (leafRect.top + leafRect.height / 2) - mapRect.top;
+        var midX = (bx + lx) / 2;
+        paths.push(
+          '<path class="road-connector" d="M' + bx.toFixed(1) + ',' + by.toFixed(1) +
+          ' C ' + midX.toFixed(1) + ',' + by.toFixed(1) + ' ' + midX.toFixed(1) + ',' + ly.toFixed(1) +
+          ' ' + lx.toFixed(1) + ',' + ly.toFixed(1) + '"></path>'
+        );
+      });
+    });
+    svg.innerHTML = paths.join("");
+  }
+
+  var redrawTimer = null;
+  function scheduleRedraw() {
+    if (redrawTimer) clearTimeout(redrawTimer);
+    redrawTimer = setTimeout(drawConnectors, 150);
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     renderStats();
     renderTrack();
+    window.addEventListener("resize", scheduleRedraw);
+    var themeBtn = document.getElementById("theme-toggle");
+    if (themeBtn) themeBtn.addEventListener("click", scheduleRedraw);
+    var fontBtn = document.getElementById("font-toggle");
+    if (fontBtn) fontBtn.addEventListener("click", scheduleRedraw);
+    // Fonts/webfonts loading after first paint can shift leaf heights; redraw once more shortly after load.
+    window.addEventListener("load", scheduleRedraw);
   });
 })();

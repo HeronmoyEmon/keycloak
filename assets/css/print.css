@@ -20,9 +20,10 @@
   .slide { display: block !important; break-inside: avoid-page; page-break-before: always; }
   .slide:first-child { page-break-before: avoid; }
 
-  /* Roadmap landing page: flatten the track, drop the connector line and progress rings. */
-  .road-list::before { display: none; }
-  .road-marker { border: 1px solid #999 !important; background: #fff !important; }
-  .road-marker .road-marker-inner { color: #000 !important; }
-  .top-quicklinks { display: none; }
+  /* Roadmap landing page: flatten the mind-map into a simple stacked list, no spine/connectors. */
+  .road-svg-layer, .road-spine-line, .top-quicklinks { display: none !important; }
+  .road-row { display: block !important; }
+  .road-part-badge { background: #fff !important; color: #000 !important; border: 1px solid #000; box-shadow: none; max-width: 100%; }
+  .road-leaf-link, .road-leaf-static { border: 1px solid #999 !important; background: #fff !important; }
+  .road-leaf-status { border-color: #999 !important; background: #fff !important; }
 }
