@@ -216,12 +216,23 @@
     window.addEventListener("load", scheduleRedraw);
   });
 
-  // Returning to this page via the browser's Back/Forward button restores it from the bfcache: the
-  // browser repaints the exact DOM it froze on the way out and does NOT re-fire DOMContentLoaded or
-  // re-run this script, so progress marked read on a chapter page in between would still show the
-  // stale, unmarked roadmap. `pageshow` fires on every reveal of the page, including a bfcache
-  // restore (event.persisted === true there) — re-read localStorage and redraw every time it fires.
-  window.addEventListener("pageshow", function (e) {
-    if (e.persisted) refresh();
+  // This page's own DOMContentLoaded only runs once, at first load — but progress can change in
+  // localStorage from a *different* tab/window (chapter page open alongside this one), from the
+  // bfcache restoring this exact page unexecuted on Back/Forward, or just from switching back to an
+  // already-open tab with no navigation event at all. Cover all three instead of guessing which one
+  // applies:
+  //   - "storage" fires on every OTHER same-origin document when localStorage changes — the correct,
+  //     direct signal for "a chapter page open in another tab just marked something read".
+  //   - "pageshow" fires on every reveal of this page, including a bfcache restore
+  //     (event.persisted === true there, which DOMContentLoaded does not re-fire for).
+  //   - "visibilitychange"/"focus" catch the plain tab-switch-back case, where neither of the above
+  //     fires because the page was never unloaded or navigated away from at all.
+  window.addEventListener("storage", function (e) {
+    if (!e.key || e.key.indexOf("iam:read:") === 0) refresh();
+  });
+  window.addEventListener("pageshow", refresh);
+  window.addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") refresh();
   });
 })();
