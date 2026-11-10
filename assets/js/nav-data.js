@@ -60,13 +60,13 @@ window.COURSE_NAV = [
   { number: 26, slug: "themes-and-branding", title: "Themes, Branding & Localization", part: "Part IV — Keycloak Core Administration", minutes: 35, hasLab: true, built: true,
     blurb: "Custom login pages, multi-language support." },
 
-  { number: 27, slug: "admin-api-and-cli", title: "Admin REST API & kcadm CLI", part: "Part V — Keycloak Operations", minutes: 45, hasLab: true, built: false,
+  { number: 27, slug: "admin-api-and-cli", title: "Admin REST API & kcadm CLI", part: "Part V — Keycloak Operations", minutes: 45, hasLab: true, built: true,
     blurb: "Automating realm/user/client management." },
-  { number: 28, slug: "events-and-auditing", title: "Events, Auditing & Monitoring", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: false,
+  { number: 28, slug: "events-and-auditing", title: "Events, Auditing & Monitoring", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: true,
     blurb: "Login/admin events, metrics, health checks, SIEM-style export." },
-  { number: 29, slug: "sessions-deep-dive", title: "Sessions Deep Dive & SSO Behavior", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: false,
+  { number: 29, slug: "sessions-deep-dive", title: "Sessions Deep Dive & SSO Behavior", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: true,
     blurb: "SSO/client/offline sessions, logout types, session management." },
-  { number: 30, slug: "password-policies-and-mfa", title: "Password Policies, Brute-Force Protection & MFA Config", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: false,
+  { number: 30, slug: "password-policies-and-mfa", title: "Password Policies, Brute-Force Protection & MFA Config", part: "Part V — Keycloak Operations", minutes: 40, hasLab: true, built: true,
     blurb: "Configuring the defenses chapter 05/09 argued for, for real." },
 
   { number: 31, slug: "identity-brokering", title: "Identity Brokering", part: "Part VI — Federation & Integration", minutes: 50, hasLab: true, built: false,

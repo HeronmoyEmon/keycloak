@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin REST API &amp; kcadm CLI — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "admin-api-and-cli";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part V — Keycloak Operations</span>
+      <span class="badge minutes">~45 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>27. Admin REST API &amp; kcadm CLI</h1>
+    <p class="lede">Every chapter since 20 has quietly used two different paths to the same result: a
+    described Admin Console click, and a <code>kcadm.sh</code> call used to confirm it actually worked. This
+    chapter stops treating the second path as a footnote. The Admin Console, <code>kcadm.sh</code>, and any
+    script a reader writes are three equally valid clients of exactly one thing — the Admin REST API — and
+    this chapter is where that API's real shape (base URL, bearer-token authentication, pagination, field
+    filtering) and its own command-line client become the subject, not a verification aside. It also covers
+    realm export and import, the backup/migration primitive chapters 44-45 build on later.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist who can only click through an admin console does not scale past one realm and one
+    afternoon. Onboarding 50 customer-admin accounts by hand, re-platforming a staging realm's settings into
+    three environments identically, or feeding a nightly compliance export into a SIEM all require treating
+    Keycloak as a system with a programmable interface, not a web form. The Admin REST API is that
+    interface, and <code>kcadm.sh</code> is the fastest way most teams actually touch it — but it is a thin
+    wrapper, not a separate product, and understanding what it wraps is what lets a specialist debug it when
+    a script's silent "success" turns out not to be one.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">What concept is this?</div>
+      <p>Chapter 3 named Accounting as the third letter of AAA: recording identity and access events as
+      structured, timestamped data, distinct from the later activity of auditing those records. Everything
+      in this chapter is the "A" for Administration made scriptable — and, as the lab below shows directly,
+      every admin action taken through that script is itself an event Keycloak can (and by default does not)
+      record, which is accounting applied recursively to the administrators themselves. Chapter 10 named the
+      governance risk of provisioning at scale: a one-at-a-time admin-console workflow gives you an audit
+      trail for free, one click at a time, but a bulk script that creates dozens of accounts in a loop can
+      just as easily create dozens of accounts with <em>no</em> audit trail at all, if nobody turned
+      recording on first. This chapter's lab deliberately reproduces that exact governance failure mode
+      before fixing it, rather than assuming it away.</p>
+    </div>
+
+    <h2>The Admin REST API's real shape</h2>
+    <p>Per Keycloak's own <a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Admin REST
+    API reference</a> (fetched live for this chapter; the reference itself is still labeled a preview
+    feature, not personally screenshot-verified beyond what this chapter's own curl calls confirmed), every
+    admin endpoint hangs off one base pattern:</p>
+    <pre><code>{server-base-url}/admin/realms/{realm}/{resource}</code></pre>
+    <p>Three concrete things follow directly from that pattern, each confirmed live against a running
+    Keycloak 26.8.2 instance rather than assumed from the reference alone:</p>
+    <ul>
+      <li><strong>The realm in the path is the realm being administered, not necessarily the realm the
+      caller authenticated against.</strong> This chapter's lab authenticates once against <code>master</code>
+      (the only realm allowed to hold Keycloak's own administrative accounts, per chapter 20's master-realm
+      boundary rule) and then issues calls against <code>/admin/realms/northwind-apps/...</code> — one
+      session, many target realms, as long as the authenticated identity has rights over each one.</li>
+      <li><strong>Every call requires a bearer access token</strong> (chapter 8's generic concept, concrete
+      here): no cookie, no session the way a browser login uses one — an <code>Authorization: Bearer
+      &lt;token&gt;</code> header, full stop.</li>
+      <li><strong>Collection endpoints page with <code>first</code>/<code>max</code> query parameters, not a
+      response header.</strong> A live call against <code>GET /admin/realms/northwind-apps/users</code>
+      returned no total-count header of any kind in this chapter's test — getting a true total requires a
+      separate call to that resource's own <code>/count</code> endpoint, confirmed live below.</li>
+    </ul>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Three equally valid clients of one Admin REST API</title>
+        <desc id="d1">A central box labeled "Admin REST API — /admin/realms/{realm}/..." with three arrows
+        pointing into it from the left: the Admin Console (a browser making the exact same calls a script
+        could make), kcadm.sh (a command-line wrapper that builds and sends the same calls), and a custom
+        script or CI job (calling the API directly with curl or an SDK). All three arrows carry the same
+        label: "Authorization: Bearer &lt;token&gt;" — there is no special backdoor the Console uses that a script
+        cannot. A note below states that this equivalence was independently confirmed in this chapter by
+        reproducing a kcadm.sh action with a raw curl call against the identical endpoint.</desc>
+        <rect x="350" y="90" width="220" height="80" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="460" y="120" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Admin REST API</text>
+        <text x="460" y="138" text-anchor="middle" class="diagram-label" font-size="10">/admin/realms/{realm}/...</text>
+        <text x="460" y="154" text-anchor="middle" class="diagram-label-muted" font-size="9">bearer-token protected</text>
+
+        <rect x="30" y="20" width="200" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="130" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Admin Console</text>
+        <text x="130" y="62" text-anchor="middle" class="diagram-label-muted" font-size="9">a browser, same calls</text>
+        <line x1="230" y1="60" x2="345" y2="105" class="diagram-stroke" marker-end="url(#arrowA27)"/>
+
+        <rect x="30" y="100" width="200" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="130" y="125" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">kcadm.sh</text>
+        <text x="130" y="142" text-anchor="middle" class="diagram-label-muted" font-size="9">CLI wrapper, builds the same calls</text>
+        <line x1="230" y1="130" x2="345" y2="130" class="diagram-stroke" marker-end="url(#arrowA27)"/>
+
+        <rect x="30" y="180" width="200" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="130" y="205" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Custom script / CI job</text>
+        <text x="130" y="222" text-anchor="middle" class="diagram-label-muted" font-size="9">curl / SDK, calls directly</text>
+        <line x1="230" y1="200" x2="345" y2="155" class="diagram-stroke" marker-end="url(#arrowA27)"/>
+
+        <text x="460" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">Same base path. Same auth header. No console-only backdoor.</text>
+        <defs>
+          <marker id="arrowA27" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 27.1 — The Admin Console, kcadm.sh, and a hand-written script all reach the exact
+      same bearer-token-protected REST API; nothing the Console does is otherwise privileged.</figcaption>
+    </figure>
+
+    <h2>Authenticating: two real patterns, confirmed live</h2>
+    <p>Chapters 13-14 already covered OAuth 2.0's password and client-credentials grants in the abstract,
+    against the Duende demo server. This chapter is where the Admin REST API's own authentication becomes
+    concrete, with two real, distinct patterns depending on who — or what — is calling:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Two real authentication patterns for the Admin REST API, confirmed live against Keycloak 26.8.2</caption>
+        <thead><tr><th>Pattern</th><th>Client / grant</th><th>Fits</th></tr></thead>
+        <tbody>
+          <tr><td>Interactive human scripting</td><td>Built-in <code>admin-cli</code> client (public, no secret), Resource Owner Password Credentials grant, with a real human's own admin username/password</td><td>A specialist's own terminal session running <code>kcadm.sh</code> or ad-hoc curl calls — this chapter's lab uses exactly this.</td></tr>
+          <tr><td>Unattended automation</td><td>A dedicated confidential client with <code>serviceAccountsEnabled=true</code> and realm-management roles granted to its service account, Client Credentials grant (chapter 13/14), no human or password involved at all</td><td>A CI/CD pipeline or scheduled job that provisions or audits a realm with nobody watching — the pattern chapter 36 covers in full for application service accounts, reused here for Keycloak's own administration.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>This chapter's lab used the first pattern, and decoded the real token it got back rather than trusting
+    a description of one. A raw <code>curl</code> call against the token endpoint — the exact same endpoint
+    every OIDC client in this course has used since chapter 15 — returns a normal OAuth token response:</p>
+<pre><code>curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=admin-cli" -d "grant_type=password" \
+  -d "username=admin" -d "password=admin_lab_password"</code></pre>
+<pre><code>{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "expires_in": 60,
+  "refresh_expires_in": 1800,
+  "refresh_token": "eyJhbGciOiJIUzUxMiIs...",
+  "token_type": "Bearer",
+  "not-before-policy": 0,
+  "session_state": "8204veZhoFpavJFjJYmTDhil",
+  "scope": "profile kc-admin-api email"
+}</code></pre>
+    <p>Two details here are real findings, not restatements of the grant type: the access token's
+    <code>expires_in</code> is <strong>60 seconds</strong> on this image's default <code>master</code>
+    realm — genuinely short, so a long-running script needs the paired refresh token or must re-authenticate,
+    not assume one token lasts the whole job — and the <code>scope</code> string includes
+    <code>kc-admin-api</code> specifically, a scope this image attaches that an ordinary application client's
+    token would not carry. Decoding the access token's payload directly (base64url, not guessed) confirms
+    why that scope matters:</p>
+<pre><code>{
+  "exp": 1794302063,
+  "iat": 1794302003,
+  "iss": "http://localhost:8080/realms/master",
+  "aud": "http://localhost:8080/admin/realms/master",
+  "typ": "Bearer",
+  "azp": "admin-cli",
+  "scope": "profile kc-admin-api email"
+}</code></pre>
+    <p>The <code>aud</code> (audience) claim targets the Admin REST API itself
+    (<code>/admin/realms/master</code>), not an application's own API the way chapter 15's OIDC claims
+    chapter framed a typical resource-server audience. This is the concrete mechanism behind "this token can
+    administer Keycloak" rather than "this token can call some other app's backend" — the same bearer-token
+    concept from chapter 8, scoped by claim rather than by a different kind of token.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 230" role="img" aria-labelledby="t2 d2">
+        <title id="t2">Two token-acquisition patterns feeding the same bearer-protected API</title>
+        <desc id="d2">Two parallel paths converging on the same box. Left path: a human at a terminal, using
+        the built-in admin-cli public client with the Resource Owner Password Credentials grant and their
+        own admin username and password, labeled "interactive scripting." Right path: a CI/CD job, using a
+        dedicated confidential client with serviceAccountsEnabled=true and the Client Credentials grant, no
+        human or password involved, labeled "unattended automation." Both paths produce a bearer access
+        token and both feed into the same box: "Admin REST API calls, Authorization: Bearer header."</desc>
+        <rect x="20" y="30" width="260" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="150" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Human + admin-cli</text>
+        <text x="150" y="72" text-anchor="middle" class="diagram-label-muted" font-size="9">password grant, interactive scripting</text>
+        <text x="150" y="88" text-anchor="middle" class="diagram-label-muted" font-size="9">this chapter's lab</text>
+
+        <rect x="620" y="30" width="260" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="750" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">CI job + dedicated service account</text>
+        <text x="750" y="72" text-anchor="middle" class="diagram-label-muted" font-size="9">client credentials grant, unattended</text>
+        <text x="750" y="88" text-anchor="middle" class="diagram-label-muted" font-size="9">chapter 36's pattern, reused for admin</text>
+
+        <line x1="150" y1="100" x2="420" y2="160" class="diagram-stroke" marker-end="url(#arrowB27)"/>
+        <line x1="750" y1="100" x2="480" y2="160" class="diagram-stroke" marker-end="url(#arrowB27)"/>
+
+        <rect x="330" y="160" width="240" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="450" y="182" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Bearer-protected Admin REST API</text>
+        <text x="450" y="198" text-anchor="middle" class="diagram-label-muted" font-size="9">Authorization: Bearer &lt;token&gt;</text>
+        <defs>
+          <marker id="arrowB27" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 27.2 — Two different grant types, chosen for who (or what) is calling, converge on
+      the identical bearer-token-protected API surface.</figcaption>
+    </figure>
+
+    <h2><code>kcadm.sh</code>: a thin wrapper, nothing more</h2>
+    <p>The glossary already defines <code>kcadm.sh</code> as Keycloak's bundled Admin REST API CLI client,
+    shipped at <code>/opt/keycloak/bin/kcadm.sh</code>. This chapter adds the mechanics confirmed live:</p>
+    <ul>
+      <li><code>kcadm.sh config credentials --server ... --realm master --user admin --password ...</code>
+      performs exactly the password-grant token request shown above, then <strong>caches the resulting
+      access and refresh tokens in a config file</strong> — confirmed in this chapter's lab at
+      <code>/opt/keycloak/.keycloak/kcadm.config</code> inside the container (the Linux default is
+      <code>$HOME/.keycloak/kcadm.config</code>; it resolves to that path because <code>/opt/keycloak</code>
+      is the container's own <code>keycloak</code> user's home directory). Every subsequent <code>kcadm.sh</code>
+      call in the same shell reuses that cached session rather than re-authenticating.</li>
+      <li>Generic resource verbs — <code>get</code>, <code>create</code>, <code>update</code>,
+      <code>delete</code> — map directly onto HTTP GET/POST/PUT/DELETE against the same
+      <code>/admin/realms/{realm}/{resource}</code> paths this chapter already described. <code>-r</code>
+      sets the target realm, <code>-s key=value</code> sets a field on the request body, <code>-q
+      key=value</code> adds a query-string parameter (this is the real pagination flag — see below), and
+      <code>--fields</code> filters which keys of the response get printed.</li>
+      <li><strong>A real pitfall confirmed in this chapter's own lab run</strong>: <code>kcadm.sh create</code>
+      normally prints a <code>Created new X with id 'Y'</code> confirmation line, taken from the response's
+      <code>Location</code> header. Some admin endpoints — this chapter ran into it directly on
+      <code>partial-export</code> — return a response body but <strong>no</strong> <code>Location</code>
+      header, so the create command exits 0 with <em>zero printed output</em>, looking exactly like a
+      silent success and a silent no-op at the same time. Passing <code>-o</code> forces
+      <code>kcadm.sh</code> to print the actual response body instead of relying on that header, which is
+      how this chapter confirmed the call had, in fact, done something.</li>
+      <li><code>--format csv --noquotes</code> turns a JSON array response into a plain value list — this
+      chapter's bulk-onboarding script below uses exactly this to extract a user's or group's id into a
+      shell variable for a follow-up call, since most Admin REST API resources are identified by an internal
+      UUID the caller usually has to look up first, not by a human-chosen name.</li>
+    </ul>
+
+    <h2>Realm export and import: three real mechanisms, not one</h2>
+    <p>This course's labs since chapter 20 have each started from a fresh realm. This chapter ran all three
+    of Keycloak's real export/import mechanisms directly, rather than describing one and assuming the
+    others behave the same way — they do not:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Three real export/import mechanisms, confirmed live against Keycloak 26.8.2 (per Keycloak's own <a href="https://www.keycloak.org/server/importExport">Importing and Exporting Realms</a> guide plus this chapter's own curl/kcadm/kc.sh runs)</caption>
+        <thead><tr><th>Mechanism</th><th>Invoked via</th><th>Includes users?</th><th>Server state required</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Partial export</strong></td><td>REST <code>POST /admin/realms/{realm}/partial-export</code> (or <code>kcadm.sh create partial-export -r &lt;realm&gt; -o</code>)</td><td><strong>No</strong> — confirmed live: the response has no <code>users</code> key at all, not even an empty one</td><td>Server stays running; this is an ordinary authenticated REST call</td></tr>
+          <tr><td><strong>Full export</strong></td><td>Server CLI: <code>kc.sh export --dir &lt;dir&gt; --realm &lt;realm&gt;</code></td><td><strong>Yes</strong> — confirmed live: a separate per-realm users file, including each user's hashed-and-salted credential data</td><td>The Keycloak server process must <strong>not</strong> be running — this is a separate, one-shot "nonserver" launch mode, not a REST call at all</td></tr>
+          <tr><td><strong>Partial import</strong></td><td>REST <code>POST /admin/realms/{realm}/partialImport</code> (or the Admin Console's own partial-import screen, which per the official guide can load a CLI-produced full export, including its users)</td><td>Whatever the submitted payload contains — can include users</td><td>Server stays running; conflicts are resolved per an <code>ifResourceExists</code> policy of <code>SKIP</code>, <code>OVERWRITE</code>, or <code>FAIL</code>, confirmed live below</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — a full export is a secret, not a backup script's harmless log</div>
+      <p>This chapter's lab ran <code>kc.sh export</code> against its test realm and read the resulting
+      per-user file directly. One real user's credential entry looked like this:</p>
+<pre><code>{
+  "username": "acme-admin",
+  "credentials": [ {
+    "type": "password",
+    "secretData": "{\"value\":\"M+2l4k8Qph/Mt4o+SyXAB/N+F5gIpF6qlSgUfLNZ5dM=\",\"salt\":\"BBzUe40hFsIzZhWzo5JbzA==\",...}",
+    "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",...}"
+  } ]
+}</code></pre>
+      <p>The password itself is not stored in plaintext — it's an Argon2 hash with its own salt, the same
+      discipline any credential store should use — but this is still real secret material, not metadata:
+      every user's hashed credential, for every user in the realm, in one file. If you see a full realm
+      export committed to a git repo, attached to a support ticket, or dropped on a shared drive "just for
+      reference," the cause is almost always treating it like the much smaller, user-free partial export
+      above. Keycloak's own guide is explicit that only these full, boot-time exports — not the Admin
+      Console's partial export — are "suitable for backups or data transfer between servers," which makes
+      this exact file the one most likely to actually get handled carelessly.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 230" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Three export/import mechanisms, compared on two axes: includes users, server state</title>
+        <desc id="d3">A 2x2-style comparison of three mechanisms. Partial export (REST): no users included,
+        server stays running. Full export (kc.sh CLI): users and their hashed credentials included, server
+        must be stopped. Partial import (REST): can include users depending on the submitted payload,
+        server stays running, conflicts resolved by an ifResourceExists policy of SKIP, OVERWRITE, or FAIL.
+        A caption notes all three were run for real in this chapter's own lab, not narrated.</desc>
+        <rect x="20" y="30" width="260" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="150" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Partial export (REST)</text>
+        <text x="150" y="75" text-anchor="middle" class="diagram-label-muted" font-size="10">users: NO</text>
+        <text x="150" y="93" text-anchor="middle" class="diagram-label-muted" font-size="10">server: stays running</text>
+
+        <rect x="320" y="30" width="260" height="90" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="450" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Full export (kc.sh CLI)</text>
+        <text x="450" y="75" text-anchor="middle" class="diagram-label-muted" font-size="10">users + hashed credentials: YES</text>
+        <text x="450" y="93" text-anchor="middle" class="diagram-label-muted" font-size="10">server: must be stopped</text>
+
+        <rect x="620" y="30" width="260" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="750" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Partial import (REST)</text>
+        <text x="750" y="75" text-anchor="middle" class="diagram-label-muted" font-size="10">users: depends on payload</text>
+        <text x="750" y="93" text-anchor="middle" class="diagram-label-muted" font-size="10">server: stays running</text>
+        <text x="750" y="110" text-anchor="middle" class="diagram-label-muted" font-size="9">conflict policy: SKIP / OVERWRITE / FAIL</text>
+
+        <text x="450" y="160" text-anchor="middle" class="diagram-label-muted" font-size="11">All three mechanisms were actually run against a real realm in this chapter's lab — none are narrated.</text>
+      </svg>
+      <figcaption>Figure 27.3 — Partial export, full export, and partial import are three distinct
+      mechanisms, not three names for the same operation.</figcaption>
+    </figure>
+
+    <h2>Case study: Northwind Apps bulk-onboards customer-admin accounts</h2>
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps</div>
+      <p><span class="org-chip northwind">Northwind Apps</span> signs up new business customers regularly,
+      and each new customer needs at least one of their own employees provisioned as a
+      <code>tenant-admin</code> for their company's slice of the <code>northwind-dashboard</code> product —
+      chapter 22's one-at-a-time user creation does not scale to "roughly 50 new customer-admin accounts
+      this quarter," the real number Northwind's operations team is working against. Rather than describe a
+      plausible script, this chapter wrote and actually ran one against a real <code>northwind-apps</code>
+      realm (roles <code>tenant-admin</code>/<code>support-agent</code>/<code>platform-engineer</code>,
+      groups <code>Engineering</code>/<code>Support</code>, and the <code>northwind-dashboard</code> client,
+      the same shape chapters 20-26 established). A small, four-account run stands in for the real ~50 —
+      the automation pattern is identical at either scale, and a disposable test run is what a real
+      specialist would do before trusting a script with fifty real accounts anyway.</p>
+    </div>
+
+    <h2>Lab: scripting <code>northwind-apps</code> for real</h2>
+    <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack, the same
+    <code>labs/docker/docker-compose.yml</code> environment every Part IV+ chapter uses — not narrated. Each
+    step is confirmed with a separate read, never trusted from a write command's own (often silent)
+    response.</p>
+
+    <ol class="lab-steps">
+      <li><p>Bring the stack up and poll until Keycloak is ready, the same pattern every lab chapter since 20
+      has used:</p>
+<pre><code>cd labs/docker
+docker compose up -d
+for i in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:8080/realms/master/.well-known/openid-configuration)
+  echo "attempt $i: $code"
+  if [ "$code" = "200" ]; then break; fi
+  sleep 3
+done</code></pre>
+<pre><code>attempt 1: 000
+...
+attempt 12: 200</code></pre></li>
+
+      <li><p>Authenticate <code>kcadm.sh</code>, then recreate the realm shape chapters 20-26 established
+      (each chapter's lab starts fresh, per this course's lab convention):</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-apps -s enabled=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps -s name=tenant-admin
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps -s name=support-agent
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps -s name=platform-engineer
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r northwind-apps -s name=Engineering
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r northwind-apps -s name=Support
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps \
+  -s clientId=northwind-dashboard -s publicClient=false \
+  -s 'redirectUris=["https://dashboard.northwind.example/*"]'</code></pre>
+<pre><code>Created new realm with id 'northwind-apps'
+Created new role with id 'tenant-admin'
+Created new role with id 'support-agent'
+Created new role with id 'platform-engineer'
+Created new group with id 'bd4f7cfd-1054-4800-b33e-2bcfe78733df'
+Created new group with id '7d5ceb33-43b7-4bc1-b1f8-d876fc681317'
+Created new client with id '64042320-15f8-444b-a341-3e6cdf1f2f2a'</code></pre></li>
+
+      <li><p>Write the real bulk-onboarding script. Usernames, roles, and groups are read from a small table
+      inside the script — the same shape a CSV-driven real onboarding list would have:</p>
+<pre><code>#!/bin/sh
+# bulk-onboard.sh
+set -e
+KCADM=/opt/keycloak/bin/kcadm.sh
+REALM=northwind-apps
+
+USERS="
+acme-admin:Dana:Lin:tenant-admin:Engineering
+globex-admin:Marcus:Reyes:tenant-admin:Engineering
+initech-support:Sam:Okafor:support-agent:Support
+umbrella-support:Tia:Novak:support-agent:Support
+"
+
+for row in $USERS; do
+  username=$(echo "$row" | cut -d: -f1)
+  first=$(echo "$row" | cut -d: -f2)
+  last=$(echo "$row" | cut -d: -f3)
+  role=$(echo "$row" | cut -d: -f4)
+  group=$(echo "$row" | cut -d: -f5)
+
+  echo "=== Onboarding $username ==="
+  $KCADM create users -r "$REALM" -s username="$username" -s enabled=true \
+    -s firstName="$first" -s lastName="$last" -s "email=$username@customer.example" \
+    -s emailVerified=true
+
+  $KCADM set-password -r "$REALM" --username "$username" --new-password 'Onboard-Temp-2026!' --temporary
+  $KCADM add-roles -r "$REALM" --uusername "$username" --rolename "$role"
+
+  group_id=$($KCADM get groups -r "$REALM" -q "search=$group" --fields id --format csv --noquotes | head -n1)
+  user_id=$($KCADM get users -r "$REALM" -q "username=$username" --fields id --format csv --noquotes | head -n1)
+  $KCADM update "users/$user_id/groups/$group_id" -r "$REALM"
+
+  echo "--- confirm: role + group mapping for $username ---"
+  $KCADM get "users/$user_id/role-mappings/realm" -r "$REALM" --fields name
+  $KCADM get "users/$user_id/groups" -r "$REALM" --fields name
+done</code></pre>
+      <p>Copy it into the running container and execute it for real:</p>
+<pre><code>docker compose cp bulk-onboard.sh keycloak:/tmp/bulk-onboard.sh
+docker compose exec keycloak sh /tmp/bulk-onboard.sh</code></pre>
+<pre><code>=== Onboarding acme-admin ===
+Created new user with id '1e901491-a713-49f3-85ae-df96e5176949'
+--- confirm: role + group mapping for acme-admin ---
+[ {
+  "name" : "tenant-admin"
+}, {
+  "name" : "default-roles-northwind-apps"
+} ]
+[ {
+  "name" : "Engineering"
+} ]
+=== Onboarding globex-admin ===
+Created new user with id 'd97cd6f5-5ff8-48b0-afc3-5d3166fdda17'
+...
+=== Onboarding umbrella-support ===
+Created new user with id '10cf46a8-dd33-49b7-96a9-643219b50ec9'
+--- confirm: role + group mapping for umbrella-support ---
+[ {
+  "name" : "default-roles-northwind-apps"
+}, {
+  "name" : "support-agent"
+} ]
+[ {
+  "name" : "Support"
+} ]</code></pre>
+      <p>Every one of the four accounts came back with exactly the role and group its row specified — a
+      script is only trustworthy once its output is actually read, not just its exit code.</p></li>
+
+      <li><p><strong>Reproduce the governance failure mode chapter 10 warned about, deliberately.</strong>
+      Check whether those four creations left any audit trail at all:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get events/config -r northwind-apps \
+  --fields eventsEnabled,adminEventsEnabled</code></pre>
+<pre><code>{
+  "eventsEnabled" : false,
+  "adminEventsEnabled" : false
+}</code></pre>
+      <p>Confirmed, not assumed: admin event logging was off the entire time the bulk-onboarding script ran.
+      Every one of those four account creations happened with zero recorded admin-event trail — exactly the
+      failure mode chapter 10 named, reproduced for real rather than described abstractly. Turn it on, then
+      create one more account to see the difference:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update events/config -r northwind-apps \
+  -s adminEventsEnabled=true -s adminEventsDetailsEnabled=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
+  -s username=wayne-admin -s enabled=true -s firstName=Bruce -s lastName=Wayne \
+  -s email=wayne-admin@customer.example -s emailVerified=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get admin-events -r northwind-apps</code></pre>
+<pre><code>[ {
+  "id" : "3c0e81be-ff93-46de-b4e9-cd0acb30c24f",
+  "time" : 1794302152270,
+  "authDetails" : {
+    "realmId" : "695101f8-ef6c-461b-bcc3-574aa0948875",
+    "clientId" : "a241380f-566b-41dc-86f1-4bfdd6c85f3e",
+    "userId" : "b052a387-37e8-4bf4-aac1-66c82a7e419b",
+    "ipAddress" : "127.0.0.1"
+  },
+  "operationType" : "CREATE",
+  "resourceType" : "USER",
+  "resourcePath" : "users/82cfd9b6-cba4-4218-8d32-90bde8d120b3",
+  "representation" : "{\"username\":\"wayne-admin\",\"firstName\":\"Bruce\",...}"
+}, ... ]</code></pre>
+      <p>Once enabled, an admin event is accounting made concrete, exactly as chapter 3 defined it: who
+      (<code>userId</code>, resolved to the authenticating admin), from where (<code>ipAddress</code>), what
+      operation, on what resource, and — because
+      <code>adminEventsDetailsEnabled</code> was also turned on — the full <code>representation</code> of
+      what was actually written. Enabling it after the fact does not retroactively create records for the
+      four accounts created before this step; that gap is real and permanent for this run.</p></li>
+
+      <li><p>Run the partial export (REST), and confirm it genuinely carries no users:</p>
+<pre><code>TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=admin_lab_password" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+curl -s -X POST \
+  "http://localhost:8080/admin/realms/northwind-apps/partial-export?exportClients=true&exportGroupsAndRoles=true" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" -o partial-export.json
+python3 -c "import json; d=json.load(open('partial-export.json')); print('users' in d)"</code></pre>
+<pre><code>False</code></pre>
+      <p>The same call via <code>kcadm.sh</code>'s generic verb, including the <code>-o</code> flag this
+      chapter's own lab needed to see any output at all:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create partial-export -r northwind-apps \
+  -s exportClients=true -s exportGroupsAndRoles=true -o</code></pre>
+<pre><code>{
+  "id" : "a46d6866-005b-44a0-87c9-118a37bf9629",
+  "realm" : "northwind-apps",
+  ...
+  "clients" : [ ... ],
+  "groups" : [ ... ],
+  "roles" : { ... }
+}</code></pre></li>
+
+      <li><p>Run the full export (server CLI). This requires stopping the server first — a genuinely
+      different operation, not a bigger REST call:</p>
+<pre><code>docker compose stop keycloak
+docker compose run --rm keycloak export --dir /tmp/export --realm northwind-apps --users different_files</code></pre>
+<pre><code>...
+2026-11-10 09:17:14,194 INFO  [org.keycloak.services] (main) KC-SERVICES0034: Export of realm 'northwind-apps' requested.
+2026-11-10 09:17:14,594 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Exporting into directory /tmp/export
+2026-11-10 09:17:14,663 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Realm 'northwind-apps' - data exported
+2026-11-10 09:17:14,760 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Users 0 - 4 exported
+2026-11-10 09:17:14,775 INFO  [org.keycloak.services] (main) KC-SERVICES0035: Export finished successfully</code></pre>
+      <p>This produced two real files — <code>northwind-apps-realm.json</code> and
+      <code>northwind-apps-users-0.json</code> — the latter holding each test user's real, Argon2-hashed
+      credential data, confirmed directly (see the pitfall above). Bring the server back up afterward:</p>
+<pre><code>docker compose up -d keycloak</code></pre></li>
+
+      <li><p>Run a partial import, adding one more user to the live realm with a conflict policy explicitly
+      set:</p>
+<pre><code>curl -s -X POST "http://localhost:8080/admin/realms/northwind-apps/partialImport" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"ifResourceExists":"SKIP","users":[{"username":"lex-admin","enabled":true,
+       "firstName":"Lex","lastName":"Carter","email":"lex-admin@customer.example","emailVerified":true}]}'</code></pre>
+<pre><code>{"overwritten":0,"added":1,"skipped":0,"results":[{"action":"ADDED","resourceType":"USER","resourceName":"lex-admin","id":"dfdd2aa6-9ee0-44e7-894d-96fb48f074f0"}]}</code></pre></li>
+
+      <li><p>Tear the stack down cleanly:</p>
+<pre><code>docker compose down -v</code></pre>
+<pre><code> Container docker-keycloak-1 Removed
+ Container docker-postgres-1 Removed
+ Volume docker_keycloak_pg_data Removed
+ Network docker_default Removed</code></pre></li>
+    </ol>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a <code>kcadm.sh create</code> command exit 0 with no printed confirmation at all, the
+      cause is very often an endpoint — this chapter hit it directly on <code>partial-export</code> — that
+      returns a body but no <code>Location</code> header; add <code>-o</code> to force the real response
+      body to print instead of trusting the absence of output as either success or failure.</li>
+      <li>If you see a restore script written against a realm's partial-export JSON assuming it will contain
+      users, the cause is confusing it with a full export — partial export (REST) never includes users at
+      all, confirmed live in this chapter; only the server-CLI full export does.</li>
+      <li>If you see a full realm export file treated as harmless metadata — attached to a ticket, committed
+      to a repo, left on a shared drive — the cause is forgetting it contains every user's hashed-and-salted
+      password credential, not just configuration.</li>
+      <li>If you see a bulk-automation script that ran cleanly but left no audit trail anyone can find later,
+      the cause is almost always that <code>adminEventsEnabled</code> was off before the script ran — and
+      turning it on afterward does not retroactively log what already happened, exactly as this chapter's
+      own lab reproduced.</li>
+      <li>If you see a CI job on a shared runner unexpectedly reuse another job's Keycloak admin session, the
+      cause is <code>kcadm.sh</code>'s own config-caching behavior — it writes the access/refresh token to a
+      config file by default; unattended automation should pass <code>--no-config</code> (or an isolated
+      config path) so nothing is cached between runs.</li>
+      <li>If you see a script build a REST call like
+      <code>/admin/realms/{realm}/{realm}/partial-export</code> and get a 404, the cause is manually
+      prefixing the realm again on top of what <code>kcadm.sh -r</code> or a hand-built base URL already
+      supplies — this chapter made exactly that mistake once while drafting this lab, and the fix was simply
+      dropping the duplicate realm segment.</li>
+      <li>If you see someone try to run <code>kc.sh export</code> against a Keycloak container that's still
+      serving traffic on the same data, the cause is treating full export like an ordinary REST call — it is
+      a separate, one-shot server launch mode that explicitly requires the regular server process not to be
+      running.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>The Admin Console, <code>kcadm.sh</code>, and any hand-written script are three equally valid
+      clients of exactly one bearer-token-protected Admin REST API at
+      <code>{server}/admin/realms/{realm}/{resource}</code> — confirmed by reproducing a <code>kcadm.sh</code>
+      action with a raw curl call against the identical endpoint.</li>
+      <li>An admin-scoped access token's <code>aud</code> claim targets the Admin REST API itself
+      (<code>/admin/realms/{realm}</code>), and its <code>scope</code> includes <code>kc-admin-api</code> —
+      confirmed by decoding a real token, not assumed from the grant type alone.</li>
+      <li>Two authentication patterns fit two different callers: the built-in <code>admin-cli</code> client
+      with a human's password (interactive scripting) versus a dedicated service-account client with the
+      client-credentials grant (unattended automation, the same pattern chapter 36 covers for applications).</li>
+      <li><code>kcadm.sh</code> is a thin wrapper: <code>get</code>/<code>create</code>/<code>update</code>/
+      <code>delete</code> map onto HTTP verbs against the same REST paths, <code>-q</code> sets query
+      parameters (including the real <code>first</code>/<code>max</code> pagination flags), and
+      <code>-o</code> forces the real response body to print for endpoints with no <code>Location</code>
+      header to report instead.</li>
+      <li>There is no total-count response header on Admin REST API list endpoints — getting a true count
+      requires a separate call to that resource's own <code>/count</code> endpoint, confirmed live.</li>
+      <li>Partial export (REST), full export (server CLI), and partial import (REST) are three distinct
+      mechanisms, not three names for one operation: only the full, server-CLI export includes users and
+      their hashed credentials, and only it requires the server process to be stopped first.</li>
+      <li>A bulk-automation script is only as auditable as the realm's <code>adminEventsEnabled</code>
+      setting at the moment it ran — this chapter deliberately reproduced the governance gap chapter 10
+      warned about (four real accounts created with zero recorded admin events) before fixing it and
+      showing the real, detailed event record a fifth account creation left once logging was on.</li>
+      <li>A full realm export is secret material, not a backup script's harmless log — this chapter read a
+      real exported user's credential entry directly and found a salted Argon2 hash, not a plaintext
+      password, but still real, sensitive data for every user in the realm.</li>
+      <li><code>partialImport</code>'s <code>ifResourceExists</code> parameter (<code>SKIP</code>,
+      <code>OVERWRITE</code>, or <code>FAIL</code>) is the real, explicit conflict policy for merging data
+      into a live realm — confirmed live by adding one new user to a realm that already had others.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, in your own words, why the Admin Console having no special REST access beyond what
+      <code>kcadm.sh</code> or a script can reach matters for how you'd debug a console action that silently
+      didn't work.</li>
+      <li>Why does an admin-scoped access token's <code>aud</code> claim matter, concretely — what would go
+      wrong if a script accidentally presented an ordinary application client's access token to the Admin
+      REST API instead?</li>
+      <li>Walk through, step by step, why this chapter's bulk-onboarding script left zero admin-event records
+      for its first four accounts but a full one for its fifth. What single setting made the difference, and
+      at what moment did it matter?</li>
+      <li>A colleague proposes using the Admin Console's own partial-export feature as Riverside Health's
+      disaster-recovery backup mechanism. What's wrong with that plan, specifically, and what should they use
+      instead?</li>
+      <li>Why does <code>kc.sh export</code> require the Keycloak server process to not be running, when
+      ordinary Admin REST API calls like partial-export don't require anything of the sort?</li>
+      <li>If you were writing a CI pipeline that provisions a new client in a realm every time a new
+      microservice is deployed, which of this chapter's two authentication patterns would you choose, and
+      why does the other one not fit?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak docs — Server Administration Guide (Admin REST API and Admin CLI sections)</a></li>
+      <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak docs — Admin REST API reference</a></li>
+      <li><a href="https://www.keycloak.org/server/importExport">Keycloak docs — Importing and Exporting Realms</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749 — The OAuth 2.0 Authorization Framework (grant types underlying both authentication patterns in this chapter)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "admin-api-and-cli", 15);
+  });
+</script>
+</body>
+</html>

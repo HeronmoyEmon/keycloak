@@ -18,114 +18,23 @@ permanent default.
 chapters merged, verified, `built:true`, committed. See the GATE-4 review summary under Gates, and the
 Done entry for chapters 21-26, for full detail.
 
-**Now starting Part V — Keycloak Operations (chapters 27-30).** No gate sits between Part IV and Part
-V in CLAUDE.md §8 (the next one, GATE-5, sits after Part VII) — proceeding straight into the queue.
+**Part V — Keycloak Operations (chapters 27-30) is now also complete.** All 4 chapters merged, verified,
+`built:true`, committed — built as a second parallel-subagent round, each agent pre-assigned its own
+isolated Docker Compose project name/port (`ch27kc`→18127, `ch28kc`→18128, `ch29kc`→18129,
+`ch30kc`→18130) per the process note GATE-4 surfaced, avoiding the collision 5 of 6 chapter-21-26 agents
+hit. No gate sits between Part IV and Part V, or between Part V and Part VI, per CLAUDE.md §8 (the next
+one, GATE-5, sits after Part VII) — so no stop was needed here. See the Done entry for chapters 27-30
+for full detail, including a real shared-environment fix: chapter 28's lab found `labs/docker/docker-
+compose.yml` set `KC_HEALTH_ENABLED` but never published port 9000, so `/health`/`/metrics` were
+unreachable from the host even though the env var suggested they should work. Fixed directly in the
+shared compose file (added port 9000 and `KC_METRICS_ENABLED`), personally re-verified end to end
+(`/health`→200, `/metrics`→200 on 9000; `/health`→404 on 8080, confirming the port split), and
+documented in `labs/docker/README.md`.
 
-**Part V chapter briefs** (drafted here per CLAUDE.md §6's "draft into BUILD_STATUS.md when a chapter
-comes up next" rule; each follows §4's template/minimums and §5's one-line description). All four keep
-building on the shared `northwind-apps` realm (jane.doe/priya.patel, roles, groups, clients from
-chapters 20-26) — no new realm or org needed, these chapters mature the same realm rather than starting
-over:
-
-- **Ch 27 — Admin REST API & kcadm CLI (automation).** Formalizes what chapters 20-26 already used
-  informally, one command at a time: the Admin REST API's actual shape (base URL, bearer-token auth via
-  the `admin-cli` client or a dedicated service account, pagination, filtering), and `kcadm.sh` as a thin
-  wrapper over it. Case-study tie-in: Northwind Apps needs to onboard 50 new customer-admin accounts at
-  once rather than one `create users` call at a time — write and run a real bash/kcadm script that bulk-
-  creates users with role assignments against `northwind-apps`, confirming the result via a follow-up
-  `get`, not the script's own exit code. Also covers realm export/import (full or partial) as the
-  backup/migration primitive chapters 44-45 will build on. "What concept is this?" recall: chapter 3's
-  AAA (this is the "A" for administration/automation made concrete) and chapter 10's provisioning-at-
-  scale problem.
-- **Ch 28 — Events, auditing & monitoring.** Keycloak's login-event and admin-event system, enabling
-  them on a realm, fetching them via the Admin REST API, and the `/health`/`/metrics` endpoints for
-  SIEM-style export. Case-study tie-in: Riverside Health's HIPAA audit-trail requirement (chapter 11)
-  maps directly onto admin-event retention — the lab should enable events on `northwind-apps`, generate
-  a real admin event (e.g. replay a small role change, à la chapter 23) and a real login event, then
-  fetch both via the REST API and inspect the actual fields. "What concept is this?" recall: chapter 3's
-  "Accounting" (the third A in AAA) and chapter 9's threat-landscape detection angle.
-- **Ch 29 — Sessions deep dive & SSO behavior in Keycloak.** Full depth on the session mechanics chapter
-  21 only configured settings for and chapter 7 only described conceptually: listing a user's active
-  sessions via the Admin REST API, revoking one, and the concrete effect of `Revoke Refresh Token`
-  (chapter 21) and concurrent-session behavior. Lab: create a real session for `jane.doe` (or a
-  disposable test user), list it via `GET users/{id}/sessions` or `GET sessions/{id}`, revoke it, and
-  confirm via a second, independent read that it's actually gone. "What concept is this?" recall:
-  chapter 7's SSO-session concept and chapter 8's token/session distinction, both made fully concrete.
-- **Ch 30 — Password policies, brute-force protection & MFA config in Keycloak.** The realm-level
-  `passwordPolicy` string (length, specialChars, passwordHistory, etc.), the Security Defenses tab's
-  brute-force fields chapter 21 previewed but didn't configure, and the OTP Policy tab (algorithm,
-  digits, period) implementing chapter 5's TOTP mechanics concretely. Case-study tie-in: Meridian Trust
-  (PCI-DSS, chapter 11) needs a documented password policy and brute-force lockout — lab should actually
-  set a policy string on `northwind-apps`, try a non-compliant password and capture the real rejection,
-  then enable brute-force detection and fail a login enough times to trigger a real, confirmed lockout
-  (not narrated). "What concept is this?" recall: chapter 5's MFA/risk-based auth and chapter 9's
-  credential-stuffing threat this specific control defends against.
-
-**Docker lab-environment assignment for this round** (applying the GATE-4 process note above): to avoid
-repeating the project-name/port collision 5 of 6 chapter-21-26 agents hit, each of the 4 parallel ch27-30
-agents gets its own isolated Compose project name and host port assigned up front in its brief, rather
-than discovering the collision mid-lab: `ch27kc`→18127, `ch28kc`→18128, `ch29kc`→18129, `ch30kc`→18130.
-Each agent's own chapter text still shows the reader the plain, standard `docker compose up -d` form —
-the isolation is a session-concurrency device for this build round only, not reader-facing content.
-
-**Standing process note for future parallel Keycloak-lab rounds** (surfaced independently by 5 of the 6
-chapter-21-26 subagents this round): `labs/docker/docker-compose.yml`'s default Compose project name
-(derived from the `labs/docker` directory name — "docker") and static host port (8080) are shared by
-every agent that runs `docker compose up -d` from that directory with no override. When multiple
-lab-bearing chapters are built in parallel, their stacks collide — containers get silently recreated or
-torn down mid-session by a sibling's own `up`/`down -v`, realms vanish, user IDs change. Every affected
-agent this round worked around it independently and consistently with the same fix: bring up an
-isolated copy under a custom project name and alternate host port (`-p ch22kc` on 18099, `-p ch24kc` on
-18090, `-p afl25` on 18080, etc.), keeping the *chapter's own reader-facing documented commands* as the
-plain `docker compose up -d` form (since a solo reader never hits this concurrency issue — it's purely
-an artifact of this course's own parallel-build working mode). **Recommendation for Part V onward**:
-when dispatching more than one lab-bearing chapter in parallel, assign each one its own `-p
-<chapter-slug>kc` project name and a distinct host port up front in the brief, rather than letting each
-agent discover and route around the collision independently.
-
-**The "Northwind Apps realm" build plan (chapters 20-26 share this exact plan)** — ties back to running
-examples already established in Parts I-II, so these chapters pay off threads the course set up
-earlier rather than inventing disconnected new examples:
-- **Ch 20 — DONE.** Created the `northwind-apps` realm (leaves `master` alone). This is the one piece
-  every later chapter's lab depends on existing — each chapter's own lab recreates it fresh via its own
-  `docker compose up`, not a shared running instance.
-- **Ch 21** (realm settings) configures realm-level settings on `northwind-apps` only — display name
-  "Northwind Apps", token/session lifetimes (forward-point to ch08/ch29), login settings. No new
-  users/roles/clients.
-- **Ch 22** (users) creates `jane.doe` (jane.doe@northwindapps.com — the exact identity chapter 2's
-  identity/identifier/credential/attribute example used) and `priya.patel` (chapter 1's team-move
-  example) as real users in `northwind-apps`, with credentials and a required action (e.g. configure
-  OTP) demonstrated.
-- **Ch 23** (roles & groups) creates realm roles `tenant-admin`, `support-agent`, `platform-engineer`
-  and groups `Engineering`/`Support`; assigns `jane.doe` → `tenant-admin`, `priya.patel` → initially
-  `support-agent`. **Payoff**: literally reproduce chapter 10's Priya "Mover event" scenario here —
-  move her from `support-agent`/`Support` to `platform-engineer`/`Engineering` in the real Admin
-  Console, and show the old role must be explicitly removed (exactly chapter 10's point, now hands-on).
-- **Ch 24** (clients, scopes, mappers) registers `northwind-dashboard` (confidential, standard flow)
-  and previews `northwind-spa` (public, forward-pointing to ch35); configures a client scope with a
-  protocol mapper adding a custom `department` claim from a user attribute. **Payoff**: this is the
-  exact "custom claim via a Keycloak protocol mapper" mechanism chapter 15 (OIDC) forward-referenced.
-- **Ch 25** (auth flows & required actions) clones the browser flow and adds a conditional OTP
-  requirement — tie to chapter 5's MFA content, now configured for real.
-- **Ch 26** (themes, branding, localization) customizes `northwind-apps`'s login theme with Northwind
-  branding and shows a locale/i18n option.
-
-Each of chapters 20-26 is a **real lab chapter** per CLAUDE.md §4 — the agent must actually run the
-Docker stack and either click through (described precisely, cross-checked against live-fetched current
-Keycloak 26.x Admin Console documentation, since no browser tool exists to click through it personally)
-or use `kcadm.sh`/the Admin REST API (which the agent CAN run and verify directly, no browser needed)
-to confirm every described step actually produces the claimed result. Where the Admin Console's exact
-screen layout can't be personally confirmed without a browser, the agent must cross-check against
-Keycloak's own current official Server Administration Guide (live-fetched, version 26.x) rather than
-describing a remembered-from-training-data layout that may be stale.
-
-Chapter 19 (Keycloak architecture, no lab) — **DONE**, had no dependency on the realm plan above.
-
-Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
-`hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
-sandboxed environment (looks like bot-blocking, not a dead link). Subagents have been substituting
-verified alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue
-that pattern rather than re-discovering the same block each time.
+**Up next: Part VI — Federation & Integration (chapters 31-36)**, which needs new lab scaffolding
+(`labs/spring-boot-resource-server/`, `labs/react-spa/`) built alongside chapters 34-35 rather than
+up front, per the Queue's existing note. Full chapter briefs to be drafted here per CLAUDE.md §6 when
+that unit starts.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -173,10 +82,11 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
    subagents, 21-26 as a second round of 6 parallel subagents, both centrally merged; see Done below).
    **→ GATE-4 reached, awaiting approval.**
 
-### Part V (Keycloak operations) — in progress
-10. Chapters 27-30 — briefs drafted under "Current unit" above, dispatching now.
+### Part V (Keycloak operations) — DONE
+10. ~~Chapters 27-30~~ — done 2026-11-10 (4 parallel subagents, each pre-assigned an isolated Docker
+    project/port, then centrally merged; see Done below).
 
-### Part VI (federation & integration)
+### Part VI (federation & integration) — up next
 11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
     not before — no point scaffolding a lab before its chapter is drafted).
 12. Chapters 31-36.
@@ -662,6 +572,63 @@ project) remain.
     `afl-`/`thm-`, checked against all prior prefixes programmatically).
   - `nav-data.js`'s `built` flag flipped to `true` for chapters 21-26 only after all checks passed.
   - **Part IV is now complete** (chapters 19-26, 8 chapters total). **→ GATE-4 reached.**
+
+### Part V, completed — chapters 27-30 (no gate; next gate is GATE-5 after Part VII)
+- 2026-11-10 chapters 27 (Admin REST API & kcadm CLI), 28 (events, auditing & monitoring), 29 (sessions
+  deep dive & SSO behavior), 30 (password policies, brute-force & MFA config) complete — 4 chapters, 4
+  parallel subagents, each pre-assigned an isolated Docker Compose project name/port up front in its
+  brief (`ch27kc`→18127, `ch28kc`→18128, `ch29kc`→18129, `ch30kc`→18130), applying GATE-4's process
+  note before any collision could happen rather than after — no collisions reported this round (one
+  agent explicitly confirmed a sibling's isolated stack running concurrently on its own port with no
+  interference).
+  - Structural: all 4 files parse cleanly (Python `html.parser`, zero errors), balanced tags, all 4
+    required mount points and 5 script tags present in order, re-served locally and `curl`-confirmed
+    `200` for every chapter plus the 4 shell pages and all 3 shared data files. All deep-dive links
+    live-curled `200` by their own subagent before shipping.
+  - Each chapter ran a real lab against an isolated copy of the shared `labs/docker` stack, continuing
+    the `northwind-apps` realm. Chapter 27 deliberately reproduced a real governance gap: a bulk-
+    onboarding script's accounts left zero admin-event audit trail until `adminEventsEnabled` was
+    turned on, and turning it on afterward did not retroactively record what already happened. Chapter
+    28 enabled both event streams, generated a real admin event (replaying chapter 23's role-change
+    scenario) and a real login event, and fetched both back via the REST API. Chapter 29 revoked a real
+    session and a real refresh token separately, confirming via independent reads that session-level
+    revocation kills every token immediately while refresh-token-level revocation (rotation/reuse
+    detection) only rejects the one stale token and leaves the session alive — then demonstrated
+    SSO-across-clients for real with a curl-only cookie-jar simulation across two independently
+    registered clients. Chapter 30 set a real `passwordPolicy`, triggered and recovered from a real
+    brute-force lockout via the Attack Detection API, and configured the OTP Policy tab.
+  - **Real finding, affecting the shared lab environment itself**: chapter 28's lab discovered that
+    `labs/docker/docker-compose.yml` set `KC_HEALTH_ENABLED=true` but never published port 9000 (the
+    management interface `/health`/`/metrics` actually serve on), meaning those endpoints were
+    unreachable from the host despite the env var suggesting they should work. Fixed directly in the
+    shared compose file (added `"9000:9000"` to `ports` and `KC_METRICS_ENABLED: "true"`), personally
+    re-verified end to end by the coordinator (`/health`→200 and `/metrics`→200 on port 9000; `/health`
+    →404 on port 8080, confirming the port split chapter 28 described), and documented in
+    `labs/docker/README.md`. This is a permanent fix to the shared environment, not a one-off workaround
+    — every chapter from 28 onward (and any reader) now gets working health/metrics out of the box.
+  - **Real brief correction**: chapter 30's lab found the realm's `passwordPolicy` string is joined with
+    the literal word "and", not a semicolon as the original brief assumed — the chapter corrects this
+    openly and the glossary entry for `Password policy (Keycloak)` states the correct mechanism.
+  - **Cross-chapter dedup catch during merge**: chapters 27 and 28 each independently proposed an
+    "Admin event" term (ch27: `Admin event`, scoped to its own automation angle and explicitly
+    forward-pointing to ch28; ch28: `Admin event (Keycloak)`, the fuller canonical version) — both
+    agents flagged the likely overlap themselves in their own reports without being asked. Merged into
+    one entry under ch28's name, folding ch27's governance-gap finding (the bulk-onboarding audit-trail
+    gap) into the merged definition, chapters extended to include both `events-and-auditing` and
+    `admin-api-and-cli`.
+  - Merged 63 new glossary terms (ch27: 15 minus 1 duplicate = 14, ch28: 17, ch29: 15, ch30: 17) plus 24
+    extend-existing-term requests across the four chapters (including three substantive text extensions
+    on `SSO session`, `Revoke Refresh Token`, and `Client Session Idle/Max` — chapter 29 making chapter
+    21's and chapter 7's session settings concrete with real observed runtime behavior — plus one
+    extension each on `Security Defenses tab (Realm Settings)` and `Direct access grants (Keycloak
+    client setting)` from chapter 30, and 19 chapters-array-only additions) — total glossary now **476
+    terms, zero duplicates, zero dangling chapter-slug references** (checked programmatically).
+  - Merged 68 new quiz questions (ch27: 17, ch28: 19, ch29: 16, ch30: 16) — total now **525 questions
+    across 31 pools, zero duplicate ids** (prefixes `api-`/`evt-`/`sdd-`/`ppm-`, checked against all
+    prior prefixes programmatically).
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 27-30 only after all checks passed.
+  - **Part V is now complete** (chapters 27-30, 4 chapters total). No gate here — next stop is GATE-5
+    after Part VII (chapters 31-38).
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is

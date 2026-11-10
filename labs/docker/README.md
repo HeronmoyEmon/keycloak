@@ -23,6 +23,12 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/realms/master/.we
 
 - Admin Console: http://localhost:8080/admin — bootstrap admin `admin` / `admin_lab_password`
 - Admin REST API / `kcadm.sh` base URL: http://localhost:8080
+- Management interface (health/metrics, chapter 28's subject): http://localhost:9000 — `/health`,
+  `/health/ready`, `/health/live`, `/metrics`. Served on a separate port from the Admin Console/REST
+  API; the identical paths 404 on port 8080. `KC_HEALTH_ENABLED`/`KC_METRICS_ENABLED` are both set in
+  `docker-compose.yml` and port 9000 is published, so this works out of the box as of 2026-11-10 — an
+  earlier version of this compose file set `KC_HEALTH_ENABLED` but never published port 9000, which
+  chapter 28's lab caught and this file's own fix corrected.
 
 ## Using `kcadm.sh` (the scriptable path chapters use to verify lab steps)
 
