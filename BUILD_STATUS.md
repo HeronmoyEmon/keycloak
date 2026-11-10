@@ -7,15 +7,66 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
-**GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10** ("continue" —
-treated as approval given it directly followed the GATE-3 presentation; no feedback given on any of
-the three gates). Confirms the parallel-subagent-then-central-merge working mode as the permanent
-default.
+**GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10. GATE-4 approved
+2026-11-10** ("proceed" — sent in the first message of a new session, immediately after a CLI restart,
+with no other pending question in play and the GATE-4 summary already the last thing presented in the
+prior session; treated as approval by the same convention GATE-3's "continue" used. No feedback given
+on any of the four gates). Confirms the parallel-subagent-then-central-merge working mode as the
+permanent default.
 
-**Part IV — Keycloak Core Administration (chapters 19-26) is now complete.** All 8 chapters merged,
-verified, `built:true`, committed. **→ GATE-4 reached — stopped here for review, awaiting approval
-before starting Part V.** See the GATE-4 review summary under Gates, and the Done entry for chapters
-21-26, for full detail.
+**Part IV — Keycloak Core Administration (chapters 19-26) is complete and GATE-4 is approved.** All 8
+chapters merged, verified, `built:true`, committed. See the GATE-4 review summary under Gates, and the
+Done entry for chapters 21-26, for full detail.
+
+**Now starting Part V — Keycloak Operations (chapters 27-30).** No gate sits between Part IV and Part
+V in CLAUDE.md §8 (the next one, GATE-5, sits after Part VII) — proceeding straight into the queue.
+
+**Part V chapter briefs** (drafted here per CLAUDE.md §6's "draft into BUILD_STATUS.md when a chapter
+comes up next" rule; each follows §4's template/minimums and §5's one-line description). All four keep
+building on the shared `northwind-apps` realm (jane.doe/priya.patel, roles, groups, clients from
+chapters 20-26) — no new realm or org needed, these chapters mature the same realm rather than starting
+over:
+
+- **Ch 27 — Admin REST API & kcadm CLI (automation).** Formalizes what chapters 20-26 already used
+  informally, one command at a time: the Admin REST API's actual shape (base URL, bearer-token auth via
+  the `admin-cli` client or a dedicated service account, pagination, filtering), and `kcadm.sh` as a thin
+  wrapper over it. Case-study tie-in: Northwind Apps needs to onboard 50 new customer-admin accounts at
+  once rather than one `create users` call at a time — write and run a real bash/kcadm script that bulk-
+  creates users with role assignments against `northwind-apps`, confirming the result via a follow-up
+  `get`, not the script's own exit code. Also covers realm export/import (full or partial) as the
+  backup/migration primitive chapters 44-45 will build on. "What concept is this?" recall: chapter 3's
+  AAA (this is the "A" for administration/automation made concrete) and chapter 10's provisioning-at-
+  scale problem.
+- **Ch 28 — Events, auditing & monitoring.** Keycloak's login-event and admin-event system, enabling
+  them on a realm, fetching them via the Admin REST API, and the `/health`/`/metrics` endpoints for
+  SIEM-style export. Case-study tie-in: Riverside Health's HIPAA audit-trail requirement (chapter 11)
+  maps directly onto admin-event retention — the lab should enable events on `northwind-apps`, generate
+  a real admin event (e.g. replay a small role change, à la chapter 23) and a real login event, then
+  fetch both via the REST API and inspect the actual fields. "What concept is this?" recall: chapter 3's
+  "Accounting" (the third A in AAA) and chapter 9's threat-landscape detection angle.
+- **Ch 29 — Sessions deep dive & SSO behavior in Keycloak.** Full depth on the session mechanics chapter
+  21 only configured settings for and chapter 7 only described conceptually: listing a user's active
+  sessions via the Admin REST API, revoking one, and the concrete effect of `Revoke Refresh Token`
+  (chapter 21) and concurrent-session behavior. Lab: create a real session for `jane.doe` (or a
+  disposable test user), list it via `GET users/{id}/sessions` or `GET sessions/{id}`, revoke it, and
+  confirm via a second, independent read that it's actually gone. "What concept is this?" recall:
+  chapter 7's SSO-session concept and chapter 8's token/session distinction, both made fully concrete.
+- **Ch 30 — Password policies, brute-force protection & MFA config in Keycloak.** The realm-level
+  `passwordPolicy` string (length, specialChars, passwordHistory, etc.), the Security Defenses tab's
+  brute-force fields chapter 21 previewed but didn't configure, and the OTP Policy tab (algorithm,
+  digits, period) implementing chapter 5's TOTP mechanics concretely. Case-study tie-in: Meridian Trust
+  (PCI-DSS, chapter 11) needs a documented password policy and brute-force lockout — lab should actually
+  set a policy string on `northwind-apps`, try a non-compliant password and capture the real rejection,
+  then enable brute-force detection and fail a login enough times to trigger a real, confirmed lockout
+  (not narrated). "What concept is this?" recall: chapter 5's MFA/risk-based auth and chapter 9's
+  credential-stuffing threat this specific control defends against.
+
+**Docker lab-environment assignment for this round** (applying the GATE-4 process note above): to avoid
+repeating the project-name/port collision 5 of 6 chapter-21-26 agents hit, each of the 4 parallel ch27-30
+agents gets its own isolated Compose project name and host port assigned up front in its brief, rather
+than discovering the collision mid-lab: `ch27kc`→18127, `ch28kc`→18128, `ch29kc`→18129, `ch30kc`→18130.
+Each agent's own chapter text still shows the reader the plain, standard `docker compose up -d` form —
+the isolation is a session-concurrency device for this build round only, not reader-facing content.
 
 **Standing process note for future parallel Keycloak-lab rounds** (surfaced independently by 5 of the 6
 chapter-21-26 subagents this round): `labs/docker/docker-compose.yml`'s default Compose project name
@@ -122,8 +173,8 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
    subagents, 21-26 as a second round of 6 parallel subagents, both centrally merged; see Done below).
    **→ GATE-4 reached, awaiting approval.**
 
-### Part V (Keycloak operations)
-10. Chapters 27-30.
+### Part V (Keycloak operations) — in progress
+10. Chapters 27-30 — briefs drafted under "Current unit" above, dispatching now.
 
 ### Part VI (federation & integration)
 11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
