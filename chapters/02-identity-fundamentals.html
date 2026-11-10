@@ -5,429 +5,573 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Identity Fundamentals — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "identity-fundamentals";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part I — IAM Foundations</span>
-      <span class="badge minutes">~35 min</span>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part I — IAM Foundations</span>
+          <span class="badge minutes">~35 min</span>
+        </div>
+        <h1>2. Identity Fundamentals</h1>
+        <p class="lede">Every IAM system you will ever touch is, underneath, answering one question over and
+        over: is this the entity it claims to be, and what do we actually know about it? This chapter gives
+        you the vocabulary to answer that precisely — identity, identifier, credential, attribute, principal,
+        and subject are not synonyms, and mixing them up is one of the most common ways beginners (and some
+        very senior engineers) misdesign a system.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist spends a surprising amount of their career just getting this vocabulary straight
+        with other people. A support ticket that says "the user's identity is wrong" could mean the identifier
+        is mistyped, the credential was reset, an attribute is stale, or the account was never properly
+        created in the first place — and the fix is different in every case. The generalized lifecycle you'll
+        learn here (create → activate → modify → suspend → delete) is the shape every identity-bearing system
+        implements, whether it's Keycloak, Active Directory, a homegrown users table, or a SaaS vendor's admin
+        panel — learn the shape once, and you can navigate any of them.</p>
+      </section>
+
+      <section class="slide" data-slide="four-concepts" data-title="Identity, identifier, credential, attribute">
+        <h2>Identity, identifier, credential, and attribute — four different things</h2>
+        <p>Take a specific person: <strong>Jane Doe</strong>, an engineer at Northwind Apps. Beginners often
+        use "identity" loosely to mean "the user," but a working IAM vocabulary needs four separate words for
+        four separate things that are all true of Jane at once:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Four concepts, one person</caption>
+            <thead><tr><th>Concept</th><th>Definition</th><th>Jane Doe's example</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Identity</strong></td><td>The whole bundle — the record that ties an identifier,
+              credentials, and attributes together as one entity inside a system.</td><td>Jane's complete
+              Northwind Apps employee record.</td></tr>
+              <tr><td><strong>Identifier</strong></td><td>The unique value used to look the identity up within
+              some namespace. It must be unique; it does not need to be secret.</td><td>
+              <code>jane.doe@northwindapps.com</code></td></tr>
+              <tr><td><strong>Credential</strong></td><td>Evidence presented to prove control of the
+              identifier. Credentials are the thing that must stay secret, and the thing you rotate.</td>
+              <td>Her password, plus a one-time code from an authenticator app.</td></tr>
+              <tr><td><strong>Attribute</strong></td><td>A fact recorded about the identity. Attributes
+              describe; they don't prove anything on their own.</td><td><code>department: Engineering</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 380" role="img" aria-labelledby="t1 d1">
+            <title id="t1">One person, four different IAM concepts</title>
+            <desc id="d1">Jane Doe, a Northwind Apps engineer, shown as a single real-world person on the
+            left, with lines pointing to four boxes on the right: her identity record, her identifier
+            jane.doe at northwindapps.com, her credential of a password plus a one-time code, and her
+            attribute department equals Engineering.</desc>
+            <rect x="20" y="150" width="200" height="80" rx="10" class="diagram-fill-surface diagram-stroke"/>
+            <text x="120" y="182" text-anchor="middle" class="diagram-label" font-weight="700">Jane Doe</text>
+            <text x="120" y="202" text-anchor="middle" class="diagram-label-muted">Northwind Apps engineer</text>
+
+            <line x1="220" y1="180" x2="420" y2="45" class="diagram-stroke"/>
+            <line x1="220" y1="186" x2="420" y2="135" class="diagram-stroke"/>
+            <line x1="220" y1="194" x2="420" y2="225" class="diagram-stroke"/>
+            <line x1="220" y1="200" x2="420" y2="315" class="diagram-stroke"/>
+
+            <rect x="420" y="10" width="380" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="440" y="34" class="diagram-label" font-weight="700">IDENTITY</text>
+            <text x="440" y="56" class="diagram-label-muted">The full record for Jane inside Northwind's system.</text>
+
+            <rect x="420" y="100" width="380" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="440" y="124" class="diagram-label" font-weight="700">IDENTIFIER</text>
+            <text x="440" y="146" class="diagram-label-muted">jane.doe@northwindapps.com — unique lookup handle.</text>
+
+            <rect x="420" y="190" width="380" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="440" y="214" class="diagram-label" font-weight="700">CREDENTIAL</text>
+            <text x="440" y="236" class="diagram-label-muted">Password + one-time code — proof she controls it.</text>
+
+            <rect x="420" y="280" width="380" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="440" y="304" class="diagram-label" font-weight="700">ATTRIBUTE</text>
+            <text x="440" y="326" class="diagram-label-muted">department: Engineering — a fact recorded about her.</text>
+          </svg>
+          <figcaption>Figure 2.1 — The same person, viewed through four different IAM lenses.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Changing an attribute is not the same event as changing a credential, and systems that treat them
+          the same cause real incidents — e.g. forcing a password reset because someone's job title changed,
+          or silently invalidating a session because an unrelated profile field was edited.</p>
+        </div>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p>At Northwind Apps, the attribute <code>tenantId: acme-corp</code> on a customer-company
+          employee's identity is what lets the application show that user only Acme Corp's project boards —
+          not Globex's. Change that one attribute and her visible access changes instantly, without touching
+          her credential or her identifier at all. That's the practical payoff of keeping these four concepts
+          separate: you can reason about exactly which one changed and what effect that should have.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="principal-subject" data-title="Principal vs. subject">
+        <h2>Principal vs. subject</h2>
+        <p>These two terms get used interchangeably in casual conversation, and most of the time that's
+        harmless. But they have a formal distinction that matters once tokens and sessions enter the picture:</p>
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>A <strong>principal</strong> is the entity being identified — the real-world person, service, or
+          device an identity refers to. It exists independent of any login event. A <strong>subject</strong>
+          is that principal as represented inside one active security context, such as a signed token or a
+          live session. The same principal produces a brand-new subject every time it authenticates.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 260" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Principal versus subject</title>
+            <desc id="d2">A box labeled Principal describing Jane Doe as the real person, with an arrow
+            labeled authenticates pointing to a box labeled Subject, describing Jane as represented inside
+            one access token with claims sub, roles, and exp. A note below states a new subject is minted
+            every time the same principal authenticates again.</desc>
+            <rect x="30" y="70" width="280" height="110" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="170" y="100" text-anchor="middle" class="diagram-label" font-weight="700">PRINCIPAL</text>
+            <text x="170" y="124" text-anchor="middle" class="diagram-label-muted">Jane Doe — the real</text>
+            <text x="170" y="142" text-anchor="middle" class="diagram-label-muted">person. Exists whether</text>
+            <text x="170" y="160" text-anchor="middle" class="diagram-label-muted">or not she's logged in.</text>
+
+            <line x1="310" y1="125" x2="420" y2="125" class="diagram-stroke" marker-end="url(#arrow1)"/>
+            <text x="365" y="112" text-anchor="middle" class="diagram-label-muted">authenticates</text>
+
+            <rect x="420" y="40" width="310" height="170" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="575" y="68" text-anchor="middle" class="diagram-label" font-weight="700">SUBJECT</text>
+            <text x="440" y="94" class="diagram-label-muted">sub: jane.doe@northwindapps.com</text>
+            <text x="440" y="114" class="diagram-label-muted">roles: [ "engineer" ]</text>
+            <text x="440" y="134" class="diagram-label-muted">exp: 1699999999</text>
+            <text x="440" y="160" class="diagram-label-muted">One token, one session —</text>
+            <text x="440" y="178" class="diagram-label-muted">one active security context.</text>
+
+            <text x="380" y="230" text-anchor="middle" class="diagram-label-muted">A new subject is minted every time this same principal authenticates again.</text>
+            <defs>
+              <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 2.2 — A principal is the entity; a subject is that entity inside one active context.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>If a Meridian Trust customer's mobile-banking access token is stolen and used by an attacker
+          before it expires, the attacker has gained control of a valid <strong>subject</strong> without being
+          the <strong>principal</strong> it was issued to. That distinction is exactly why token theft is
+          treated as a serious incident even though the customer's actual identity — their principal — was
+          never touched: the thing that was compromised was one active security context, not the person.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lifecycle" data-title="The identity lifecycle">
+        <h2>The identity lifecycle, generalized</h2>
+        <p>Regardless of which product implements it, every identity moves through the same generalized
+        stages over its life: <strong>create</strong> it, <strong>activate</strong> it so it can actually be
+        used, <strong>modify</strong> it as facts about it change, <strong>suspend</strong> it when access
+        needs to stop temporarily, and eventually <strong>delete</strong> it. An identity can arrive at
+        "create" through a few different doors — a human administrator creating it directly (manual
+        creation), the principal filling out a signup form themselves (self-registration), or the identity
+        being created automatically from an external identity provider's data the first time someone logs in
+        (federated/brokered creation — full depth in chapter 7). Where it comes from doesn't change what
+        happens to it afterward.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 920 320" role="img" aria-labelledby="t3 d3">
+            <title id="t3">The generalized identity lifecycle</title>
+            <desc id="d3">Three entry points — manual creation, self-registration, and federated or brokered
+            creation — each feed into a Create stage. A horizontal chain then runs Create, Activate, Modify,
+            Suspend, Delete. Modify has a loop back to itself for ongoing changes. Suspend has an arrow back
+            to Activate labeled reinstated, and continues forward to Delete for the case where it is never
+            reactivated.</desc>
+            <rect x="30" y="15" width="190" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="125" y="38" text-anchor="middle" class="diagram-label-muted">Manual creation</text>
+            <text x="125" y="56" text-anchor="middle" class="diagram-label-muted">(an admin creates it)</text>
+
+            <rect x="250" y="15" width="190" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="345" y="38" text-anchor="middle" class="diagram-label-muted">Self-registration</text>
+            <text x="345" y="56" text-anchor="middle" class="diagram-label-muted">(principal signs up)</text>
+
+            <rect x="470" y="15" width="260" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="600" y="38" text-anchor="middle" class="diagram-label-muted">Federated / brokered creation</text>
+            <text x="600" y="56" text-anchor="middle" class="diagram-label-muted">(first login via external IdP — ch. 7)</text>
+
+            <line x1="125" y1="70" x2="100" y2="220" class="diagram-stroke"/>
+            <line x1="345" y1="70" x2="100" y2="220" class="diagram-stroke"/>
+            <line x1="600" y1="70" x2="100" y2="220" class="diagram-stroke"/>
+
+            <rect x="25" y="220" width="150" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="100" y="255" text-anchor="middle" class="diagram-label" font-weight="700">CREATE</text>
+
+            <line x1="175" y1="250" x2="205" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
+            <rect x="205" y="220" width="150" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="280" y="255" text-anchor="middle" class="diagram-label" font-weight="700">ACTIVATE</text>
+
+            <line x1="355" y1="250" x2="385" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
+            <rect x="385" y="220" width="150" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="460" y="255" text-anchor="middle" class="diagram-label" font-weight="700">MODIFY</text>
+            <path d="M 420,220 Q 460,180 500,220" fill="none" class="diagram-stroke" marker-end="url(#arrow2)"/>
+            <text x="460" y="175" text-anchor="middle" class="diagram-label-muted">ongoing changes</text>
+
+            <line x1="535" y1="250" x2="565" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
+            <rect x="565" y="220" width="150" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="640" y="255" text-anchor="middle" class="diagram-label" font-weight="700">SUSPEND</text>
+            <path d="M 600,220 Q 460,140 320,220" fill="none" class="diagram-stroke" marker-end="url(#arrow3)"/>
+            <text x="460" y="135" text-anchor="middle" class="diagram-label-muted">reinstated</text>
+
+            <line x1="715" y1="250" x2="745" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
+            <rect x="745" y="220" width="150" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="820" y="255" text-anchor="middle" class="diagram-label" font-weight="700">DELETE</text>
+            <text x="820" y="295" text-anchor="middle" class="diagram-label-muted">never reactivated</text>
+
+            <defs>
+              <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+              <marker id="arrow3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 2.3 — The generalized identity lifecycle: three doors into Create, then one shared path onward.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>When Meridian Trust's fraud team flags unusual activity on a teller's account, the response is to
+          <strong>suspend</strong> it, not delete it — login is blocked while HR investigates, but the
+          identity record and its history stay intact. If HR clears her a week later, the account is
+          <strong>reactivated</strong> rather than recreated from scratch. Meridian's auditors specifically
+          care about that distinction: suspend-then-reinstate leaves one continuous, explainable record;
+          delete-then-recreate breaks that continuity and can obscure that it was the same person the whole
+          time.</p>
+        </div>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Chapter 22 puts hands on exactly this: Keycloak's Users section stores the identifier/credential/
+          attribute split you just learned — a username/email identifier, a Credentials tab for passwords and
+          OTP, and a free-form Attributes tab — plus an Enabled/Disabled toggle that implements the
+          generalized "suspend" stage of this lifecycle.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="human-nonhuman" data-title="Human vs. non-human identities">
+        <h2>Human and non-human identities</h2>
+        <p>Not every identity in a system represents a person. A <strong>human identity</strong> represents an
+        employee, customer, patient, or clinician. A <strong>non-human identity</strong> represents something
+        acting on an organization's behalf without a person sitting behind it in real time: a
+        <strong>service account</strong> an application uses to authenticate, a <strong>machine identity</strong>
+        tied to a device or server (often backed by a certificate), or a <strong>workload identity</strong>
+        assigned to a running piece of software — a container, a function — so it can authenticate without a
+        long-lived secret baked into its code. This distinction matters because non-human identities are often
+        long-lived, broadly privileged, and unattended, which means they need their own review and
+        least-privilege discipline rather than being lumped in with human accounts and forgotten.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 300" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Human versus non-human identities</title>
+            <desc id="d4">A top box labeled Digital identities in a system splits into two branches: Human
+            identities, listing Northwind's employees and customer-company users, Riverside's clinicians and
+            patients, and Meridian's employees and retail customers; and Non-human identities, listing service
+            accounts, machine identities such as servers and certificates, and workload identities such as
+            containers and functions.</desc>
+            <rect x="260" y="10" width="300" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="410" y="40" text-anchor="middle" class="diagram-label" font-weight="700">Digital identities in a system</text>
+
+            <line x1="340" y1="60" x2="200" y2="110" class="diagram-stroke"/>
+            <line x1="480" y1="60" x2="620" y2="110" class="diagram-stroke"/>
+
+            <rect x="35" y="110" width="330" height="170" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="200" y="136" text-anchor="middle" class="diagram-label" font-weight="700">HUMAN IDENTITIES</text>
+            <text x="55" y="162" class="diagram-label-muted">Northwind: employees + customer-company users</text>
+            <text x="55" y="186" class="diagram-label-muted">Riverside: clinicians + patients</text>
+            <text x="55" y="210" class="diagram-label-muted">Meridian: employees + retail customers</text>
+            <text x="55" y="246" class="diagram-label-muted">A person is behind the login, in real time.</text>
+
+            <rect x="455" y="110" width="330" height="170" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="620" y="136" text-anchor="middle" class="diagram-label" font-weight="700">NON-HUMAN IDENTITIES</text>
+            <text x="475" y="162" class="diagram-label-muted">Service accounts (apps authenticating)</text>
+            <text x="475" y="186" class="diagram-label-muted">Machine identities (servers, certificates)</text>
+            <text x="475" y="210" class="diagram-label-muted">Workload identities (containers, functions)</text>
+            <text x="475" y="246" class="diagram-label-muted">Long-lived, often unattended — review these too.</text>
+          </svg>
+          <figcaption>Figure 2.4 — The same system holds both human and non-human identities, and both need governance.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Riverside Health's lab-results system doesn't only have doctor and nurse identities — it also
+          runs a <strong>service account</strong> that polls the hospital's imaging system every five minutes
+          and pushes new scans into the records system. That account never logs in through a browser, never
+          forgets a password, and shouldn't be granted the same broad access a clinician has. In more real
+          incidents than you'd expect, exactly that over-privileging is what goes wrong.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="three-orgs" data-title="Meet the three organizations">
+        <h2>Meet the three organizations you'll see for the rest of this course</h2>
+        <p>Starting here, every scenario, lab, and case study in this course uses one of the same three
+        organizations, so your mental model compounds instead of resetting with every new example.</p>
+
+        <p><span class="org-chip northwind">Northwind Apps</span> is a B2B SaaS company that sells
+        project-management software to other businesses. Its identity population splits cleanly into two
+        groups: internal staff (engineers, support reps, sales) who need workforce access to Northwind's own
+        systems, and the employees of its business customers — thousands of people across hundreds of
+        customer companies — who need to log into the Northwind product itself. Because each customer company
+        is effectively its own tenant, Northwind cares enormously about CIAM (customer identity and access
+        management) at scale and about enterprise SSO: a customer's IT admin wants their own employees signing
+        in with their own corporate identity provider, not a Northwind-issued password. Northwind will be our
+        running example for multi-tenant SaaS identity and enterprise federation.</p>
+
+        <p><span class="org-chip riverside">Riverside Health</span> is a regional hospital network. Its
+        identity population is split between clinician workforce identities — doctors, nurses, and
+        administrative staff who need fast, reliable access to clinical systems, often from shared
+        workstations, where authentication friction can cost seconds that matter — and patient identities, who
+        use a patient portal to view records, message their care team, and pay bills. Riverside operates under
+        HIPAA, so every one of those identities, human or not, carries obligations: strong authentication,
+        tight audit trails, and access that maps to a legitimate clinical need. Riverside will be our running
+        example for regulated workforce IAM and patient-facing CIAM existing side by side in one organization.</p>
+
+        <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank. Its identity population
+        includes bank employees — tellers, loan officers, back-office staff, each with very different
+        authorization needs — and retail customers who bank online and through a mobile app. Because Meridian
+        is a financial institution under PCI-DSS and heavy fraud pressure, its identity program has to support
+        step-up authentication (asking for a stronger credential only when risk is high, such as before a wire
+        transfer) and fraud-aware authentication that treats a login attempt differently depending on device,
+        location, and behavior. Meridian will be our running example for high-assurance consumer authentication
+        and risk-based access decisions.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 940 280" role="img" aria-labelledby="t5 d5">
+            <title id="t5">The three recurring case-study organizations, side by side</title>
+            <desc id="d5">Three cards side by side, one per organization. Northwind Apps: internal staff,
+            and customer-company users, focused on CIAM at scale plus enterprise SSO. Riverside Health:
+            clinician workforce, and patients, focused on HIPAA — regulated workforce and patient CIAM
+            together. Meridian Trust: bank employees, and retail customers, focused on PCI-DSS, step-up
+            authentication, and fraud-aware authentication.</desc>
+
+            <rect x="20" y="15" width="280" height="40" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="160" y="40" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700">Northwind Apps</text>
+            <rect x="30" y="65" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="45" y="86" class="diagram-label" font-weight="700" font-size="12">Internal staff</text>
+            <text x="45" y="104" class="diagram-label-muted" font-size="10">engineers, support, sales</text>
+            <rect x="30" y="130" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="45" y="151" class="diagram-label" font-weight="700" font-size="12">Customer-company users</text>
+            <text x="45" y="169" class="diagram-label-muted" font-size="10">multi-tenant, 100s of orgs</text>
+            <text x="45" y="210" class="diagram-label-muted" font-size="11">Focus: CIAM at scale +</text>
+            <text x="45" y="228" class="diagram-label-muted" font-size="11">enterprise SSO</text>
+
+            <rect x="320" y="15" width="280" height="40" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="460" y="40" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700">Riverside Health</text>
+            <rect x="330" y="65" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="345" y="86" class="diagram-label" font-weight="700" font-size="12">Clinician workforce</text>
+            <text x="345" y="104" class="diagram-label-muted" font-size="10">doctors, nurses, admin staff</text>
+            <rect x="330" y="130" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="345" y="151" class="diagram-label" font-weight="700" font-size="12">Patients</text>
+            <text x="345" y="169" class="diagram-label-muted" font-size="10">patient portal users</text>
+            <text x="345" y="210" class="diagram-label-muted" font-size="11">Focus: HIPAA —</text>
+            <text x="345" y="228" class="diagram-label-muted" font-size="11">workforce + patient CIAM</text>
+
+            <rect x="620" y="15" width="280" height="40" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="760" y="40" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700">Meridian Trust</text>
+            <rect x="630" y="65" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="645" y="86" class="diagram-label" font-weight="700" font-size="12">Bank employees</text>
+            <text x="645" y="104" class="diagram-label-muted" font-size="10">tellers, loan officers, back office</text>
+            <rect x="630" y="130" width="260" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="645" y="151" class="diagram-label" font-weight="700" font-size="12">Retail customers</text>
+            <text x="645" y="169" class="diagram-label-muted" font-size="10">online + mobile banking</text>
+            <text x="645" y="210" class="diagram-label-muted" font-size="11">Focus: PCI-DSS —</text>
+            <text x="645" y="228" class="diagram-label-muted" font-size="11">step-up &amp; fraud-aware auth</text>
+          </svg>
+          <figcaption>Figure 2.5 — Northwind Apps, Riverside Health, and Meridian Trust: each organization's
+          two human identity populations and its dominant IAM concern.</figcaption>
+        </figure>
+
+        <div class="callout callout--deep-dive">
+          <div class="callout-label">Where governance picks this up</div>
+          <p>Creating and deleting identities — the first and last stages of the lifecycle you just saw — also
+          have a formal governance side: approvals, workflows, and the joiner-mover-leaver process. That's
+          provisioning and deprovisioning, covered briefly here and in full depth in chapter 10.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see an application forcing a password reset whenever someone's job title changes, the
+          cause is usually treating an attribute change as if it were a credential change — the two are
+          unrelated events.</li>
+          <li>If you see an audit log that can't say whether an account was deleted or merely disabled, the
+          cause is usually a system that never separated "suspend" from "delete" as distinct lifecycle stages.</li>
+          <li>If you see a service account holding the same broad permissions as a senior administrator and
+          nobody can explain why, the cause is usually that it was provisioned once, years ago, and never
+          re-reviewed the way a human identity would be.</li>
+          <li>If you see two engineers arguing about whether "the user" changed after a token refresh, the
+          cause is usually that they're using "principal" and "subject" interchangeably when the distinction
+          actually matters for the argument they're having.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Identity, identifier, credential, and attribute are four different concepts describing the same
+          real-world entity — don't conflate them.</li>
+          <li>An identifier only needs to be unique, not secret; a credential is the thing that must stay
+          secret.</li>
+          <li>Attributes describe an identity; they don't prove anything about it the way a credential does.</li>
+          <li>A principal is the real-world entity; a subject is that principal as represented in one active
+          security context — a single principal can produce many subjects over time.</li>
+          <li>The identity lifecycle generalizes to create → activate → modify → suspend → delete, regardless
+          of which product implements it.</li>
+          <li>An identity can enter the "create" stage through manual creation, self-registration, or
+          federated/brokered creation — same destination, different doors.</li>
+          <li>Suspension and deletion are not the same thing, and audit trails care about the difference.</li>
+          <li>Not every identity is human — service accounts, machine identities, and workload identities need
+          their own review and least-privilege discipline.</li>
+          <li>Northwind Apps, Riverside Health, and Meridian Trust each manage a different mix of human
+          identity types and will recur for the rest of this course.</li>
+          <li>These vendor-agnostic lifecycle stages come back concretely once Keycloak is installed, in
+          chapter 22.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Without naming any specific product, describe the difference between an identifier and a
+            credential using an example that isn't Jane Doe.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A Riverside
+            Health nurse's employee ID number (say, <code>RN-48213</code>) is her identifier — unique enough
+            to look her up in HR and clinical systems, but not secret; anyone with directory access can see
+            it. Her PIN for the medication-dispensing cabinet is her credential — it has to stay secret,
+            because it's the thing that proves she's actually the nurse behind that ID number, not merely
+            someone who knows the number.</p>
+          </details></li>
+          <li><details>
+            <summary>Why can a single principal be represented by many different subjects over time? Give a
+            concrete scenario.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because
+            authentication, not the principal's existence, is what mints a subject — every successful login
+            creates a fresh security context, even if the real-world entity behind it hasn't changed at all.
+            A Meridian Trust customer who logs into the mobile app in the morning gets one token/session; if
+            she logs out and back in that evening, she gets a brand-new token/session with a new expiry. She
+            is the same principal the whole day, but two distinct subjects were minted for her, because each
+            one only represents one active context, not the person permanently.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through a new hire's identity from creation to eventual deletion, naming which
+            lifecycle stage applies at each point and why.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Before day
+            one, HR or an admin provisions the account (Create). On day one, the new hire sets a password and
+            enrolls MFA, and the account becomes usable (Activate). Over her tenure, promotions, department
+            transfers, and name changes update facts about her record (Modify — looping, since this happens
+            repeatedly). If she goes on extended leave or is placed under investigation, her account is
+            Suspended — login blocked, record intact; if she returns, she's reinstated back to Activate.
+            When she eventually resigns and any retention/legal-hold period passes, her identity reaches
+            Delete.</p>
+          </details></li>
+          <li><details>
+            <summary>Pick one non-human identity you might expect to find at Riverside Health or Meridian
+            Trust, and explain what could go wrong if nobody reviews its access.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Riverside's
+            imaging-polling service account, which pushes new scans into the records system every five
+            minutes. If nobody reviews it over the years, it can quietly accumulate broader permissions than
+            it needs — write access beyond just pushing scans, say — and because it never logs in through a
+            browser the way a clinician does, nobody notices unusual activity on it the way they would notice
+            a human logging in at 3 a.m. That combination of broad, stale privilege and low visibility makes
+            it an attractive, rarely-monitored target if its credential is ever compromised.</p>
+          </details></li>
+          <li><details>
+            <summary>Why might an organization prefer suspending an identity over deleting it, even when it's
+            fairly sure the person won't be reinstated?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Suspension
+            preserves one continuous, explainable record — exactly what Meridian Trust's auditors want: when
+            the account existed, when it was active, and precisely when access was cut off. Deletion creates
+            an ambiguous gap an auditor can't easily explain ("was this removed due to a breach, routine
+            cleanup, or something else?"), and it can also break referential integrity in other systems that
+            still reference that identity by ID. Suspending keeps the history intact in case a later
+            compliance or legal review needs to look back at it.</p>
+          </details></li>
+          <li><details>
+            <summary>For each of Northwind Apps, Riverside Health, and Meridian Trust, name one human identity
+            type and one thing that makes managing it different from the other two organizations'.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Northwind:
+            customer-company employees — managing them means CIAM at multi-tenant scale, where each of
+            hundreds of customer organizations expects its own enterprise SSO/federation rather than a
+            Northwind-issued password. Riverside: clinicians — managing them means minimizing authentication
+            friction on shared clinical workstations while still meeting HIPAA-grade audit requirements, since
+            delay at login can cost real clinical time. Meridian: retail customers — managing them means
+            step-up and fraud-aware authentication that adapts to risk signals like device and location,
+            rather than one flat login experience, because of PCI-DSS and fraud pressure.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://pages.nist.gov/800-63-3/">NIST SP 800-63-3 — Digital Identity Guidelines (overview)</a></li>
+          <li><a href="https://pages.nist.gov/800-63-3/sp800-63a.html">NIST SP 800-63A — Enrollment and Identity Proofing</a></li>
+          <li><a href="https://pages.nist.gov/800-63-3/sp800-63b.html">NIST SP 800-63B — Authentication and Lifecycle Management</a></li>
+          <li><a href="https://csrc.nist.gov/glossary">NIST Computer Security Resource Center — Glossary (identity, credential, attribute, subject)</a></li>
+        </ul>
+      </section>
+
     </div>
-    <h1>2. Identity Fundamentals</h1>
-    <p class="lede">Every IAM system you will ever touch is, underneath, answering one question over and
-    over: is this the entity it claims to be, and what do we actually know about it? This chapter gives
-    you the vocabulary to answer that precisely — identity, identifier, credential, attribute, principal,
-    and subject are not synonyms, and mixing them up is one of the most common ways beginners (and some
-    very senior engineers) misdesign a system.</p>
-
-    <h2>Why this matters</h2>
-    <p>An IAM specialist spends a surprising amount of their career just getting this vocabulary straight
-    with other people. A support ticket that says "the user's identity is wrong" could mean the identifier
-    is mistyped, the credential was reset, an attribute is stale, or the account was never properly
-    created in the first place — and the fix is different in every case. The generalized lifecycle you'll
-    learn here (create → activate → modify → suspend → delete) is the shape every identity-bearing system
-    implements, whether it's Keycloak, Active Directory, a homegrown users table, or a SaaS vendor's admin
-    panel — learn the shape once, and you can navigate any of them.</p>
-
-    <h2>Identity, identifier, credential, and attribute — four different things</h2>
-    <p>Take a specific person: <strong>Jane Doe</strong>, an engineer at Northwind Apps. Beginners often
-    use "identity" loosely to mean "the user," but a working IAM vocabulary needs four separate words for
-    four separate things that are all true of Jane at once:</p>
-    <div class="table-wrap">
-      <table>
-        <caption>Four concepts, one person</caption>
-        <thead><tr><th>Concept</th><th>Definition</th><th>Jane Doe's example</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Identity</strong></td><td>The whole bundle — the record that ties an identifier,
-          credentials, and attributes together as one entity inside a system.</td><td>Jane's complete
-          Northwind Apps employee record.</td></tr>
-          <tr><td><strong>Identifier</strong></td><td>The unique value used to look the identity up within
-          some namespace. It must be unique; it does not need to be secret.</td><td>
-          <code>jane.doe@northwindapps.com</code></td></tr>
-          <tr><td><strong>Credential</strong></td><td>Evidence presented to prove control of the
-          identifier. Credentials are the thing that must stay secret, and the thing you rotate.</td>
-          <td>Her password, plus a one-time code from an authenticator app.</td></tr>
-          <tr><td><strong>Attribute</strong></td><td>A fact recorded about the identity. Attributes
-          describe; they don't prove anything on their own.</td><td><code>department: Engineering</code></td></tr>
-        </tbody>
-      </table>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 820 380" role="img" aria-labelledby="t1 d1">
-        <title id="t1">One person, four different IAM concepts</title>
-        <desc id="d1">Jane Doe, a Northwind Apps engineer, shown as a single real-world person on the
-        left, with lines pointing to four boxes on the right: her identity record, her identifier
-        jane.doe at northwindapps.com, her credential of a password plus a one-time code, and her
-        attribute department equals Engineering.</desc>
-        <rect x="20" y="150" width="200" height="80" rx="10" class="diagram-fill-surface diagram-stroke"/>
-        <text x="120" y="182" text-anchor="middle" class="diagram-label" font-weight="700">Jane Doe</text>
-        <text x="120" y="202" text-anchor="middle" class="diagram-label-muted">Northwind Apps engineer</text>
-
-        <line x1="220" y1="180" x2="420" y2="45" class="diagram-stroke"/>
-        <line x1="220" y1="186" x2="420" y2="135" class="diagram-stroke"/>
-        <line x1="220" y1="194" x2="420" y2="225" class="diagram-stroke"/>
-        <line x1="220" y1="200" x2="420" y2="315" class="diagram-stroke"/>
-
-        <rect x="420" y="10" width="380" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="440" y="34" class="diagram-label" font-weight="700">IDENTITY</text>
-        <text x="440" y="56" class="diagram-label-muted">The full record for Jane inside Northwind's system.</text>
-
-        <rect x="420" y="100" width="380" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="440" y="124" class="diagram-label" font-weight="700">IDENTIFIER</text>
-        <text x="440" y="146" class="diagram-label-muted">jane.doe@northwindapps.com — unique lookup handle.</text>
-
-        <rect x="420" y="190" width="380" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="440" y="214" class="diagram-label" font-weight="700">CREDENTIAL</text>
-        <text x="440" y="236" class="diagram-label-muted">Password + one-time code — proof she controls it.</text>
-
-        <rect x="420" y="280" width="380" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="440" y="304" class="diagram-label" font-weight="700">ATTRIBUTE</text>
-        <text x="440" y="326" class="diagram-label-muted">department: Engineering — a fact recorded about her.</text>
-      </svg>
-      <figcaption>Figure 2.1 — The same person, viewed through four different IAM lenses.</figcaption>
-    </figure>
-
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall</div>
-      <p>Changing an attribute is not the same event as changing a credential, and systems that treat them
-      the same cause real incidents — e.g. forcing a password reset because someone's job title changed,
-      or silently invalidating a session because an unrelated profile field was edited.</p>
-    </div>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Northwind Apps</div>
-      <p>At Northwind Apps, the attribute <code>tenantId: acme-corp</code> on a customer-company
-      employee's identity is what lets the application show that user only Acme Corp's project boards —
-      not Globex's. Change that one attribute and her visible access changes instantly, without touching
-      her credential or her identifier at all. That's the practical payoff of keeping these four concepts
-      separate: you can reason about exactly which one changed and what effect that should have.</p>
-    </div>
-
-    <h2>Principal vs. subject</h2>
-    <p>These two terms get used interchangeably in casual conversation, and most of the time that's
-    harmless. But they have a formal distinction that matters once tokens and sessions enter the picture:</p>
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea</div>
-      <p>A <strong>principal</strong> is the entity being identified — the real-world person, service, or
-      device an identity refers to. It exists independent of any login event. A <strong>subject</strong>
-      is that principal as represented inside one active security context, such as a signed token or a
-      live session. The same principal produces a brand-new subject every time it authenticates.</p>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 760 260" role="img" aria-labelledby="t2 d2">
-        <title id="t2">Principal versus subject</title>
-        <desc id="d2">A box labeled Principal describing Jane Doe as the real person, with an arrow
-        labeled authenticates pointing to a box labeled Subject, describing Jane as represented inside
-        one access token with claims sub, roles, and exp. A note below states a new subject is minted
-        every time the same principal authenticates again.</desc>
-        <rect x="30" y="70" width="280" height="110" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="170" y="100" text-anchor="middle" class="diagram-label" font-weight="700">PRINCIPAL</text>
-        <text x="170" y="124" text-anchor="middle" class="diagram-label-muted">Jane Doe — the real</text>
-        <text x="170" y="142" text-anchor="middle" class="diagram-label-muted">person. Exists whether</text>
-        <text x="170" y="160" text-anchor="middle" class="diagram-label-muted">or not she's logged in.</text>
-
-        <line x1="310" y1="125" x2="420" y2="125" class="diagram-stroke" marker-end="url(#arrow1)"/>
-        <text x="365" y="112" text-anchor="middle" class="diagram-label-muted">authenticates</text>
-
-        <rect x="420" y="40" width="310" height="170" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="575" y="68" text-anchor="middle" class="diagram-label" font-weight="700">SUBJECT</text>
-        <text x="440" y="94" class="diagram-label-muted">sub: jane.doe@northwindapps.com</text>
-        <text x="440" y="114" class="diagram-label-muted">roles: [ "engineer" ]</text>
-        <text x="440" y="134" class="diagram-label-muted">exp: 1699999999</text>
-        <text x="440" y="160" class="diagram-label-muted">One token, one session —</text>
-        <text x="440" y="178" class="diagram-label-muted">one active security context.</text>
-
-        <text x="380" y="230" text-anchor="middle" class="diagram-label-muted">A new subject is minted every time this same principal authenticates again.</text>
-        <defs>
-          <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 2.2 — A principal is the entity; a subject is that entity inside one active context.</figcaption>
-    </figure>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Meridian Trust</div>
-      <p>If a Meridian Trust customer's mobile-banking access token is stolen and used by an attacker
-      before it expires, the attacker has gained control of a valid <strong>subject</strong> without being
-      the <strong>principal</strong> it was issued to. That distinction is exactly why token theft is
-      treated as a serious incident even though the customer's actual identity — their principal — was
-      never touched: the thing that was compromised was one active security context, not the person.</p>
-    </div>
-
-    <h2>The identity lifecycle, generalized</h2>
-    <p>Regardless of which product implements it, every identity moves through the same generalized
-    stages over its life: <strong>create</strong> it, <strong>activate</strong> it so it can actually be
-    used, <strong>modify</strong> it as facts about it change, <strong>suspend</strong> it when access
-    needs to stop temporarily, and eventually <strong>delete</strong> it. An identity can arrive at
-    "create" through a few different doors — a human administrator creating it directly (manual
-    creation), the principal filling out a signup form themselves (self-registration), or the identity
-    being created automatically from an external identity provider's data the first time someone logs in
-    (federated/brokered creation — full depth in chapter 7). Where it comes from doesn't change what
-    happens to it afterward.</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 920 320" role="img" aria-labelledby="t3 d3">
-        <title id="t3">The generalized identity lifecycle</title>
-        <desc id="d3">Three entry points — manual creation, self-registration, and federated or brokered
-        creation — each feed into a Create stage. A horizontal chain then runs Create, Activate, Modify,
-        Suspend, Delete. Modify has a loop back to itself for ongoing changes. Suspend has an arrow back
-        to Activate labeled reinstated, and continues forward to Delete for the case where it is never
-        reactivated.</desc>
-        <rect x="30" y="15" width="190" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="125" y="38" text-anchor="middle" class="diagram-label-muted">Manual creation</text>
-        <text x="125" y="56" text-anchor="middle" class="diagram-label-muted">(an admin creates it)</text>
-
-        <rect x="250" y="15" width="190" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="345" y="38" text-anchor="middle" class="diagram-label-muted">Self-registration</text>
-        <text x="345" y="56" text-anchor="middle" class="diagram-label-muted">(principal signs up)</text>
-
-        <rect x="470" y="15" width="260" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
-        <text x="600" y="38" text-anchor="middle" class="diagram-label-muted">Federated / brokered creation</text>
-        <text x="600" y="56" text-anchor="middle" class="diagram-label-muted">(first login via external IdP — ch. 7)</text>
-
-        <line x1="125" y1="70" x2="100" y2="220" class="diagram-stroke"/>
-        <line x1="345" y1="70" x2="100" y2="220" class="diagram-stroke"/>
-        <line x1="600" y1="70" x2="100" y2="220" class="diagram-stroke"/>
-
-        <rect x="25" y="220" width="150" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="100" y="255" text-anchor="middle" class="diagram-label" font-weight="700">CREATE</text>
-
-        <line x1="175" y1="250" x2="205" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
-        <rect x="205" y="220" width="150" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="280" y="255" text-anchor="middle" class="diagram-label" font-weight="700">ACTIVATE</text>
-
-        <line x1="355" y1="250" x2="385" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
-        <rect x="385" y="220" width="150" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="460" y="255" text-anchor="middle" class="diagram-label" font-weight="700">MODIFY</text>
-        <path d="M 420,220 Q 460,180 500,220" fill="none" class="diagram-stroke" marker-end="url(#arrow2)"/>
-        <text x="460" y="175" text-anchor="middle" class="diagram-label-muted">ongoing changes</text>
-
-        <line x1="535" y1="250" x2="565" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
-        <rect x="565" y="220" width="150" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="640" y="255" text-anchor="middle" class="diagram-label" font-weight="700">SUSPEND</text>
-        <path d="M 600,220 Q 460,140 320,220" fill="none" class="diagram-stroke" marker-end="url(#arrow3)"/>
-        <text x="460" y="135" text-anchor="middle" class="diagram-label-muted">reinstated</text>
-
-        <line x1="715" y1="250" x2="745" y2="250" class="diagram-stroke" marker-end="url(#arrow2)"/>
-        <rect x="745" y="220" width="150" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="820" y="255" text-anchor="middle" class="diagram-label" font-weight="700">DELETE</text>
-        <text x="820" y="295" text-anchor="middle" class="diagram-label-muted">never reactivated</text>
-
-        <defs>
-          <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-          <marker id="arrow3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 2.3 — The generalized identity lifecycle: three doors into Create, then one shared path onward.</figcaption>
-    </figure>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Meridian Trust</div>
-      <p>When Meridian Trust's fraud team flags unusual activity on a teller's account, the response is to
-      <strong>suspend</strong> it, not delete it — login is blocked while HR investigates, but the
-      identity record and its history stay intact. If HR clears her a week later, the account is
-      <strong>reactivated</strong> rather than recreated from scratch. Meridian's auditors specifically
-      care about that distinction: suspend-then-reinstate leaves one continuous, explainable record;
-      delete-then-recreate breaks that continuity and can obscure that it was the same person the whole
-      time.</p>
-    </div>
-
-    <div class="callout callout--in-keycloak">
-      <div class="callout-label">In Keycloak</div>
-      <p>Chapter 22 puts hands on exactly this: Keycloak's Users section stores the identifier/credential/
-      attribute split you just learned — a username/email identifier, a Credentials tab for passwords and
-      OTP, and a free-form Attributes tab — plus an Enabled/Disabled toggle that implements the
-      generalized "suspend" stage of this lifecycle.</p>
-    </div>
-
-    <h2>Human and non-human identities</h2>
-    <p>Not every identity in a system represents a person. A <strong>human identity</strong> represents an
-    employee, customer, patient, or clinician. A <strong>non-human identity</strong> represents something
-    acting on an organization's behalf without a person sitting behind it in real time: a
-    <strong>service account</strong> an application uses to authenticate, a <strong>machine identity</strong>
-    tied to a device or server (often backed by a certificate), or a <strong>workload identity</strong>
-    assigned to a running piece of software — a container, a function — so it can authenticate without a
-    long-lived secret baked into its code. This distinction matters because non-human identities are often
-    long-lived, broadly privileged, and unattended, which means they need their own review and
-    least-privilege discipline rather than being lumped in with human accounts and forgotten.</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 820 300" role="img" aria-labelledby="t4 d4">
-        <title id="t4">Human versus non-human identities</title>
-        <desc id="d4">A top box labeled Digital identities in a system splits into two branches: Human
-        identities, listing Northwind's employees and customer-company users, Riverside's clinicians and
-        patients, and Meridian's employees and retail customers; and Non-human identities, listing service
-        accounts, machine identities such as servers and certificates, and workload identities such as
-        containers and functions.</desc>
-        <rect x="260" y="10" width="300" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="410" y="40" text-anchor="middle" class="diagram-label" font-weight="700">Digital identities in a system</text>
-
-        <line x1="340" y1="60" x2="200" y2="110" class="diagram-stroke"/>
-        <line x1="480" y1="60" x2="620" y2="110" class="diagram-stroke"/>
-
-        <rect x="35" y="110" width="330" height="170" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="200" y="136" text-anchor="middle" class="diagram-label" font-weight="700">HUMAN IDENTITIES</text>
-        <text x="55" y="162" class="diagram-label-muted">Northwind: employees + customer-company users</text>
-        <text x="55" y="186" class="diagram-label-muted">Riverside: clinicians + patients</text>
-        <text x="55" y="210" class="diagram-label-muted">Meridian: employees + retail customers</text>
-        <text x="55" y="246" class="diagram-label-muted">A person is behind the login, in real time.</text>
-
-        <rect x="455" y="110" width="330" height="170" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="620" y="136" text-anchor="middle" class="diagram-label" font-weight="700">NON-HUMAN IDENTITIES</text>
-        <text x="475" y="162" class="diagram-label-muted">Service accounts (apps authenticating)</text>
-        <text x="475" y="186" class="diagram-label-muted">Machine identities (servers, certificates)</text>
-        <text x="475" y="210" class="diagram-label-muted">Workload identities (containers, functions)</text>
-        <text x="475" y="246" class="diagram-label-muted">Long-lived, often unattended — review these too.</text>
-      </svg>
-      <figcaption>Figure 2.4 — The same system holds both human and non-human identities, and both need governance.</figcaption>
-    </figure>
-
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Riverside Health</div>
-      <p>Riverside Health's lab-results system doesn't only have doctor and nurse identities — it also
-      runs a <strong>service account</strong> that polls the hospital's imaging system every five minutes
-      and pushes new scans into the records system. That account never logs in through a browser, never
-      forgets a password, and shouldn't be granted the same broad access a clinician has. In more real
-      incidents than you'd expect, exactly that over-privileging is what goes wrong.</p>
-    </div>
-
-    <h2>Meet the three organizations you'll see for the rest of this course</h2>
-    <p>Starting here, every scenario, lab, and case study in this course uses one of the same three
-    organizations, so your mental model compounds instead of resetting with every new example.</p>
-
-    <p><span class="org-chip northwind">Northwind Apps</span> is a B2B SaaS company that sells
-    project-management software to other businesses. Its identity population splits cleanly into two
-    groups: internal staff (engineers, support reps, sales) who need workforce access to Northwind's own
-    systems, and the employees of its business customers — thousands of people across hundreds of
-    customer companies — who need to log into the Northwind product itself. Because each customer company
-    is effectively its own tenant, Northwind cares enormously about CIAM (customer identity and access
-    management) at scale and about enterprise SSO: a customer's IT admin wants their own employees signing
-    in with their own corporate identity provider, not a Northwind-issued password. Northwind will be our
-    running example for multi-tenant SaaS identity and enterprise federation.</p>
-
-    <p><span class="org-chip riverside">Riverside Health</span> is a regional hospital network. Its
-    identity population is split between clinician workforce identities — doctors, nurses, and
-    administrative staff who need fast, reliable access to clinical systems, often from shared
-    workstations, where authentication friction can cost seconds that matter — and patient identities, who
-    use a patient portal to view records, message their care team, and pay bills. Riverside operates under
-    HIPAA, so every one of those identities, human or not, carries obligations: strong authentication,
-    tight audit trails, and access that maps to a legitimate clinical need. Riverside will be our running
-    example for regulated workforce IAM and patient-facing CIAM existing side by side in one organization.</p>
-
-    <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank. Its identity population
-    includes bank employees — tellers, loan officers, back-office staff, each with very different
-    authorization needs — and retail customers who bank online and through a mobile app. Because Meridian
-    is a financial institution under PCI-DSS and heavy fraud pressure, its identity program has to support
-    step-up authentication (asking for a stronger credential only when risk is high, such as before a wire
-    transfer) and fraud-aware authentication that treats a login attempt differently depending on device,
-    location, and behavior. Meridian will be our running example for high-assurance consumer authentication
-    and risk-based access decisions.</p>
-
-    <div class="callout callout--deep-dive">
-      <div class="callout-label">Where governance picks this up</div>
-      <p>Creating and deleting identities — the first and last stages of the lifecycle you just saw — also
-      have a formal governance side: approvals, workflows, and the joiner-mover-leaver process. That's
-      provisioning and deprovisioning, covered briefly here and in full depth in chapter 10.</p>
-    </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see an application forcing a password reset whenever someone's job title changes, the
-      cause is usually treating an attribute change as if it were a credential change — the two are
-      unrelated events.</li>
-      <li>If you see an audit log that can't say whether an account was deleted or merely disabled, the
-      cause is usually a system that never separated "suspend" from "delete" as distinct lifecycle stages.</li>
-      <li>If you see a service account holding the same broad permissions as a senior administrator and
-      nobody can explain why, the cause is usually that it was provisioned once, years ago, and never
-      re-reviewed the way a human identity would be.</li>
-      <li>If you see two engineers arguing about whether "the user" changed after a token refresh, the
-      cause is usually that they're using "principal" and "subject" interchangeably when the distinction
-      actually matters for the argument they're having.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>Identity, identifier, credential, and attribute are four different concepts describing the same
-      real-world entity — don't conflate them.</li>
-      <li>An identifier only needs to be unique, not secret; a credential is the thing that must stay
-      secret.</li>
-      <li>Attributes describe an identity; they don't prove anything about it the way a credential does.</li>
-      <li>A principal is the real-world entity; a subject is that principal as represented in one active
-      security context — a single principal can produce many subjects over time.</li>
-      <li>The identity lifecycle generalizes to create → activate → modify → suspend → delete, regardless
-      of which product implements it.</li>
-      <li>An identity can enter the "create" stage through manual creation, self-registration, or
-      federated/brokered creation — same destination, different doors.</li>
-      <li>Suspension and deletion are not the same thing, and audit trails care about the difference.</li>
-      <li>Not every identity is human — service accounts, machine identities, and workload identities need
-      their own review and least-privilege discipline.</li>
-      <li>Northwind Apps, Riverside Health, and Meridian Trust each manage a different mix of human
-      identity types and will recur for the rest of this course.</li>
-      <li>These vendor-agnostic lifecycle stages come back concretely once Keycloak is installed, in
-      chapter 22.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Without naming any specific product, describe the difference between an identifier and a
-      credential using an example that isn't Jane Doe.</li>
-      <li>Why can a single principal be represented by many different subjects over time? Give a concrete
-      scenario.</li>
-      <li>Walk through a new hire's identity from creation to eventual deletion, naming which lifecycle
-      stage applies at each point and why.</li>
-      <li>Pick one non-human identity you might expect to find at Riverside Health or Meridian Trust, and
-      explain what could go wrong if nobody reviews its access.</li>
-      <li>Why might an organization prefer suspending an identity over deleting it, even when it's fairly
-      sure the person won't be reinstated?</li>
-      <li>For each of Northwind Apps, Riverside Health, and Meridian Trust, name one human identity type
-      and one thing that makes managing it different from the other two organizations'.</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://pages.nist.gov/800-63-3/">NIST SP 800-63-3 — Digital Identity Guidelines (overview)</a></li>
-      <li><a href="https://pages.nist.gov/800-63-3/sp800-63a.html">NIST SP 800-63A — Enrollment and Identity Proofing</a></li>
-      <li><a href="https://pages.nist.gov/800-63-3/sp800-63b.html">NIST SP 800-63B — Authentication and Lifecycle Management</a></li>
-      <li><a href="https://csrc.nist.gov/glossary">NIST Computer Security Resource Center — Glossary (identity, credential, attribute, subject)</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "identity-fundamentals", 15);
+    SlideDeck.init({ chapterSlug: "identity-fundamentals" });
   });
 </script>
 </body>

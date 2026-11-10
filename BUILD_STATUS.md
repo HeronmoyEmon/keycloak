@@ -39,7 +39,8 @@ proposal — CLAUDE.md §4 has been rewritten to describe it as the official tem
 already-built chapters (02-30) to match chapter 1 is now the active unit, worked through Part by Part
 via the usual parallel-subagent-then-merge pattern, before Part VI's new content resumes. Each
 conversion agent also re-verifies/fixes diagram geometry and adds a model answer to every self-check
-question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) in progress.
+question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) done
+2026-11-10 — see Done below. Part II (chapters 10-12) is next.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -96,8 +97,8 @@ Converting all 29 already-built chapters (02-30) to the slide-deck template chap
 per CLAUDE.md §4. One sub-item per Part, done via the usual parallel-subagent-then-merge pattern; each
 agent re-verifies diagram geometry, adds self-check model answers, and is explicitly told to add more
 visuals/examples where it helps, not just re-chunk existing prose.
-10a. Part I (chapters 02-09, 8 chapters) — **in progress**.
-10b. Part II (chapters 10-12, 3 chapters).
+10a. ~~Part I (chapters 02-09, 8 chapters)~~ — done 2026-11-10, see Done below.
+10b. Part II (chapters 10-12, 3 chapters) — **next**.
 10c. Part III (chapters 13-18, 6 chapters).
 10d. Part IV (chapters 19-26, 8 chapters).
 10e. Part V (chapters 27-30, 4 chapters).
@@ -645,6 +646,42 @@ project) remain.
   - `nav-data.js`'s `built` flag flipped to `true` for chapters 27-30 only after all checks passed.
   - **Part V is now complete** (chapters 27-30, 4 chapters total). No gate here — next stop is GATE-5
     after Part VII (chapters 31-38).
+
+### Redesign rollout — Part I converted (chapters 02-09)
+- 2026-11-10 chapters 02-09 (8 chapters) converted from the old book format to the chapter-1 slide-deck
+  template — 8 parallel subagents (one per chapter, no shared-file writes), then independently
+  re-verified by the coordinator:
+  - Structural: all 8 files re-parsed cleanly (Python `html.parser`, zero errors), balanced
+    `<section class="slide">`/`<svg>`/`<details>`/`<summary>` tags confirmed by direct count, all
+    required mount points (`deck-outline-panel`, `mark-all-btn`, `deck-progress-mini`, `deck-position`,
+    `deck-viewport`, `pager-prev`/`pager-mark`/`pager-next`, `chapter-glossary-mount`, `quiz-mount`)
+    present exactly once each, old-template ids (`sidebar-nav`, `chapter-nav-footer`) confirmed absent.
+    Re-served locally and `curl`-confirmed `200` for all 8 chapter pages.
+  - No shared data file was touched by any conversion agent (`glossary-data.js`, `quiz-data.js`,
+    `nav-data.js`, `BUILD_STATUS.md` all untouched) — this was a presentation/structure pass only, no
+    new glossary terms or quiz questions, confirmed via `git diff --stat` showing only the 8 chapter
+    files modified.
+  - Final slide counts: ch02 12, ch03 12, ch04 16, ch05 11, ch06 15, ch07 13, ch08 12, ch09 13.
+  - Self-check: every existing self-check question across all 8 chapters (45 total) got a real,
+    chapter-grounded model answer wrapped in `<details>`/`<summary>` (none left unanswered).
+  - New diagrams added per the "prefer more visuals" rule, for sections that had zero diagrams
+    originally: ch02 +1 (three-orgs intro cards), ch03 +1 (Northwind tenant-isolation scenario), ch04 +1
+    (directory-service timeline), ch05 +0 (deepened case-study tie-in instead), ch06 +2 (ABAC, PBAC —
+    previously diagram-less), ch07 +2 (trust-ingredients, JIT-provisioning flow), ch08 +2 (token-vs-
+    session, claims anatomy), ch09 +2 (AiTM phishing proxy, token-theft replay window).
+  - **Real diagram bug found and fixed** (ch07, Figure 7.1): the "OIDC calls this: RP" box used a
+    leftover `transform="translate(-60,0)"` compensation hack that made it visually overlap the
+    neighboring "SAML calls this: SP" box by 40px. Fixed by repositioning the box directly instead of
+    patching it with a transform, confirmed no connector lines cross the wrong box afterward. All other
+    diagrams across all 8 chapters were geometry-checked (line-through-box, text-overflow) and found
+    already clean — several borderline cases (5-12% over a width estimate) were deliberately left
+    unchanged, below the ~15% actionable threshold.
+  - One chapter (ch07) judged that its "brokering vs. federation" comparison table shouldn't get a
+    `table-compare` modifier class, since neither pattern is objectively the "good" or "bad" one —
+    flagged as a case the project may want a neutral "X vs Y" table variant for later, not acted on now.
+    No other chapter in this round had a two-column pro-con/problem-solution table to apply the class to.
+  - This completes the redesign rollout for **Part I** (chapters 02-09, plus chapter 01 built earlier as
+    the reference). Part II (chapters 10-12) is next per the Queue.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
