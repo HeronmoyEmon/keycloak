@@ -12,6 +12,10 @@
   a { color: #000; text-decoration: underline; }
   figure.diagram { background: #fff; }
 
+  /* Self-check answers are click-to-reveal on screen; print them open regardless of state. */
+  .self-check .self-check-answer { display: block !important; }
+  .self-check summary::marker, .self-check summary::-webkit-details-marker { display: none; }
+
   /* Slide-deck chapters: print the whole chapter stacked, not just the active slide. */
   .deck-outline, .deck-pager, .deck-position, .outline-toggle, .roadmap-link { display: none !important; }
   .deck-layout { display: block; }

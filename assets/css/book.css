@@ -320,8 +320,26 @@ tbody tr:hover { background: var(--accent-soft); }
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
 }
 .takeaways li::before { content: "✓"; position: absolute; left: 0.75em; color: var(--success); font-weight: 800; }
-.self-check li::before { content: "?"; position: absolute; left: 0.85em; color: var(--accent); font-weight: 800; }
+.self-check li::before { content: "?"; position: absolute; left: 0.85em; top: 0.68em; color: var(--accent); font-weight: 800; }
 .common-mistakes li::before { content: "!"; position: absolute; left: 0.85em; color: var(--danger); font-weight: 800; }
+
+/* Self-check questions use <details>/<summary> — click the question to reveal a model answer below
+   it. No JS needed; fully native, keyboard-accessible disclosure. The li's own padding is handled by
+   summary/the answer block instead, since details content needs its own box, not the li's. */
+.self-check li { padding: 0; overflow: hidden; }
+.self-check summary {
+  cursor: pointer; padding: 0.55em 0.8em 0.55em 2.2em; font-weight: 600; list-style: revert;
+}
+.self-check summary::marker, .self-check summary::-webkit-details-marker { color: var(--accent); }
+.self-check summary:hover { background: var(--accent-soft); }
+.self-check .self-check-answer {
+  margin: 0; padding: 0.1em 1em 0.9em 2.2em; background: var(--bg-alt);
+  border-top: 1px dashed var(--border); color: var(--text-muted);
+}
+.self-check .self-check-answer-label {
+  display: block; margin: 0.7em 0 0.3em; font-size: 0.78em; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-strong);
+}
 
 .lab-steps { padding: 0; margin: 1em 0; counter-reset: lab-step; }
 .lab-steps > li {

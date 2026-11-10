@@ -422,12 +422,29 @@
 
       <section class="slide" data-slide="self-check" data-title="Self-check">
         <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
         <ol class="self-check">
-          <li>Without naming any specific product, explain to a colleague in two sentences why ten applications each writing their own login code is a worse outcome than it sounds, even if each one "works."</li>
-          <li>Give an example of a decision that is authentication, and a separate example of a decision that is authorization, from an app you use regularly.</li>
-          <li>Pick one row from the "why centralizing matters" table and argue the opposite side: under what circumstances would the "problem" column actually be an acceptable trade-off?</li>
-          <li>Name one scenario where adopting a full IAM system would be clearly overkill, and explain what you'd use instead.</li>
-          <li>If an organization centralizes authentication but then misconfigures it, what is lost compared to the "ten separate apps" world — is the organization actually worse off, or just differently exposed?</li>
+          <li><details>
+            <summary>Without naming any specific product, explain to a colleague in two sentences why ten applications each writing their own login code is a worse outcome than it sounds, even if each one "works."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Each implementation ends up with its own subtly different password-hashing strength, lockout policy, and audit logging — "works" individually doesn't mean "works consistently," and an attacker only needs to find the weakest of the ten. There's also no single place to answer "who can log into anything," so something as routine as offboarding one employee turns into ten separate manual steps instead of one.</p>
+          </details></li>
+          <li><details>
+            <summary>Give an example of a decision that is authentication, and a separate example of a decision that is authorization, from an app you use regularly.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Authentication: your banking app confirming your fingerprint matches the account holder before letting you in at all. Authorization: once you're in, the app deciding whether you can view a specific account's statement or only your own — a separate check made after authentication has already succeeded, and one authentication alone can't answer.</p>
+          </details></li>
+          <li><details>
+            <summary>Pick one row from the "why centralizing matters" table and argue the opposite side: under what circumstances would the "problem" column actually be an acceptable trade-off?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Take "every app builds its own login form." For a two-person internal prototype that will be thrown away in a month, writing a basic login form directly into the app is a reasonable trade-off — the integration overhead of standing up a full IAM system would cost more engineering time than it saves, and there's no audit or compliance pressure yet to justify it. The "problem" only becomes a real problem once more apps, more users, or real compliance stakes show up.</p>
+          </details></li>
+          <li><details>
+            <summary>Name one scenario where adopting a full IAM system would be clearly overkill, and explain what you'd use instead.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A single internal admin dashboard used by three trusted engineers at a small startup, with no plan to add more users or applications. A simple built-in login check is proportionate here; operating a dedicated IAM system for three people adds real ongoing overhead (patching, monitoring, availability) with no corresponding benefit, since there's no second application to share that identity with yet.</p>
+          </details></li>
+          <li><details>
+            <summary>If an organization centralizes authentication but then misconfigures it, what is lost compared to the "ten separate apps" world — is the organization actually worse off, or just differently exposed?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Differently exposed, not automatically worse. In the ten-apps world, a bug in one app's login only exposes that app. A misconfigured central IAM system — an overly permissive redirect URI, say — can expose every connected application at once, because the risk is now concentrated in one place instead of spread across ten. That concentration is exactly why securing the IAM layer deserves at least as much care as securing the ten separate apps used to need (chapters 9 and 18 cover this directly).</p>
+          </details></li>
         </ol>
       </section>
 
