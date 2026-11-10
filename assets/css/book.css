@@ -4,32 +4,40 @@
    ============================================================ */
 
 /* ---------- 1. Theme tokens ---------- */
+/* Brand palette (user-specified, used verbatim for the 4 most visible roles):
+   #F4F0E2 cream (bg), #619DC6 medium blue (accent), #A6C8E2 light blue
+   (accent-soft), #F4BAA3 peach (milestone highlight — roadmap Part badges).
+   Everything else below is derived to harmonize with those four, or kept as
+   a conventional status hue (success/warning/danger green/amber/red) so
+   quiz/callout semantics stay unambiguous. Dark and sepia variants preserve
+   the same hue families, re-lightened/re-darkened for legibility, since the
+   palette as given is a light/warm set of colors. */
 :root {
-  --bg: #f6f7fb;
-  --bg-alt: #eef0f7;
+  --bg: #f4f0e2;
+  --bg-alt: #ece5d2;
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --text: #1b2130;
-  --text-muted: #525a6e;
-  --border: #d7dbe8;
-  --accent: #2b4c9b;
-  --accent-strong: #1c3570;
+  --text: #2e2a22;
+  --text-muted: #6b6456;
+  --border: #e3dac3;
+  --accent: #619dc6;
+  --accent-strong: #3d7399;
   --accent-contrast: #ffffff;
-  --accent-soft: #e4eaf9;
-  --success: #1f7a4d;
-  --success-soft: #e3f3ea;
-  --warning: #9a6400;
-  --warning-soft: #fbf0db;
-  --danger: #a3272f;
-  --danger-soft: #fbe6e7;
-  --info: #0f6e8c;
-  --info-soft: #e1f1f5;
-  --milestone-bg: #b8750f;
-  --milestone-contrast: #ffffff;
-  --code-bg: #0f1420;
-  --code-text: #e7ebf7;
-  --line-strong: #39415a;
-  --shadow: 0 1px 2px rgba(20, 24, 38, 0.06), 0 4px 14px rgba(20, 24, 38, 0.08);
+  --accent-soft: #a6c8e2;
+  --success: #3c8562;
+  --success-soft: #e1eee5;
+  --warning: #b2770e;
+  --warning-soft: #f6ebd4;
+  --danger: #b23a3a;
+  --danger-soft: #f6e1de;
+  --info: #3f8fa8;
+  --info-soft: #dceef1;
+  --milestone-bg: #f4baa3;
+  --milestone-contrast: #5a2e1d;
+  --code-bg: #2b2a22;
+  --code-text: #f0ecdd;
+  --line-strong: #8a8166;
+  --shadow: 0 1px 2px rgba(60, 50, 30, 0.08), 0 4px 14px rgba(60, 50, 30, 0.1);
   --radius: 10px;
   --sidebar-w: 288px;
   --content-max: 760px;
@@ -37,45 +45,45 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #11141c;
-  --bg-alt: #171b26;
-  --surface: #1a1f2c;
-  --surface-raised: #202637;
-  --text: #e7eaf4;
-  --text-muted: #a3aac2;
-  --border: #323a52;
-  --accent: #7fa0e8;
-  --accent-strong: #aac2f2;
-  --accent-contrast: #0c1222;
-  --accent-soft: #223156;
-  --success: #6fd49c;
-  --success-soft: #16301f;
-  --warning: #e8c267;
-  --warning-soft: #3a2e0e;
-  --danger: #f09aa0;
-  --danger-soft: #3a1518;
-  --info: #7fd1e8;
-  --info-soft: #11303a;
-  --milestone-bg: #e8b355;
-  --milestone-contrast: #241a06;
-  --code-bg: #0a0d16;
-  --code-text: #dce3f5;
-  --line-strong: #5b6688;
+  --bg: #1e1a14;
+  --bg-alt: #262016;
+  --surface: #2b2419;
+  --surface-raised: #342c1e;
+  --text: #f1ebdd;
+  --text-muted: #b7ad97;
+  --border: #463c2a;
+  --accent: #8fc0e6;
+  --accent-strong: #bbdcf2;
+  --accent-contrast: #112233;
+  --accent-soft: #24384a;
+  --success: #7ed9a8;
+  --success-soft: #1a3324;
+  --warning: #e8b766;
+  --warning-soft: #3d2e12;
+  --danger: #eda09c;
+  --danger-soft: #3b1916;
+  --info: #7fd0de;
+  --info-soft: #15323a;
+  --milestone-bg: #f2ae8a;
+  --milestone-contrast: #3a1e12;
+  --code-bg: #15110b;
+  --code-text: #ede4ce;
+  --line-strong: #8d8166;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme="sepia"] {
-  --bg: #f3ead9;
-  --bg-alt: #ece0ca;
-  --surface: #fbf4e6;
-  --surface-raised: #fbf4e6;
+  --bg: #ede0c3;
+  --bg-alt: #e4d4ae;
+  --surface: #f8f0dc;
+  --surface-raised: #f8f0dc;
   --text: #3a2f20;
   --text-muted: #6b5c42;
   --border: #ddc9a3;
-  --accent: #7a4a1f;
-  --accent-strong: #5c3613;
-  --accent-contrast: #fbf4e6;
-  --accent-soft: #ead9bd;
+  --accent: #619dc6;
+  --accent-strong: #3d7399;
+  --accent-contrast: #ffffff;
+  --accent-soft: #a6c8e2;
   --success: #3f6b35;
   --success-soft: #e4ecd9;
   --warning: #8a5c0a;
@@ -84,8 +92,8 @@
   --danger-soft: #f1dcd6;
   --info: #2c6670;
   --info-soft: #dcebe8;
-  --milestone-bg: #9c6b1f;
-  --milestone-contrast: #fbf4e6;
+  --milestone-bg: #f4baa3;
+  --milestone-contrast: #4a2a1c;
   --code-bg: #2a2015;
   --code-text: #ecdfc4;
   --line-strong: #5c4a30;
@@ -94,30 +102,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="sepia"]) {
-    --bg: #11141c;
-    --bg-alt: #171b26;
-    --surface: #1a1f2c;
-    --surface-raised: #202637;
-    --text: #e7eaf4;
-    --text-muted: #a3aac2;
-    --border: #323a52;
-    --accent: #7fa0e8;
-    --accent-strong: #aac2f2;
-    --accent-contrast: #0c1222;
-    --accent-soft: #223156;
-    --success: #6fd49c;
-    --success-soft: #16301f;
-    --warning: #e8c267;
-    --warning-soft: #3a2e0e;
-    --danger: #f09aa0;
-    --danger-soft: #3a1518;
-    --info: #7fd1e8;
-    --info-soft: #11303a;
-    --milestone-bg: #e8b355;
-    --milestone-contrast: #241a06;
-    --code-bg: #0a0d16;
-    --code-text: #dce3f5;
-    --line-strong: #5b6688;
+    --bg: #1e1a14;
+    --bg-alt: #262016;
+    --surface: #2b2419;
+    --surface-raised: #342c1e;
+    --text: #f1ebdd;
+    --text-muted: #b7ad97;
+    --border: #463c2a;
+    --accent: #8fc0e6;
+    --accent-strong: #bbdcf2;
+    --accent-contrast: #112233;
+    --accent-soft: #24384a;
+    --success: #7ed9a8;
+    --success-soft: #1a3324;
+    --warning: #e8b766;
+    --warning-soft: #3d2e12;
+    --danger: #eda09c;
+    --danger-soft: #3b1916;
+    --info: #7fd0de;
+    --info-soft: #15323a;
+    --milestone-bg: #f2ae8a;
+    --milestone-contrast: #3a1e12;
+    --code-bg: #15110b;
+    --code-text: #ede4ce;
+    --line-strong: #8d8166;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
   }
 }
@@ -301,12 +309,9 @@ tbody tr:hover { background: var(--accent-soft); }
 
 /* ---------- 8. Case-study org chips ---------- */
 .org-chip { display: inline-flex; align-items: center; gap: 0.4em; font-weight: 700; padding: 0.1em 0.5em; border-radius: 6px; }
-.org-chip.northwind { background: #e4eaf9; color: #2b4c9b; }
-.org-chip.riverside { background: #e3f3ea; color: #1f7a4d; }
-.org-chip.meridian { background: #fbf0db; color: #9a6400; }
-:root[data-theme="dark"] .org-chip.northwind { background: #223156; color: #aac2f2; }
-:root[data-theme="dark"] .org-chip.riverside { background: #16301f; color: #6fd49c; }
-:root[data-theme="dark"] .org-chip.meridian { background: #3a2e0e; color: #e8c267; }
+.org-chip.northwind { background: var(--accent-soft); color: var(--accent-strong); }
+.org-chip.riverside { background: var(--success-soft); color: var(--success); }
+.org-chip.meridian { background: var(--warning-soft); color: var(--warning); }
 
 /* ---------- 8b. Chapter glossary mount ---------- */
 #chapter-glossary-mount dl { margin: 1em 0; }
