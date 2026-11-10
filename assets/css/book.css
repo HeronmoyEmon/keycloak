@@ -1,0 +1,355 @@
+/* ============================================================
+   IAM & Keycloak Mastery — shell design system
+   Clean-room build (CLAUDE.md §2.6) — not copied from sde-prep.
+   ============================================================ */
+
+/* ---------- 1. Theme tokens ---------- */
+:root {
+  --bg: #f6f7fb;
+  --bg-alt: #eef0f7;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --text: #1b2130;
+  --text-muted: #525a6e;
+  --border: #d7dbe8;
+  --accent: #2b4c9b;
+  --accent-strong: #1c3570;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e4eaf9;
+  --success: #1f7a4d;
+  --success-soft: #e3f3ea;
+  --warning: #9a6400;
+  --warning-soft: #fbf0db;
+  --danger: #a3272f;
+  --danger-soft: #fbe6e7;
+  --info: #0f6e8c;
+  --info-soft: #e1f1f5;
+  --code-bg: #0f1420;
+  --code-text: #e7ebf7;
+  --line-strong: #39415a;
+  --shadow: 0 1px 2px rgba(20, 24, 38, 0.06), 0 4px 14px rgba(20, 24, 38, 0.08);
+  --radius: 10px;
+  --sidebar-w: 288px;
+  --content-max: 760px;
+  --font-scale: 1;
+}
+
+:root[data-theme="dark"] {
+  --bg: #11141c;
+  --bg-alt: #171b26;
+  --surface: #1a1f2c;
+  --surface-raised: #202637;
+  --text: #e7eaf4;
+  --text-muted: #a3aac2;
+  --border: #323a52;
+  --accent: #7fa0e8;
+  --accent-strong: #aac2f2;
+  --accent-contrast: #0c1222;
+  --accent-soft: #223156;
+  --success: #6fd49c;
+  --success-soft: #16301f;
+  --warning: #e8c267;
+  --warning-soft: #3a2e0e;
+  --danger: #f09aa0;
+  --danger-soft: #3a1518;
+  --info: #7fd1e8;
+  --info-soft: #11303a;
+  --code-bg: #0a0d16;
+  --code-text: #dce3f5;
+  --line-strong: #5b6688;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="sepia"] {
+  --bg: #f3ead9;
+  --bg-alt: #ece0ca;
+  --surface: #fbf4e6;
+  --surface-raised: #fbf4e6;
+  --text: #3a2f20;
+  --text-muted: #6b5c42;
+  --border: #ddc9a3;
+  --accent: #7a4a1f;
+  --accent-strong: #5c3613;
+  --accent-contrast: #fbf4e6;
+  --accent-soft: #ead9bd;
+  --success: #3f6b35;
+  --success-soft: #e4ecd9;
+  --warning: #8a5c0a;
+  --warning-soft: #f0e0bd;
+  --danger: #8c3228;
+  --danger-soft: #f1dcd6;
+  --info: #2c6670;
+  --info-soft: #dcebe8;
+  --code-bg: #2a2015;
+  --code-text: #ecdfc4;
+  --line-strong: #5c4a30;
+  --shadow: 0 1px 2px rgba(50, 36, 10, 0.1), 0 4px 14px rgba(50, 36, 10, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="sepia"]) {
+    --bg: #11141c;
+    --bg-alt: #171b26;
+    --surface: #1a1f2c;
+    --surface-raised: #202637;
+    --text: #e7eaf4;
+    --text-muted: #a3aac2;
+    --border: #323a52;
+    --accent: #7fa0e8;
+    --accent-strong: #aac2f2;
+    --accent-contrast: #0c1222;
+    --accent-soft: #223156;
+    --success: #6fd49c;
+    --success-soft: #16301f;
+    --warning: #e8c267;
+    --warning-soft: #3a2e0e;
+    --danger: #f09aa0;
+    --danger-soft: #3a1518;
+    --info: #7fd1e8;
+    --info-soft: #11303a;
+    --code-bg: #0a0d16;
+    --code-text: #dce3f5;
+    --line-strong: #5b6688;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* ---------- 2. Reset & base ---------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: calc(1rem * var(--font-scale)) / 1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+h1, h2, h3, h4 { line-height: 1.25; color: var(--text); font-weight: 700; }
+h1 { font-size: 1.9em; margin: 0 0 0.3em; }
+h2 { font-size: 1.45em; margin: 1.8em 0 0.6em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+h3 { font-size: 1.15em; margin: 1.4em 0 0.5em; color: var(--accent-strong); }
+h4 { font-size: 1em; margin: 1.2em 0 0.4em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a:focus-visible { text-decoration: underline; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+}
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.35em 0; }
+code { font: 0.92em/1.4 "SF Mono", Consolas, "Liberation Mono", monospace; }
+pre {
+  background: var(--code-bg); color: var(--code-text);
+  padding: 1em 1.1em; border-radius: var(--radius); overflow-x: auto;
+  font: 0.86em/1.55 "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+pre code { background: none; color: inherit; }
+:not(pre) > code {
+  background: var(--bg-alt); border: 1px solid var(--border);
+  padding: 0.12em 0.4em; border-radius: 5px;
+}
+hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+
+/* ---------- 3. Page layout ---------- */
+.top-bar {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: 0.75em;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0.65em 1em; flex-wrap: wrap; row-gap: 0.5em;
+}
+.top-bar .brand { font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 0.5em; }
+.top-bar .brand .mark {
+  width: 1.6em; height: 1.6em; border-radius: 7px; background: var(--accent);
+  color: var(--accent-contrast); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.85em; font-weight: 800;
+}
+.top-bar .spacer { flex: 1; }
+.top-bar .top-actions { display: flex; gap: 0.4em; flex-wrap: wrap; }
+.icon-btn {
+  background: var(--bg-alt); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 0.4em 0.65em; cursor: pointer; font-size: 0.85em;
+}
+.icon-btn:hover { background: var(--accent-soft); }
+.sidebar-toggle { display: none; }
+
+.layout { display: flex; min-height: calc(100vh - 56px); }
+.sidebar {
+  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+  border-right: 1px solid var(--border); background: var(--bg-alt);
+  padding: 1em 0.8em 2em; overflow-y: auto;
+}
+.sidebar h2.part-title {
+  font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); border-bottom: none; margin: 1.1em 0 0.3em; padding: 0 0.4em;
+}
+.sidebar .nav-list { list-style: none; padding: 0; margin: 0; }
+.sidebar .nav-link {
+  display: flex; align-items: baseline; gap: 0.5em;
+  padding: 0.4em 0.5em; border-radius: 7px; color: var(--text); font-size: 0.92em;
+}
+.sidebar .nav-link:hover { background: var(--accent-soft); text-decoration: none; }
+.sidebar .nav-link.current { background: var(--accent); color: var(--accent-contrast); font-weight: 700; }
+.sidebar .nav-link .num { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 0.85em; flex: 0 0 1.6em; }
+.sidebar .nav-link.unbuilt { color: var(--text-muted); opacity: 0.6; pointer-events: none; }
+.sidebar .nav-link .lab-dot { margin-left: auto; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--info); flex: 0 0 auto; }
+
+main.content {
+  flex: 1; min-width: 0; padding: 2.2em 1.5em 5em;
+  display: flex; justify-content: center;
+}
+.content-inner { max-width: var(--content-max); width: 100%; }
+
+.chapter-meta { display: flex; gap: 0.5em; flex-wrap: wrap; margin-bottom: 0.6em; }
+.badge {
+  display: inline-flex; align-items: center; gap: 0.3em;
+  background: var(--accent-soft); color: var(--accent-strong);
+  border-radius: 999px; padding: 0.22em 0.75em; font-size: 0.78em; font-weight: 700;
+}
+.badge.lab { background: var(--info-soft); color: var(--info); }
+.badge.minutes { background: var(--bg-alt); color: var(--text-muted); }
+
+.lede { font-size: 1.08em; color: var(--text-muted); margin: 0.6em 0 1.6em; }
+
+/* ---------- 4. Callouts ---------- */
+.callout {
+  border: 1px solid var(--border); border-left-width: 5px; border-radius: var(--radius);
+  padding: 0.9em 1.1em; margin: 1.3em 0; background: var(--surface); box-shadow: var(--shadow);
+}
+.callout .callout-label {
+  font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800;
+  display: flex; align-items: center; gap: 0.4em; margin-bottom: 0.4em;
+}
+.callout:last-child, .callout p:last-child { margin-bottom: 0; }
+.callout--key-idea { border-left-color: var(--accent); }
+.callout--key-idea .callout-label { color: var(--accent-strong); }
+.callout--in-keycloak { border-left-color: var(--info); background: var(--info-soft); }
+.callout--in-keycloak .callout-label { color: var(--info); }
+.callout--pitfall { border-left-color: var(--danger); background: var(--danger-soft); }
+.callout--pitfall .callout-label { color: var(--danger); }
+.callout--try-it { border-left-color: var(--success); background: var(--success-soft); }
+.callout--try-it .callout-label { color: var(--success); }
+.callout--case-study { border-left-color: var(--warning); background: var(--warning-soft); }
+.callout--case-study .callout-label { color: var(--warning); }
+.callout--deep-dive { border-left-color: var(--text-muted); }
+.callout--concept-recall { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout--concept-recall .callout-label { color: var(--accent-strong); }
+
+/* ---------- 5. Diagrams ---------- */
+figure.diagram {
+  margin: 1.6em 0; padding: 1em; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow-x: auto; box-shadow: var(--shadow);
+}
+figure.diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+figure.diagram figcaption {
+  margin-top: 0.7em; font-size: 0.86em; color: var(--text-muted); text-align: center;
+}
+.diagram-label { fill: var(--text); font: 13px -apple-system, Roboto, sans-serif; }
+.diagram-label-muted { fill: var(--text-muted); font: 12px -apple-system, Roboto, sans-serif; }
+.diagram-stroke { stroke: var(--line-strong); }
+.diagram-fill-surface { fill: var(--surface); }
+.diagram-fill-accent { fill: var(--accent-soft); }
+.diagram-fill-accent-strong { fill: var(--accent); }
+.diagram-fill-info { fill: var(--info-soft); }
+.diagram-fill-success { fill: var(--success-soft); }
+.diagram-fill-warning { fill: var(--warning-soft); }
+.diagram-fill-danger { fill: var(--danger-soft); }
+
+/* ---------- 6. Tables ---------- */
+.table-wrap { overflow-x: auto; margin: 1.3em 0; border: 1px solid var(--border); border-radius: var(--radius); }
+table { width: 100%; border-collapse: collapse; font-size: 0.93em; }
+table caption { text-align: left; padding: 0.6em 0.9em; font-weight: 700; background: var(--bg-alt); }
+th, td { text-align: left; padding: 0.55em 0.9em; border-bottom: 1px solid var(--border); vertical-align: top; }
+thead th { background: var(--bg-alt); color: var(--text-muted); font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.03em; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--accent-soft); }
+
+/* ---------- 7. Lists: takeaways, self-check, lab steps, mistakes ---------- */
+.takeaways, .self-check, .common-mistakes { list-style: none; padding: 0; margin: 1em 0; }
+.takeaways li, .self-check li, .common-mistakes li {
+  padding: 0.55em 0.8em 0.55em 2.2em; margin: 0.4em 0; position: relative;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.takeaways li::before { content: "✓"; position: absolute; left: 0.75em; color: var(--success); font-weight: 800; }
+.self-check li::before { content: "?"; position: absolute; left: 0.85em; color: var(--accent); font-weight: 800; }
+.common-mistakes li::before { content: "!"; position: absolute; left: 0.85em; color: var(--danger); font-weight: 800; }
+
+.lab-steps { padding: 0; margin: 1em 0; counter-reset: lab-step; }
+.lab-steps > li {
+  list-style: none; counter-increment: lab-step;
+  padding: 0.9em 1em 0.9em 3em; margin: 0.6em 0; position: relative;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.lab-steps > li::before {
+  content: counter(lab-step); position: absolute; left: 0.9em; top: 0.85em;
+  width: 1.5em; height: 1.5em; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85em;
+}
+
+/* ---------- 8. Case-study org chips ---------- */
+.org-chip { display: inline-flex; align-items: center; gap: 0.4em; font-weight: 700; padding: 0.1em 0.5em; border-radius: 6px; }
+.org-chip.northwind { background: #e4eaf9; color: #2b4c9b; }
+.org-chip.riverside { background: #e3f3ea; color: #1f7a4d; }
+.org-chip.meridian { background: #fbf0db; color: #9a6400; }
+:root[data-theme="dark"] .org-chip.northwind { background: #223156; color: #aac2f2; }
+:root[data-theme="dark"] .org-chip.riverside { background: #16301f; color: #6fd49c; }
+:root[data-theme="dark"] .org-chip.meridian { background: #3a2e0e; color: #e8c267; }
+
+/* ---------- 8b. Chapter glossary mount ---------- */
+#chapter-glossary-mount dl { margin: 1em 0; }
+#chapter-glossary-mount dt { font-weight: 700; color: var(--accent-strong); margin-top: 0.9em; }
+#chapter-glossary-mount dd { margin: 0.2em 0 0; color: var(--text-muted); }
+
+/* ---------- 9. Quiz engine UI ---------- */
+.quiz-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2em; margin: 1.5em 0; box-shadow: var(--shadow); }
+.quiz-progress { display: flex; justify-content: space-between; font-size: 0.85em; color: var(--text-muted); margin-bottom: 0.8em; }
+.quiz-question { font-weight: 700; margin-bottom: 0.8em; }
+.quiz-options { list-style: none; padding: 0; margin: 0 0 1em; }
+.quiz-option {
+  display: block; width: 100%; text-align: left; background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.6em 0.9em; margin: 0.4em 0; cursor: pointer; color: var(--text); font-size: 0.95em;
+}
+.quiz-option:hover { background: var(--accent-soft); }
+.quiz-option.correct { background: var(--success-soft); border-color: var(--success); }
+.quiz-option.incorrect { background: var(--danger-soft); border-color: var(--danger); }
+.quiz-option[disabled] { cursor: default; }
+.quiz-explanation { background: var(--bg-alt); border-radius: 8px; padding: 0.8em 1em; font-size: 0.92em; margin-bottom: 1em; }
+.quiz-controls { display: flex; gap: 0.6em; justify-content: flex-end; }
+.btn {
+  background: var(--accent); color: var(--accent-contrast); border: none; border-radius: 8px;
+  padding: 0.55em 1.1em; font-weight: 700; cursor: pointer; font-size: 0.92em;
+}
+.btn:hover { background: var(--accent-strong); }
+.btn.secondary { background: var(--bg-alt); color: var(--text); border: 1px solid var(--border); }
+.quiz-score-summary { text-align: center; padding: 1.2em; }
+.quiz-score-summary .score-big { font-size: 2.2em; font-weight: 800; color: var(--accent-strong); }
+
+/* ---------- 10. Progress bars ---------- */
+.progress-track { background: var(--bg-alt); border-radius: 999px; height: 0.6em; overflow: hidden; }
+.progress-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+
+/* ---------- 11. Chapter nav footer ---------- */
+.chapter-nav { display: flex; justify-content: space-between; gap: 1em; margin-top: 3em; padding-top: 1.5em; border-top: 1px solid var(--border); }
+.chapter-nav a {
+  flex: 1; max-width: 48%; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.8em 1em; color: var(--text); font-size: 0.9em;
+}
+.chapter-nav a:hover { background: var(--accent-soft); text-decoration: none; }
+.chapter-nav .dir { color: var(--text-muted); font-size: 0.8em; display: block; }
+.chapter-nav .next { text-align: right; margin-left: auto; }
+
+/* ---------- 12. Mobile ---------- */
+@media (max-width: 860px) {
+  .sidebar-toggle { display: inline-flex; }
+  .sidebar {
+    position: fixed; top: 56px; bottom: 0; left: 0; z-index: 25;
+    transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: var(--shadow);
+  }
+  .sidebar.open { transform: translateX(0); }
+  main.content { padding: 1.4em 1em 4em; }
+}
+@media (max-width: 480px) {
+  .top-bar { padding: 0.55em 0.7em; }
+  .chapter-nav { flex-direction: column; }
+  .chapter-nav a { max-width: 100%; }
+}

@@ -27,6 +27,9 @@ capstone project a reader could put on a resume or walk through in an interview.
 2. **Concept ↔ implementation bridge, every chapter.** Concept chapters (Parts I–III) get an "In
    Keycloak" callout box per major concept, pointing at the exact admin-console screen or config field.
    Keycloak chapters (Parts IV+) open with a one-paragraph "What concept is this?" recall.
+   **Part I–III callouts are short forward-pointers only** (1-3 sentences: name the concrete screen/field
+   and which later chapter covers it in depth) — Keycloak itself isn't installed until chapter 20, so
+   these chapters can't assume the reader has it open. Full depth lands when that later chapter arrives.
 3. **Three running case-study orgs**, used for every scenario/example across all 50 chapters instead of
    one-off made-up companies, so the reader builds a mental model that compounds:
    - **Northwind Apps** — a B2B SaaS company (multi-tenant, needs CIAM + enterprise SSO for customers)
