@@ -146,6 +146,7 @@
     svg.setAttribute("height", mapRect.height);
     svg.setAttribute("viewBox", "0 0 " + mapRect.width + " " + mapRect.height);
 
+    var STANDOFF = 14; // px of breathing room between a box edge and where its connector line starts/ends
     var paths = [];
     var rows = Array.prototype.slice.call(document.querySelectorAll(".road-row"));
     rows.forEach(function (row) {
@@ -153,13 +154,14 @@
       var cluster = row.querySelector(".road-leaf-cluster");
       if (!badge || !cluster) return;
       var side = row.getAttribute("data-side");
+      var dir = side === "right" ? 1 : -1;
       var badgeRect = badge.getBoundingClientRect();
-      var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left;
+      var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left + dir * STANDOFF;
       var by = (badgeRect.top + badgeRect.height / 2) - mapRect.top;
       var leaves = Array.prototype.slice.call(cluster.querySelectorAll(".road-leaf"));
       leaves.forEach(function (leaf) {
         var leafRect = leaf.getBoundingClientRect();
-        var lx = (side === "right" ? leafRect.left : leafRect.right) - mapRect.left;
+        var lx = (side === "right" ? leafRect.left : leafRect.right) - mapRect.left - dir * STANDOFF;
         var ly = (leafRect.top + leafRect.height / 2) - mapRect.top;
         var midX = (bx + lx) / 2;
         paths.push(

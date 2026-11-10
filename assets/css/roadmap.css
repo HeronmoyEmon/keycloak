@@ -37,14 +37,14 @@
 .road-row {
   position: relative; z-index: 1;
   display: grid; grid-template-columns: 1fr 230px 1fr;
-  align-items: center; column-gap: 20px; margin-bottom: 16px;
+  align-items: center; column-gap: 48px; margin-bottom: 16px;
 }
 .road-row:last-child { margin-bottom: 0; }
 
 /* ---------- Spine node (Part milestone) ---------- */
 .road-spine-node { display: flex; justify-content: center; }
 .road-part-badge {
-  position: relative; z-index: 2; background: var(--accent); color: var(--accent-contrast);
+  position: relative; z-index: 2; background: var(--milestone-bg); color: var(--milestone-contrast);
   border-radius: 10px; padding: 0.55em 0.9em; text-align: center; box-shadow: var(--shadow);
   width: 100%; max-width: 230px; font-weight: 800; font-size: 1em; line-height: 1.3;
 }
