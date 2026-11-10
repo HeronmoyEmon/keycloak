@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <section class="hero">
+      <span class="badge">11 Parts &middot; 50 chapters &middot; 1 capstone</span>
+      <h1>IAM &amp; Keycloak Mastery</h1>
+      <p class="lede">A from-zero course for becoming an IAM specialist, not a Keycloak button-clicker.
+      Every concept chapter shows how Keycloak actually implements the idea, and every Keycloak chapter
+      opens by naming which general IAM concept it's an instance of — so you come away able to explain
+      <em>why</em> identity systems are built the way they are, with a real local Keycloak instance,
+      graded quizzes, and a defensible capstone to show for it.</p>
+      <p><a class="btn" href="chapters/00-how-to-use-this-course.html">Start here &rarr;</a></p>
+    </section>
+
+    <div id="stats-mount" class="stat-grid" aria-label="Course progress"></div>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Three running organizations anchor every worked example from chapter 2 onward, instead of
+      one-off made-up companies: <strong>Northwind Apps</strong> (a B2B SaaS company needing multi-tenant
+      CIAM and enterprise SSO for its customers), <strong>Riverside Health</strong> (a hospital network
+      balancing HIPAA compliance with a patient portal and clinician workforce IAM), and
+      <strong>Meridian Trust</strong> (a retail bank juggling PCI-DSS, step-up auth, and fraud-aware
+      authentication). When you see those names later in a chapter, you'll already know which kind of
+      identity problem is in play.</p>
+    </div>
+
+    <h2>Quick links</h2>
+    <p class="controls-row">
+      <a class="btn secondary" href="roadmap.html">Suggested roadmap</a>
+      <a class="btn secondary" href="glossary.html">Master glossary</a>
+      <a class="btn secondary" href="quizzes.html">All quizzes</a>
+    </p>
+
+    <h2>The 11 Parts</h2>
+    <p>The curriculum runs concept-first, then Keycloak-specific, then production-grade. Built chapters
+    are linked below; everything else is the fixed roadmap for what comes next.</p>
+    <div id="parts-map"></div>
+
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/roadmap-data.js"></script>
+<script src="assets/js/book.js"></script>
+<script>
+(function () {
+  "use strict";
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function renderStats() {
+    var mount = document.getElementById("stats-mount");
+    if (!mount || !window.COURSE_NAV) return;
+    var nav = window.COURSE_NAV;
+    var totalChapters = nav.length;
+    var builtChapters = nav.filter(function (c) { return c.built; }).length;
+    var parts = [];
+    nav.forEach(function (c) { if (parts.indexOf(c.part) === -1) parts.push(c.part); });
+    var partsStarted = parts.filter(function (p) {
+      return nav.some(function (c) { return c.part === p && c.built; });
+    }).length;
+    var builtWithLab = nav.filter(function (c) { return c.built && c.hasLab; }).length;
+
+    var tiles = [
+      { value: builtChapters + " / " + totalChapters, label: "Chapters built" },
+      { value: partsStarted + " / " + parts.length, label: "Parts under way" },
+      { value: String(builtWithLab), label: "Built chapters with a hands-on lab" }
+    ];
+    mount.innerHTML = tiles.map(function (t) {
+      return '<div class="stat-tile"><span class="stat-value">' + t.value + '</span>' +
+        '<span class="stat-label">' + t.label + '</span></div>';
+    }).join("");
+  }
+
+  function renderPartsMap() {
+    var mount = document.getElementById("parts-map");
+    if (!mount || !window.COURSE_NAV) return;
+    var nav = window.COURSE_NAV;
+    var order = [];
+    var byPart = {};
+    nav.forEach(function (c) {
+      if (!byPart[c.part]) { byPart[c.part] = []; order.push(c.part); }
+      byPart[c.part].push(c);
+    });
+
+    var html = order.map(function (partName) {
+      var chapters = byPart[partName];
+      var builtCount = chapters.filter(function (c) { return c.built; }).length;
+      var items = chapters.map(function (c) {
+        var num = pad2(c.number);
+        if (c.built) {
+          var href = "chapters/" + num + "-" + c.slug + ".html";
+          return '<li><a href="' + href + '">' + num + ". " + c.title + "</a>" +
+            (c.hasLab ? ' <span class="badge lab">lab</span>' : "") + "</li>";
+        }
+        return '<li>' + num + ". " + c.title +
+          ' <span class="badge minutes">not built yet</span></li>';
+      }).join("");
+      return '<div class="part-card"><h3>' + partName + '</h3>' +
+        '<p class="stat-label">' + builtCount + " of " + chapters.length + " built</p>" +
+        '<ul>' + items + "</ul></div>";
+    }).join("");
+    mount.innerHTML = html;
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    renderStats();
+    renderPartsMap();
+  });
+})();
+</script>
+</body>
+</html>

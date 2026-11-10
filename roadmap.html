@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <h1>Roadmap &amp; Pace Tracker</h1>
+    <p class="lede">
+      This is a <strong>suggested</strong> pace, not a syllabus. It assumes roughly 8–10 hours a week of
+      part-time study and lays out about 33 weeks (~8 months) end to end, from Part 0 through the capstone
+      and the career/reference material. Move faster or slower as your own schedule and background allow —
+      the week ranges below are a planning aid, not a deadline.
+    </p>
+
+    <div class="stat-grid" id="stat-grid">
+      <!-- filled by script -->
+    </div>
+
+    <h2>Overall progress</h2>
+    <p id="overall-progress-label" class="lede" style="margin-bottom:0.4em;"></p>
+    <div class="progress-track"><div class="progress-fill" id="overall-progress-fill" style="width:0%"></div></div>
+
+    <h2>Parts &amp; weekly pace</h2>
+    <div id="roadmap-parts">
+      <!-- filled by script -->
+    </div>
+
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/roadmap-data.js"></script>
+<script src="assets/js/book.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var DONE_KEY = "iam:roadmap:done";
+
+  function safeGetDone() {
+    try {
+      var raw = localStorage.getItem(DONE_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function safeSetDone(arr) {
+    try {
+      localStorage.setItem(DONE_KEY, JSON.stringify(arr));
+    } catch (e) {
+      /* ignore: private mode, blocked storage */
+    }
+  }
+
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function navBySlug(slug) {
+    if (!window.COURSE_NAV) return null;
+    for (var i = 0; i < window.COURSE_NAV.length; i++) {
+      if (window.COURSE_NAV[i].slug === slug) return window.COURSE_NAV[i];
+    }
+    return null;
+  }
+
+  // Real course chapters (excludes ch 0, orientation) used for the 50-chapter denominator.
+  function realChapters() {
+    if (!window.COURSE_NAV) return [];
+    return window.COURSE_NAV.filter(function (ch) { return ch.number >= 1; });
+  }
+
+  function renderStats(doneSet) {
+    var chapters = realChapters();
+    var builtCount = chapters.filter(function (ch) { return ch.built; }).length;
+    var doneCount = chapters.filter(function (ch) { return doneSet.indexOf(ch.slug) !== -1; }).length;
+    var partsWithProgress = 0;
+    (window.ROADMAP || []).forEach(function (part) {
+      var hasDone = part.chapters.some(function (slug) { return doneSet.indexOf(slug) !== -1; });
+      if (hasDone) partsWithProgress++;
+    });
+
+    var grid = document.getElementById("stat-grid");
+    grid.innerHTML =
+      '<div class="stat-tile"><span class="stat-value">' + builtCount + ' / 50</span>' +
+        '<span class="stat-label">Chapters built</span></div>' +
+      '<div class="stat-tile"><span class="stat-value">' + doneCount + ' / 50</span>' +
+        '<span class="stat-label">Chapters you’ve checked off</span></div>' +
+      '<div class="stat-tile"><span class="stat-value">' + partsWithProgress + ' / ' + (window.ROADMAP ? window.ROADMAP.length : 0) + '</span>' +
+        '<span class="stat-label">Parts with progress</span></div>';
+  }
+
+  function renderOverallProgress() {
+    var chapters = realChapters();
+    var total = chapters.length; // expected 50
+    var builtCount = chapters.filter(function (ch) { return ch.built; }).length;
+    var pct = total > 0 ? Math.round((builtCount / total) * 100) : 0;
+    document.getElementById("overall-progress-fill").style.width = pct + "%";
+    document.getElementById("overall-progress-label").textContent =
+      builtCount + " of " + total + " chapters built (" + pct + "%)";
+  }
+
+  function chapterHref(ch) {
+    return "chapters/" + pad2(ch.number) + "-" + ch.slug + ".html";
+  }
+
+  function renderPartCard(part, partIndex, doneSet) {
+    var chips = part.chapters.map(function (slug) {
+      var ch = navBySlug(slug);
+      if (!ch) {
+        return '<div class="progress-chip"><input type="checkbox" disabled>' +
+          '<span>' + escapeHtml(slug) + ' (unknown chapter)</span></div>';
+      }
+      var isDone = ch.built && doneSet.indexOf(slug) !== -1;
+      var chipClasses = "progress-chip" + (isDone ? " done" : "");
+      var checkboxAttrs = 'type="checkbox" data-slug="' + escapeHtml(slug) + '" data-part-index="' + partIndex + '"';
+      if (!ch.built) checkboxAttrs += " disabled";
+      if (isDone) checkboxAttrs += " checked";
+      var labelHtml;
+      if (ch.built) {
+        labelHtml = '<a href="' + chapterHref(ch) + '">' + pad2(ch.number) + ". " + escapeHtml(ch.title) + "</a>";
+      } else {
+        labelHtml = "<span>" + pad2(ch.number) + ". " + escapeHtml(ch.title) + " (not built yet)</span>";
+      }
+      return '<div class="' + chipClasses + '" data-chip-for="' + escapeHtml(slug) + '">' +
+        '<input ' + checkboxAttrs + '>' +
+        "<label>" + labelHtml + "</label>" +
+        "</div>";
+    }).join("");
+
+    var gateHtml = part.gate ? '<span class="gate-badge">' + escapeHtml(part.gate) + "</span>" : "";
+
+    return (
+      '<div class="part-card" data-part-index="' + partIndex + '">' +
+        '<h3>' + escapeHtml(part.part) + "</h3>" +
+        '<div class="chapter-meta">' +
+          '<span class="badge">' + escapeHtml(part.weekRange) + "</span>" +
+          gateHtml +
+        "</div>" +
+        '<p>' + escapeHtml(part.deliverable) + "</p>" +
+        '<div class="part-progress-wrap">' +
+          '<div class="progress-track"><div class="progress-fill" id="part-fill-' + partIndex + '" style="width:0%"></div></div>' +
+          '<p class="lede" id="part-frac-' + partIndex + '" style="margin:0.4em 0 0.8em; font-size:0.85em;"></p>' +
+        "</div>" +
+        '<div class="chip-list" id="chip-list-' + partIndex + '">' + chips + "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderPartProgress(part, partIndex, doneSet) {
+    var total = part.chapters.length;
+    var doneCount = part.chapters.filter(function (slug) { return doneSet.indexOf(slug) !== -1; }).length;
+    var pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+    var fill = document.getElementById("part-fill-" + partIndex);
+    var frac = document.getElementById("part-frac-" + partIndex);
+    if (fill) fill.style.width = pct + "%";
+    if (frac) frac.textContent = doneCount + " of " + total + " done";
+  }
+
+  function renderAllParts(doneSet) {
+    var mount = document.getElementById("roadmap-parts");
+    if (!mount || !window.ROADMAP) return;
+    mount.innerHTML = window.ROADMAP.map(function (part, idx) {
+      return renderPartCard(part, idx, doneSet);
+    }).join("");
+    window.ROADMAP.forEach(function (part, idx) {
+      renderPartProgress(part, idx, doneSet);
+    });
+  }
+
+  function toggleChapterDone(slug, checked) {
+    var doneSet = safeGetDone();
+    var idx = doneSet.indexOf(slug);
+    if (checked && idx === -1) {
+      doneSet.push(slug);
+    } else if (!checked && idx !== -1) {
+      doneSet.splice(idx, 1);
+    }
+    safeSetDone(doneSet);
+    return doneSet;
+  }
+
+  function wireCheckboxes() {
+    var mount = document.getElementById("roadmap-parts");
+    if (!mount) return;
+    mount.addEventListener("change", function (ev) {
+      var target = ev.target;
+      if (!target || target.type !== "checkbox") return;
+      var slug = target.getAttribute("data-slug");
+      var partIndex = parseInt(target.getAttribute("data-part-index"), 10);
+      if (!slug || isNaN(partIndex) || !window.ROADMAP) return;
+
+      var doneSet = toggleChapterDone(slug, target.checked);
+
+      // Update this chip's "done" styling.
+      var chip = mount.querySelector('[data-chip-for="' + slug.replace(/"/g, "") + '"]');
+      if (chip) {
+        if (target.checked) chip.classList.add("done");
+        else chip.classList.remove("done");
+      }
+
+      // Re-render this part's progress bar/fraction, and the page-level stats.
+      renderPartProgress(window.ROADMAP[partIndex], partIndex, doneSet);
+      renderStats(doneSet);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var doneSet = safeGetDone();
+    renderStats(doneSet);
+    renderOverallProgress();
+    renderAllParts(doneSet);
+    wireCheckboxes();
+  });
+})();
+</script>
+</body>
+</html>

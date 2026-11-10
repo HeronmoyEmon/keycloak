@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <div class="chapter-meta">
+      <span class="badge">Reference</span>
+      <span class="badge minutes">Searchable</span>
+    </div>
+    <h1>Master Glossary</h1>
+    <p class="lede" id="glossary-stat">Loading glossary&hellip;</p>
+
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <span class="stat-value" id="stat-total">&ndash;</span>
+        <span class="stat-label">Terms</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value" id="stat-categories">&ndash;</span>
+        <span class="stat-label">Categories</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value" id="stat-chapters">&ndash;</span>
+        <span class="stat-label">Chapters covered</span>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <input type="text" class="search-input" id="glossary-search" placeholder="Search terms or definitions…" aria-label="Search glossary">
+      <select class="filter-select" id="glossary-category" aria-label="Filter by category">
+        <option value="">All categories</option>
+      </select>
+    </div>
+
+    <p class="lede" id="result-count" style="font-size: 0.88em; margin: -0.6em 0 1.2em;"></p>
+
+    <dl class="glossary-list" id="glossary-list"></dl>
+    <p id="no-results" hidden>No terms match your search.</p>
+
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/glossary-data.js"></script>
+<script src="assets/js/book.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var GLOSSARY = window.GLOSSARY || [];
+  var NAV = window.COURSE_NAV || [];
+
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function findChapter(slug) {
+    for (var i = 0; i < NAV.length; i++) {
+      if (NAV[i].slug === slug) return NAV[i];
+    }
+    return null;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function chapterLinkHtml(slug) {
+    var ch = findChapter(slug);
+    if (!ch) return '<span class="term-chapter-link">' + escapeHtml(slug) + "</span>";
+    var label = "Ch " + pad2(ch.number) + ": " + ch.title;
+    if (ch.built) {
+      var href = "chapters/" + pad2(ch.number) + "-" + ch.slug + ".html";
+      return '<a class="term-chapter-link" href="' + href + '">' + escapeHtml(label) + "</a>";
+    }
+    return '<span class="term-chapter-link">' + escapeHtml(label) + "</span>";
+  }
+
+  var sorted = GLOSSARY.slice().sort(function (a, b) {
+    return a.term.localeCompare(b.term);
+  });
+
+  var categories = [];
+  sorted.forEach(function (e) {
+    if (categories.indexOf(e.category) === -1) categories.push(e.category);
+  });
+  categories.sort(function (a, b) { return a.localeCompare(b); });
+
+  var allChapters = [];
+  sorted.forEach(function (e) {
+    (e.chapters || []).forEach(function (slug) {
+      if (allChapters.indexOf(slug) === -1) allChapters.push(slug);
+    });
+  });
+
+  // Header stat line + stat tiles
+  var statEl = document.getElementById("glossary-stat");
+  if (statEl) {
+    statEl.textContent = GLOSSARY.length + " terms across " + allChapters.length + " chapters.";
+  }
+  var statTotal = document.getElementById("stat-total");
+  var statCategories = document.getElementById("stat-categories");
+  var statChapters = document.getElementById("stat-chapters");
+  if (statTotal) statTotal.textContent = GLOSSARY.length;
+  if (statCategories) statCategories.textContent = categories.length;
+  if (statChapters) statChapters.textContent = allChapters.length;
+
+  // Category filter options
+  var categorySelect = document.getElementById("glossary-category");
+  categories.forEach(function (cat) {
+    var opt = document.createElement("option");
+    opt.value = cat;
+    opt.textContent = cat;
+    categorySelect.appendChild(opt);
+  });
+
+  // Build the term list
+  var listMount = document.getElementById("glossary-list");
+  var items = [];
+  sorted.forEach(function (e) {
+    var div = document.createElement("div");
+    div.className = "glossary-entry";
+
+    var chapterLinks = (e.chapters || []).map(chapterLinkHtml).join(", ");
+
+    div.innerHTML =
+      "<dt>" + escapeHtml(e.term) +
+      '<span class="term-meta">' + escapeHtml(e.category) + "</span></dt>" +
+      "<dd>" + escapeHtml(e.definition) +
+      (chapterLinks ? '<div class="term-chapters" style="margin-top:0.4em;font-size:0.85em;color:var(--text-muted);">From: ' + chapterLinks + "</div>" : "") +
+      "</dd>";
+
+    listMount.appendChild(div);
+    items.push({
+      el: div,
+      term: e.term.toLowerCase(),
+      definition: e.definition.toLowerCase(),
+      category: e.category
+    });
+  });
+
+  // Live filtering
+  var searchInput = document.getElementById("glossary-search");
+  var resultCount = document.getElementById("result-count");
+  var noResults = document.getElementById("no-results");
+
+  function applyFilters() {
+    var q = searchInput.value.trim().toLowerCase();
+    var cat = categorySelect.value;
+    var visible = 0;
+    items.forEach(function (item) {
+      var matchesSearch = !q || item.term.indexOf(q) !== -1 || item.definition.indexOf(q) !== -1;
+      var matchesCat = !cat || item.category === cat;
+      var show = matchesSearch && matchesCat;
+      item.el.hidden = !show;
+      if (show) visible++;
+    });
+    resultCount.textContent = "Showing " + visible + " of " + items.length + " terms";
+    noResults.hidden = visible !== 0;
+    listMount.hidden = visible === 0;
+  }
+
+  searchInput.addEventListener("input", applyFilters);
+  categorySelect.addEventListener("change", applyFilters);
+
+  applyFilters();
+})();
+</script>
+</body>
+</html>

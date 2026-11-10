@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Scores — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <div class="chapter-meta">
+      <span class="badge">Progress</span>
+    </div>
+    <h1>Quiz Scores</h1>
+    <p class="lede">Every chapter quiz score lives only in this browser's storage — there's no account and
+    no server. This page reads those scores back and summarizes them. Open this page in a different
+    browser or device and it will look empty, because the scores never left the browser that took the
+    quiz.</p>
+
+    <div id="quiz-stats-section"></div>
+
+    <h2>Per-chapter scores</h2>
+    <div id="quiz-table-section"></div>
+
+    <div id="weakest-section"></div>
+
+    <h2>Reset progress</h2>
+    <p>This clears every quiz score recorded in this browser. It cannot be undone.</p>
+    <div id="reset-section"></div>
+
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/quiz-data.js"></script>
+<script src="assets/js/book.js"></script>
+<script src="assets/js/quiz.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var QUIZ_KEY_PREFIX = "iam:quiz:";
+
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function chapterHref(ch) {
+    return "chapters/" + pad2(ch.number) + "-" + ch.slug + ".html";
+  }
+
+  function builtChapters() {
+    return (window.COURSE_NAV || []).filter(function (c) { return c.built; });
+  }
+
+  function poolFor(slug) {
+    var pool = window.QUIZ_POOLS && window.QUIZ_POOLS[slug];
+    return Array.isArray(pool) ? pool : null;
+  }
+
+  /* Gathers read-only data for every built chapter: scores (via QuizEngine, never
+     re-derived from localStorage directly) plus the real pool size. */
+  function gatherChapterData() {
+    return builtChapters().map(function (ch) {
+      var scores = window.QuizEngine.readScores(ch.slug);
+      var pool = poolFor(ch.slug);
+      var poolSize = pool ? pool.length : 0;
+      var hasPool = !!pool && poolSize > 0;
+      var attempts = scores.attempts || 0;
+      var best = scores.best || 0;
+      var last = scores.last || 0;
+      var bestPct = (hasPool && attempts > 0) ? (best / poolSize) * 100 : null;
+      return {
+        chapter: ch,
+        attempts: attempts,
+        best: best,
+        last: last,
+        hasPool: hasPool,
+        poolSize: poolSize,
+        attempted: attempts > 0,
+        bestPct: bestPct
+      };
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderStats(rows) {
+    var mount = document.getElementById("quiz-stats-section");
+    var attemptedRows = rows.filter(function (r) { return r.attempted; });
+
+    if (attemptedRows.length === 0) {
+      mount.innerHTML =
+        '<p class="callout callout--key-idea"><span class="callout-label">No quizzes taken yet</span>' +
+        "You haven't taken any quizzes yet — chapters with a quiz are linked below.</p>";
+      return;
+    }
+
+    var attemptedCount = attemptedRows.length;
+    var totalAttempts = rows.reduce(function (sum, r) { return sum + r.attempts; }, 0);
+    var pctRows = attemptedRows.filter(function (r) { return r.bestPct !== null; });
+    var avgPct = pctRows.length
+      ? pctRows.reduce(function (sum, r) { return sum + r.bestPct; }, 0) / pctRows.length
+      : 0;
+
+    mount.innerHTML =
+      '<div class="stat-grid">' +
+        '<div class="stat-tile"><span class="stat-value">' + attemptedCount + ' / ' + rows.length + '</span>' +
+          '<span class="stat-label">Chapters attempted</span></div>' +
+        '<div class="stat-tile"><span class="stat-value">' + Math.round(avgPct) + '%</span>' +
+          '<span class="stat-label">Average best score</span></div>' +
+        '<div class="stat-tile"><span class="stat-value">' + totalAttempts + '</span>' +
+          '<span class="stat-label">Total attempts</span></div>' +
+      '</div>';
+  }
+
+  function scoreCell(row, which) {
+    // which: "best" or "last"
+    if (!row.hasPool) return "No quiz";
+    if (!row.attempted) return "Not attempted";
+    var value = which === "best" ? row.best : row.last;
+    return value + " / " + row.poolSize;
+  }
+
+  function renderTable(rows) {
+    var mount = document.getElementById("quiz-table-section");
+    var bodyHtml = rows.map(function (row) {
+      var ch = row.chapter;
+      var titleCell = '<a href="' + chapterHref(ch) + '">' + pad2(ch.number) + ". " + escapeHtml(ch.title) + "</a>";
+      return "<tr>" +
+        "<td>" + titleCell + "</td>" +
+        "<td>" + scoreCell(row, "best") + "</td>" +
+        "<td>" + scoreCell(row, "last") + "</td>" +
+        "<td>" + row.attempts + "</td>" +
+        "</tr>";
+    }).join("");
+
+    mount.innerHTML =
+      '<div class="table-wrap"><table>' +
+      "<thead><tr><th>Chapter</th><th>Best score</th><th>Last score</th><th>Attempts</th></tr></thead>" +
+      "<tbody>" + bodyHtml + "</tbody>" +
+      "</table></div>";
+  }
+
+  function renderWeakest(rows) {
+    var mount = document.getElementById("weakest-section");
+    var attemptedWithPct = rows.filter(function (r) { return r.attempted && r.bestPct !== null; });
+
+    if (attemptedWithPct.length < 2) {
+      mount.innerHTML = "";
+      return;
+    }
+
+    var weakest = attemptedWithPct
+      .slice()
+      .sort(function (a, b) { return a.bestPct - b.bestPct; })
+      .slice(0, 3);
+
+    var itemsHtml = weakest.map(function (row) {
+      var ch = row.chapter;
+      return '<li><a href="' + chapterHref(ch) + '">' + pad2(ch.number) + ". " + escapeHtml(ch.title) + "</a>" +
+        " &mdash; best " + row.best + " / " + row.poolSize + " (" + Math.round(row.bestPct) + "%)</li>";
+    }).join("");
+
+    mount.innerHTML =
+      "<h2>Weakest chapters</h2>" +
+      '<p class="lede">Based on your best score percentage, these are the chapters most worth revisiting.</p>' +
+      '<ol class="self-check">' + itemsHtml + "</ol>";
+  }
+
+  function clearAllQuizScores() {
+    var keys;
+    try {
+      keys = Object.keys(localStorage).filter(function (k) {
+        return k.indexOf(QUIZ_KEY_PREFIX) === 0;
+      });
+    } catch (e) {
+      keys = [];
+    }
+    keys.forEach(function (k) {
+      try { localStorage.removeItem(k); } catch (e) { /* ignore: private mode, blocked storage */ }
+    });
+  }
+
+  function renderResetDefault() {
+    var mount = document.getElementById("reset-section");
+    mount.innerHTML = '<button class="btn secondary" id="reset-progress-btn">Reset all progress</button>';
+    document.getElementById("reset-progress-btn").addEventListener("click", renderResetConfirm);
+  }
+
+  function renderResetConfirm() {
+    var mount = document.getElementById("reset-section");
+    mount.innerHTML =
+      '<div class="callout callout--pitfall">' +
+      '<span class="callout-label">Are you sure?</span>' +
+      "<p>This can't be undone. Every chapter's quiz score in this browser will be erased.</p>" +
+      '<button class="btn secondary" id="reset-confirm-btn">Confirm reset</button> ' +
+      '<button class="btn secondary" id="reset-cancel-btn">Cancel</button>' +
+      "</div>";
+    document.getElementById("reset-confirm-btn").addEventListener("click", function () {
+      clearAllQuizScores();
+      renderAll();
+      renderResetDefault();
+    });
+    document.getElementById("reset-cancel-btn").addEventListener("click", renderResetDefault);
+  }
+
+  function renderAll() {
+    var rows = gatherChapterData();
+    renderStats(rows);
+    renderTable(rows);
+    renderWeakest(rows);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    renderAll();
+    renderResetDefault();
+  });
+})();
+</script>
+</body>
+</html>

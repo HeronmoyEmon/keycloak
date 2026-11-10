@@ -14,10 +14,10 @@ forward (Open questions item 4).
 **Chapters 03-09 complete 2026-11-10** (7 chapters, 7 parallel subagents, centrally merged and verified —
 see Done below for full detail). This finishes Part I's chapter content.
 
-**In progress now: queue item 5, the four shell pages** (`index.html`, `roadmap.html`, `glossary.html`,
-`quizzes.html`) — built in parallel by 4 subagents, each read-only against the shared data files (no
-file-conflict risk, unlike the glossary/quiz merge). These are the last piece needed to reach **GATE-2**
-(Part I complete) per CLAUDE.md §8.
+**Queue item 5 complete 2026-11-10: the four shell pages** (`index.html`, `roadmap.html`,
+`glossary.html`, `quizzes.html`) — built in parallel by 4 subagents, each read-only against the shared
+data files, then independently re-verified by the coordinator now that all four exist together (see
+GATE-2 summary below). **GATE-2 reached — awaiting the user's review and explicit approval.**
 
 Chapters 03-09 briefs below (kept for the record, first time these were drafted in full, per CLAUDE.md
 §7's "just before you need it" rule — chapter
@@ -147,7 +147,8 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 ## Gates
 
 - **GATE-1: approved 2026-11-10**, no feedback given (approved as built). See summary below.
-- **GATE-2: not yet reached — chapters 03-09 done, awaiting the 4 shell pages (queue item 5).**
+- **GATE-2: awaiting review (reached 2026-11-10).** See summary below. Approve with
+  `approve GATE-2: <feedback>` in chat.
 - GATE-3: not reached
 - GATE-4: not reached
 - GATE-5: not reached
@@ -218,6 +219,63 @@ Mastery" brand link in the top bar points at a page that doesn't exist yet — e
 (after GATE-1 approval). `tools/check_links.py` doesn't exist yet either, so no automated link-check ran
 — the checks above were done by hand instead for this first unit.
 
+### GATE-2 review summary
+
+**What was built, beyond the GATE-1 reference set:**
+- Chapters 03-09 (7 chapters, see the Done entry below for full detail): completes Part I's content.
+- The four shell pages, each built independently in parallel (read-only against the shared data files,
+  so no merge step was needed the way the glossary/quiz data needed one):
+  - `index.html` — course home: hero + pitch, 3 live stat tiles (chapters built/50, Parts with ≥1 built
+    chapter, built chapters with a lab), a `callout--key-idea` introducing the three case-study orgs,
+    quick links to the other three pages, and "The 11 Parts" rendered live from `COURSE_NAV` (grouped in
+    array order, not alphabetized) — built chapters link out, unbuilt ones show plainly, no dead links.
+  - `roadmap.html` — the suggested-pace page: intro framing it as a suggestion not a syllabus, an overall
+    progress bar, one `.part-card` per `ROADMAP` entry with its week range/gate badge/deliverable, and a
+    per-chapter `.progress-chip` checkbox (localStorage `iam:roadmap:done`, a JSON array of slugs) the
+    reader can tick off — disabled for unbuilt chapters so they can't be marked done early.
+  - `glossary.html` — the searchable master glossary: live search (substring, case-insensitive, over
+    term+definition) and a category filter, both combining with AND; live result count; a no-results
+    state; every entry shows which chapter(s) it came from, linked only if that chapter is built.
+  - `quizzes.html` — the score dashboard: reads every score through `QuizEngine.readScores()` (no
+    reimplemented localStorage parsing), shows best/last/attempts per built chapter, an average over only
+    attempted chapters, a weakest-3 list, and a two-step (not native-`confirm()`) reset-all that clears
+    every real `iam:quiz:*` key rather than a hardcoded list.
+
+**Independent verification done by the coordinator (beyond what each subagent already verified itself):**
+- All four shell pages re-parsed cleanly (Python `html.parser`, zero errors) now that all four exist
+  together.
+- Re-served the whole site locally and `curl`-confirmed, now that all four pages co-exist: every one of
+  the four pages, both sample chapter pages, and all 5 shared JS/CSS asset files return `200` — and,
+  specifically, every cross-link between the four shell pages (`index.html`'s links to the other three,
+  and all three's "brand" links back to `index.html`) resolves to a real file now that the chicken-and-
+  egg "the other pages don't exist yet" situation each subagent flagged is resolved.
+- Each subagent had already independently hand-traced its own page's core logic against the real data
+  (e.g. `glossary.html`'s search traced against 5 concrete queries including a 21-result case and an
+  AND-combination case; `quizzes.html`'s average/weakest-3 math hand-traced against a constructed 2-
+  chapter scenario and cross-checked by actually running the extracted logic in Node against the real
+  quiz-data.js) — the coordinator did not redo this work, since re-deriving it from scratch wouldn't add
+  anything beyond re-reading what's already a specific, checkable trace in each report.
+
+**What's still NOT verified (same standing limitation as GATE-1 — no browser tool in this environment):**
+nobody has visually looked at any of the four new pages, or clicked through the roadmap checkboxes /
+glossary search box / quizzes reset-confirmation flow in a live DOM. All verification above is
+structural (parsing, link resolution, hand-traced/Node-replicated logic), not a real render. **Recommend
+opening all four pages locally (`python3 -m http.server` from the repo root, not double-clicking) before
+approving** — in particular, try the roadmap checkboxes, the glossary search box, and the quizzes
+reset-all two-step flow, since those are the three pieces of real interactivity this round added that a
+structural check can't fully substitute for.
+
+**Files to open:** `index.html`, `roadmap.html`, `glossary.html`, `quizzes.html`, plus chapters 03-09 if
+you haven't looked at those yet either.
+
+**One minor inconsistency across the four pages worth knowing about, not a bug:** `roadmap.html`
+excludes chapter 0 (orientation) from its "50 real chapters" denominator for the overall progress
+bar/stats, while `index.html`'s stat tiles count chapters built against the full 50 non-orientation
+chapters too but phrase it slightly differently ("X / 50"). Both subagents made the same reasonable
+choice independently (chapter 0 isn't one of the 50 numbered curriculum chapters), so the numbers agree
+in practice — flagging only because nobody enforced this as a single shared rule, so a future page should
+match the same convention rather than reinvent it.
+
 ## Done
 
 ### Reference set (chapters 00-02, GATE-1)
@@ -263,6 +321,14 @@ Mastery" brand link in the top bar points at a page that doesn't exist yet — e
   - `nav-data.js`'s `built` flag flipped to `true` for chapters 3-9 by the coordinator only after all of
     the above checks passed (confirmed via a Node script with a `window` shim, same approach as GATE-1).
   - This completes **Part I — IAM Foundations** (chapters 00-09) in full.
+
+### Shell pages (index/roadmap/glossary/quizzes, GATE-2)
+- 2026-11-10 `index.html`, `roadmap.html`, `glossary.html`, `quizzes.html` complete — 4 pages, 4 parallel
+  subagents (each read-only against the shared data files, no merge step needed), then independently
+  re-verified by the coordinator once all four existed together (see GATE-2 summary above for full
+  detail: re-parse, re-served + re-curled including cross-link resolution between the four pages, plus
+  each subagent's own hand-traced/Node-replicated logic checks). GATE-2 reached, awaiting the user's
+  approval. This completes Part I end to end (content + shell pages).
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
