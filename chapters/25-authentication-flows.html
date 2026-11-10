@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication Flows &amp; Required Actions — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "authentication-flows";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part IV — Keycloak Core Administration</span>
+      <span class="badge minutes">~55 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>25. Authentication Flows &amp; Required Actions</h1>
+    <p class="lede">Chapters 20-24 treated "log in to <code>northwind-apps</code>" as a black box: a
+    username, a password, a token. This chapter opens that box. Every Keycloak login runs through an
+    <strong>authentication flow</strong> — a configurable tree of steps with real requirement levels
+    attached to each one — and that tree is exactly where chapter 5's MFA theory stops being theory.
+    This chapter clones the realm's browser flow and adds a <strong>conditional OTP</strong> requirement
+    that only challenges Northwind's <code>tenant-admin</code>s, using the real Admin REST API, with
+    every command below either actually run and captured or clearly labeled as drawn from Keycloak's
+    current documentation instead.</p>
+
+    <h2>Why this matters</h2>
+    <p>"Just turn on MFA" is not a real configuration task — someone has to decide <em>who</em> gets
+    challenged, <em>when</em>, with <em>which</em> factor, and what happens to everyone else. An IAM
+    specialist who can only toggle a single realm-wide "require OTP" switch will eventually be asked for
+    something more specific — step-up on a sensitive action, a second factor only for administrators, a
+    different rule for brokered logins than for direct ones — and Keycloak's answer to all of that is the
+    same mechanism: authentication flows, their executions, and the four requirement levels those
+    executions can take. This is also the chapter where chapter 23's roles stop being an isolated RBAC
+    exercise and start gating something a real user actually experiences at login time.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall — chapter 5 and chapter 23</div>
+      <p>Chapter 5 built OTP from the ground up: a possession factor, a shared secret established once at
+      enrollment, a moving factor (time for TOTP), and — critically — the idea of <strong>step-up
+      authentication</strong>: an extra factor demanded mid-session or at login, triggered by risk or
+      context rather than applied to every single login on a fixed schedule. It described that decision
+      in the abstract ("a system evaluates signals… and raises or lowers how much proof it demands").
+      This chapter is where that decision gets a concrete home: a Keycloak <strong>conditional
+      subflow</strong>, with a real condition attached to it. Chapter 23 created the realm role
+      <code>tenant-admin</code> inside <code>northwind-apps</code>; that role is this chapter's trigger
+      condition, not a hypothetical one — "require OTP for tenant-admins" is the running example built
+      below, start to finish.</p>
+    </div>
+
+    <h2>The five built-in flows, one line each</h2>
+    <p>A new Keycloak realm doesn't start with one flow — it starts with several, each bound to a
+    different purpose, each independently configurable. This chapter's own test realm (a freshly created
+    <code>northwind-apps</code>, confirmed via <code>kcadm.sh get authentication/flows</code>, output
+    below) came with seven top-level flows; five of them map to IAM concepts this course already
+    introduced, plus two Keycloak-specific ones (<code>clients</code>, for client-to-client
+    authentication, and <code>docker auth</code>, for the Docker registry protocol — neither gets further
+    treatment in this course):</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>The five built-in flows this chapter cares about (alias as returned by the Admin REST API)</caption>
+        <thead><tr><th>Flow</th><th>Bound by</th><th>What it governs</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Browser</strong> (<code>browser</code>)</td><td><code>browserFlow</code></td>
+          <td>Standard interactive web login — the redirect-to-a-login-page path chapter 13 called the
+          authorization code flow. This chapter's entire lab lives here.</td></tr>
+          <tr><td><strong>Direct Grant</strong> (<code>direct grant</code>)</td><td><code>directGrantFlow</code></td>
+          <td>API-style, non-interactive login — credentials arrive directly in a token request (chapter
+          13's resource-owner-password-credentials shape), with no redirect and no login page at all.</td></tr>
+          <tr><td><strong>Registration</strong> (<code>registration</code>)</td><td><code>registrationFlow</code></td>
+          <td>Self-service account creation via the login page's "Register" link — a different process
+          from logging in, with its own steps (e.g. terms-and-conditions, profile capture).</td></tr>
+          <tr><td><strong>Reset Credentials</strong> (<code>reset credentials</code>)</td><td><code>resetCredentialsFlow</code></td>
+          <td>The forgot-password / account-recovery path.</td></tr>
+          <tr><td><strong>First Broker Login</strong> (<code>first broker login</code>)</td><td><code>firstBrokerLoginFlow</code></td>
+          <td>Runs exactly once per user, the very first time they authenticate through a brokered
+          external IdP (chapter 31's subject) — before Keycloak has decided whether to link, create, or
+          reject a local account for them.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Five built-in Keycloak flows and the realm setting that binds each one</title>
+        <desc id="d1">Five boxes in a row, each naming a built-in flow alias and the realm-level field
+        that selects it: Browser bound by browserFlow, Direct Grant bound by directGrantFlow,
+        Registration bound by registrationFlow, Reset Credentials bound by resetCredentialsFlow, and
+        First Broker Login bound by firstBrokerLoginFlow. A caption beneath states that cloning a flow
+        has no effect on real logins until the realm's corresponding binding field is changed to point at
+        the new flow's alias.</desc>
+        <rect x="10" y="30" width="165" height="130" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="92" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">BROWSER</text>
+        <text x="92" y="78" text-anchor="middle" class="diagram-label-muted" font-size="11">interactive</text>
+        <text x="92" y="94" text-anchor="middle" class="diagram-label-muted" font-size="11">web login</text>
+        <text x="92" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">browserFlow</text>
+
+        <rect x="185" y="30" width="165" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="267" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">DIRECT GRANT</text>
+        <text x="267" y="78" text-anchor="middle" class="diagram-label-muted" font-size="11">API-style,</text>
+        <text x="267" y="94" text-anchor="middle" class="diagram-label-muted" font-size="11">non-interactive</text>
+        <text x="267" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">directGrantFlow</text>
+
+        <rect x="360" y="30" width="165" height="130" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="442" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">REGISTRATION</text>
+        <text x="442" y="78" text-anchor="middle" class="diagram-label-muted" font-size="11">self-service</text>
+        <text x="442" y="94" text-anchor="middle" class="diagram-label-muted" font-size="11">account creation</text>
+        <text x="442" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">registrationFlow</text>
+
+        <rect x="535" y="30" width="170" height="130" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="620" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">RESET CREDENTIALS</text>
+        <text x="620" y="78" text-anchor="middle" class="diagram-label-muted" font-size="11">forgot-password /</text>
+        <text x="620" y="94" text-anchor="middle" class="diagram-label-muted" font-size="11">recovery</text>
+        <text x="620" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">resetCredentialsFlow</text>
+
+        <rect x="715" y="30" width="175" height="130" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="802" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">FIRST BROKER LOGIN</text>
+        <text x="802" y="78" text-anchor="middle" class="diagram-label-muted" font-size="11">once per user,</text>
+        <text x="802" y="94" text-anchor="middle" class="diagram-label-muted" font-size="11">first brokered login</text>
+        <text x="802" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">firstBrokerLoginFlow</text>
+
+        <text x="450" y="200" text-anchor="middle" class="diagram-label-muted" font-size="12">Cloning any of these five has no effect on real logins until its realm-level binding field above is repointed at the clone's alias.</text>
+      </svg>
+      <figcaption>Figure 25.1 — The five built-in flows this chapter's labs reference, and the realm
+      setting each one answers to.</figcaption>
+    </figure>
+
+    <h2>Executions, requirement levels, and conditional subflows</h2>
+    <p>Each flow is a tree. Every node in that tree — whether a single authenticator (e.g. "Username
+    Password Form") or a nested subflow containing more nodes — is an <strong>execution</strong>, and
+    every execution carries a <strong>requirement level</strong>:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>The four requirement levels (not every execution type can take all four — see <code>requirementChoices</code> below)</caption>
+        <thead><tr><th>Level</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong>REQUIRED</strong></td><td>Must succeed for the flow to proceed. If several
+          REQUIRED executions sit side by side at the same level, every one of them must pass.</td></tr>
+          <tr><td><strong>ALTERNATIVE</strong></td><td>One of several acceptable paths at that level —
+          succeeding at any one ALTERNATIVE execution is enough; Keycloak does not demand all of them.</td></tr>
+          <tr><td><strong>CONDITIONAL</strong></td><td>Only for subflows. The subflow (and everything
+          nested inside it) is evaluated at all only if every REQUIRED <em>condition</em>-type execution
+          directly inside it evaluates true first. If any required condition fails, the whole subflow —
+          and its children — is skipped outright, not merely treated as optional.</td></tr>
+          <tr><td><strong>DISABLED</strong></td><td>Never evaluated, as if the execution weren't
+          configured at all.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — a real one, hit while building this chapter's lab</div>
+      <p>A CONDITIONAL subflow's own condition executions are implicitly <strong>ANDed</strong> when more
+      than one is set to REQUIRED. Leaving Keycloak's default "Condition - user configured" REQUIRED
+      alongside a newly added "Condition - user role" REQUIRED doesn't give you "OTP for tenant-admins" —
+      it gives you "OTP only for tenant-admins who <em>also</em> already have a credential configured,"
+      which silently excludes every tenant-admin who hasn't enrolled OTP yet. This chapter's lab disables
+      the old condition explicitly (see the before/after diagram below) rather than leaving both in
+      place.</p>
+    </div>
+
+    <p>What follows is this chapter's first genuinely scripted result, not a description: the real
+    executions tree of <code>northwind-apps</code>'s default <code>browser</code> flow, exactly as
+    Keycloak 26.8.2 ships it, captured via the Admin REST API before this chapter changed anything.</p>
+
+    <ol class="lab-steps">
+      <li><p>List the realm's top-level flows (seven built in, none yet custom):</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get authentication/flows \
+  -r northwind-apps --fields alias,id,builtIn,topLevel,providerId</code></pre>
+<pre><code>[ { "alias" : "browser", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "direct grant", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "registration", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "reset credentials", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "clients", "providerId" : "client-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "first broker login", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true },
+  { "alias" : "docker auth", "providerId" : "basic-flow", "topLevel" : true, "builtIn" : true } ]</code></pre></li>
+
+      <li><p>Pull the <code>browser</code> flow's real execution tree:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get authentication/flows/browser/executions \
+  -r northwind-apps</code></pre>
+      <p>The real, captured shape (condensed to level/requirement/displayName — full JSON includes ids,
+      <code>requirementChoices</code>, and config references for each):</p>
+      </li>
+    </ol>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 920 420" role="img" aria-labelledby="t2 d2">
+        <title id="t2">The real, default northwind-apps browser flow, captured via the Admin REST API</title>
+        <desc id="d2">A tree with three levels. Level 0, the top-level browser flow, contains: Cookie set
+        ALTERNATIVE, Kerberos set DISABLED, Identity Provider Redirector set ALTERNATIVE, an Organization
+        subflow set ALTERNATIVE, and a forms subflow set ALTERNATIVE. Nested one level inside the
+        Organization subflow is a Browser Conditional Organization subflow set CONDITIONAL, containing a
+        Condition user configured execution set REQUIRED and an Organization Identity First Login
+        execution set ALTERNATIVE. Nested one level inside the forms subflow are a Username Password Form
+        execution set REQUIRED and a Browser Conditional 2FA subflow set CONDITIONAL. That Conditional
+        2FA subflow in turn contains, at its own nested level: Condition user configured set REQUIRED,
+        Condition credential set REQUIRED, OTP Form set ALTERNATIVE, WebAuthn Authenticator set DISABLED,
+        and Recovery Authentication Code Form set DISABLED. A caption notes this entire tree, including
+        the two REQUIRED conditions ANDed together inside Conditional 2FA, is Keycloak 26.8.2's
+        out-of-the-box default — this chapter clones it rather than editing it directly, since built-in
+        flows cannot be edited in place.</desc>
+        <rect x="10" y="10" width="900" height="400" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="30" y="34" class="diagram-label" font-weight="700" font-size="13">browser (top-level, level 0)</text>
+
+        <rect x="30" y="48" width="140" height="34" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="100" y="69" text-anchor="middle" class="diagram-label-muted" font-size="11">Cookie — ALTERNATIVE</text>
+
+        <rect x="180" y="48" width="140" height="34" rx="6" class="diagram-fill-danger diagram-stroke"/>
+        <text x="250" y="69" text-anchor="middle" class="diagram-label-muted" font-size="11">Kerberos — DISABLED</text>
+
+        <rect x="330" y="48" width="190" height="34" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="425" y="69" text-anchor="middle" class="diagram-label-muted" font-size="11">IdP Redirector — ALTERNATIVE</text>
+
+        <rect x="30" y="94" width="300" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="180" y="114" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Organization — ALTERNATIVE</text>
+        <rect x="45" y="126" width="270" height="86" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="180" y="144" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Conditional Organization — CONDITIONAL</text>
+        <text x="180" y="164" text-anchor="middle" class="diagram-label-muted" font-size="10">Condition - user configured — REQUIRED</text>
+        <text x="180" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">Organization Identity-First Login — ALTERNATIVE</text>
+
+        <rect x="350" y="94" width="540" height="300" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="620" y="114" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">forms — ALTERNATIVE</text>
+        <rect x="365" y="126" width="180" height="34" rx="6" class="diagram-fill-accent diagram-stroke"/>
+        <text x="455" y="147" text-anchor="middle" class="diagram-label-muted" font-size="10">Username Password Form — REQUIRED</text>
+
+        <rect x="365" y="172" width="510" height="200" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="620" y="192" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Browser - Conditional 2FA — CONDITIONAL</text>
+        <text x="620" y="214" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - user configured — REQUIRED</text>
+        <text x="620" y="234" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - credential — REQUIRED (configurable)</text>
+        <text x="620" y="254" text-anchor="middle" class="diagram-label-muted" font-size="11" font-weight="700">( the two REQUIRED conditions above are ANDed )</text>
+        <text x="620" y="280" text-anchor="middle" class="diagram-label-muted" font-size="11">OTP Form — ALTERNATIVE</text>
+        <text x="620" y="300" text-anchor="middle" class="diagram-label-muted" font-size="11">WebAuthn Authenticator — DISABLED</text>
+        <text x="620" y="320" text-anchor="middle" class="diagram-label-muted" font-size="11">Recovery Authentication Code Form — DISABLED</text>
+        <text x="620" y="352" text-anchor="middle" class="diagram-label-muted" font-size="10">( keeps 2FA from being forced on a user who has no 2FA credential yet )</text>
+
+        <text x="30" y="388" class="diagram-label-muted" font-size="10">Captured live, Keycloak 26.8.2, kcadm.sh get authentication/flows/browser/executions -r northwind-apps — not reconstructed from memory.</text>
+      </svg>
+      <figcaption>Figure 25.2 — The actual, out-of-the-box default <code>browser</code> flow for a freshly
+      created Keycloak 26.8.2 realm. Notice it already has a conditional 2FA subflow — this chapter edits
+      a copy of it rather than inventing one from scratch.</figcaption>
+    </figure>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>The default flow already does <em>something</em> close to "conditional OTP" — it only asks a
+      user for a second factor if they already have one configured. That's a sensible default (it doesn't
+      force brand-new users into OTP mid-login), but it's keyed on <strong>enrollment status</strong>, not
+      on <strong>who the user is</strong>. "Challenge every tenant-admin, whether or not they've enrolled
+      yet" needs a different condition entirely — which is exactly what this chapter adds.</p>
+    </div>
+
+    <h2>Cloning the browser flow and adding conditional OTP for <code>tenant-admin</code></h2>
+    <p>Keycloak will not let you edit a built-in flow's steps directly — every control in the Admin
+    Console is read-only on <code>browser</code> itself, by design, so a known-good default always exists
+    to fall back to. The fix, in the Console or via the API, is the same: duplicate the flow first, then
+    edit the copy. Every step below is a real <code>kcadm.sh</code> call against the Admin REST API,
+    run and captured in this chapter's own test realm.</p>
+
+    <ol class="lab-steps">
+      <li><p>Copy the <code>browser</code> flow — the Admin REST API's <code>POST
+      /{realm}/authentication/flows/{flowAlias}/copy</code> endpoint, which <code>kcadm.sh create ...
+      /copy</code> wraps:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create authentication/flows/browser/copy \
+  -r northwind-apps -s newName="browser - northwind step-up"</code></pre>
+<pre><code>Created new copy with id '2e40c0cc-74f2-4f9a-a855-caaa4e42cdeb'</code></pre>
+      <p>Confirmed by re-fetching the new flow's own executions: the copy reproduces the entire tree in
+      Figure 25.2 exactly, under new display names prefixed with the clone's alias — nothing is silently
+      dropped or re-ordered by the copy operation.</p></li>
+
+      <li><p>Confirm the available condition providers before picking one — <code>Condition - user role</code>
+      (provider id <code>conditional-user-role</code>) is what keys a condition off role membership:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get authentication/config-description/conditional-user-role \
+  -r northwind-apps</code></pre>
+<pre><code>{ "name" : "Condition - user role", "providerId" : "conditional-user-role",
+  "helpText" : "Flow is executed only if user has the given role.",
+  "properties" : [
+    { "name" : "condUserRole", "label" : "User role", "type" : "Role",
+      "helpText" : "...type it in the textbox. To reference a client role the syntax is clientname.clientrole..." },
+    { "name" : "negate", "label" : "Negate output", "type" : "boolean" } ] }</code></pre></li>
+
+      <li><p>Add a new <code>Condition - user role</code> execution directly inside the cloned flow's
+      "Browser - Conditional 2FA" subflow (<code>POST .../executions/execution</code>):</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "authentication/flows/browser%20-%20northwind%20step-up%20Browser%20-%20Conditional%202FA/executions/execution" \
+  -r northwind-apps -b '{"provider":"conditional-user-role"}'</code></pre>
+<pre><code>Created new execution with id 'acfea483-fe91-4485-8f91-4f0ed1d06b7c'</code></pre></li>
+
+      <li><p>Attach its configuration — <code>condUserRole=tenant-admin</code> — via <code>POST
+      authentication/executions/{id}/config</code>, then independently re-read it to confirm it saved
+      exactly as sent (not just trusting the create call's own success message):</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  authentication/executions/acfea483-fe91-4485-8f91-4f0ed1d06b7c/config -r northwind-apps \
+  -s alias="northwind-require-otp-tenant-admin" \
+  -s 'config."condUserRole"=tenant-admin' -s 'config."negate"=false'</code></pre>
+<pre><code>Created new config with id '5a5806ff-2cb2-4782-afc4-2ef76756d457'</code></pre>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  authentication/config/5a5806ff-2cb2-4782-afc4-2ef76756d457 -r northwind-apps</code></pre>
+<pre><code>{ "id" : "5a5806ff-2cb2-4782-afc4-2ef76756d457",
+  "alias" : "northwind-require-otp-tenant-admin",
+  "config" : { "condUserRole" : "tenant-admin", "negate" : "false" } }</code></pre></li>
+
+      <li><p>Set the final requirement levels inside the subflow — <code>PUT
+      .../executions</code>, once per execution, each call returning no error: disable the two
+      enrollment-based conditions Figure 25.2 showed, REQUIRE the new role condition, and REQUIRE (not
+      just ALTERNATIVE) the OTP Form beneath it:</p>
+<pre><code># Condition - user configured -> DISABLED
+# Condition - credential       -> DISABLED
+# Condition - user role        -> REQUIRED  (configured above: tenant-admin)
+# OTP Form                     -> REQUIRED</code></pre>
+      <p>Re-fetching the subflow afterward confirms all four changes landed exactly as set:</p>
+<pre><code>[ { "displayName": "Condition - user configured", "requirement": "DISABLED" },
+  { "displayName": "Condition - credential",       "requirement": "DISABLED" },
+  { "displayName": "Condition - user role",        "requirement": "REQUIRED",
+    "alias": "northwind-require-otp-tenant-admin" },
+  { "displayName": "OTP Form",                     "requirement": "REQUIRED" },
+  { "displayName": "WebAuthn Authenticator",       "requirement": "DISABLED" },
+  { "displayName": "Recovery Authentication Code Form", "requirement": "DISABLED" } ]</code></pre></li>
+
+      <li><p>A clone changes nothing on its own — the realm still has to be repointed at it. Rebind the
+      realm's <code>browserFlow</code>, then confirm the binding switched:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
+  -r northwind-apps -s browserFlow="browser - northwind step-up"</code></pre>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields browserFlow</code></pre>
+<pre><code>{ "browserFlow" : "browser - northwind step-up" }</code></pre></li>
+    </ol>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 920 320" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Before and after: the Conditional 2FA subflow, cloned and re-keyed to tenant-admin</title>
+        <desc id="d3">Two side-by-side panels. The left panel, labeled before, in the original browser
+        flow's Conditional 2FA subflow, lists Condition user configured REQUIRED, Condition credential
+        REQUIRED, with a note these two are ANDed, then OTP Form ALTERNATIVE, WebAuthn DISABLED, and
+        Recovery codes DISABLED. The right panel, labeled after, in the cloned flow's Conditional 2FA
+        subflow, lists Condition user configured DISABLED, Condition credential DISABLED, Condition user
+        role REQUIRED configured with condUserRole equals tenant-admin, then OTP Form REQUIRED, with
+        WebAuthn and Recovery codes left DISABLED. An arrow between the panels is labeled real, scripted
+        changes verified via the Admin REST API. A caption beneath the right panel states OTP here is
+        chapter five's possession factor, now gated on chapter 23's tenant-admin role instead of on prior
+        enrollment, which is this chapter's concrete instance of chapter five's step-up authentication
+        concept.</desc>
+        <rect x="20" y="20" width="400" height="260" rx="10" class="diagram-fill-warning diagram-stroke"/>
+        <text x="220" y="46" text-anchor="middle" class="diagram-label" font-weight="700">BEFORE — default browser flow</text>
+        <text x="220" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - user configured — REQUIRED</text>
+        <text x="220" y="86" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - credential — REQUIRED</text>
+        <text x="220" y="104" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">(ANDed together)</text>
+        <text x="220" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">OTP Form — ALTERNATIVE</text>
+        <text x="220" y="150" text-anchor="middle" class="diagram-label-muted" font-size="11">WebAuthn Authenticator — DISABLED</text>
+        <text x="220" y="170" text-anchor="middle" class="diagram-label-muted" font-size="11">Recovery Authn Code Form — DISABLED</text>
+        <text x="220" y="200" text-anchor="middle" class="diagram-label" font-size="10">Gate: "has the user already</text>
+        <text x="220" y="216" text-anchor="middle" class="diagram-label" font-size="10">enrolled a 2FA credential?"</text>
+
+        <line x1="420" y1="150" x2="500" y2="150" class="diagram-stroke" marker-end="url(#arrowC)"/>
+        <text x="460" y="138" text-anchor="middle" class="diagram-label-muted" font-size="9">cloned, then</text>
+        <text x="460" y="166" text-anchor="middle" class="diagram-label-muted" font-size="9">re-configured</text>
+
+        <rect x="500" y="20" width="400" height="260" rx="10" class="diagram-fill-success diagram-stroke"/>
+        <text x="700" y="46" text-anchor="middle" class="diagram-label" font-weight="700">AFTER — browser - northwind step-up</text>
+        <text x="700" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - user configured — DISABLED</text>
+        <text x="700" y="86" text-anchor="middle" class="diagram-label-muted" font-size="11">Condition - credential — DISABLED</text>
+        <text x="700" y="110" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Condition - user role — REQUIRED</text>
+        <text x="700" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">condUserRole = tenant-admin</text>
+        <text x="700" y="150" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">OTP Form — REQUIRED</text>
+        <text x="700" y="170" text-anchor="middle" class="diagram-label-muted" font-size="11">WebAuthn / Recovery codes — DISABLED</text>
+        <text x="700" y="200" text-anchor="middle" class="diagram-label" font-size="10">Gate: "does this user hold the</text>
+        <text x="700" y="216" text-anchor="middle" class="diagram-label" font-size="10">tenant-admin realm role?"</text>
+        <text x="700" y="250" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">Chapter 5's possession factor (OTP),</text>
+        <text x="700" y="266" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">gated by chapter 23's tenant-admin role.</text>
+        <defs>
+          <marker id="arrowC" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 25.3 — Every change in the "after" panel was made and independently re-read back
+      via the Admin REST API in this chapter's own lab run (teardown confirmed clean afterward).</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In the Admin Console (described, not personally clicked through)</div>
+      <p>No browser tool was available in this session, so the Console-click version of the steps above —
+      Authentication → the flow list → the three-dot menu's "Duplicate" action, dragging a new step into
+      a subflow via "Add condition," and picking a requirement level from a per-row dropdown — is drawn
+      from Keycloak's current <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Server
+      Administration Guide</a> rather than personally observed, the same honesty rule chapter 20 applied
+      to the realm-creation screens. What <em>was</em> personally run and verified is the mechanism every
+      one of those Console clicks is a thin layer over: the exact Admin REST API calls in the lab steps
+      above, each one re-read back afterward to confirm the value Keycloak actually stored, not just the
+      value the create/update call claimed to send.</p>
+    </div>
+
+    <h2>Required actions, revisited at the realm level</h2>
+    <p>Chapter 22 assigned a required action to one specific user — a one-time task Keycloak forces
+    immediately after an otherwise-successful login, before a session is issued (distinct from a flow
+    execution, which runs <em>during</em> the credential check itself, not after it). This chapter's
+    question is the realm-wide version: which required actions exist, and which ones does
+    <em>every new user</em> get automatically, without an administrator assigning them one by one?</p>
+
+    <ol class="lab-steps">
+      <li><p>List the realm's required actions (13 exist by default; condensed to the ones this chapter
+      touches):</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get authentication/required-actions \
+  -r northwind-apps</code></pre>
+<pre><code>{ "alias" : "CONFIGURE_TOTP", "name" : "Configure OTP", "enabled" : true,
+  "defaultAction" : false, "priority" : 54 }
+{ "alias" : "UPDATE_PASSWORD", "name" : "Update Password", "enabled" : true,
+  "defaultAction" : false, "priority" : 57 }
+{ "alias" : "VERIFY_EMAIL", "name" : "Verify Email", "enabled" : true,
+  "defaultAction" : false, "priority" : 50 }</code></pre>
+      <p><code>enabled</code> means the action exists as an option at all in this realm; <code>defaultAction</code>
+      is the separate, realm-wide switch this chapter actually changes.</p></li>
+
+      <li><p>Flip <code>CONFIGURE_TOTP</code>'s <code>defaultAction</code> to <code>true</code> — every
+      newly created <code>northwind-apps</code> user now gets "Configure OTP" added to their own
+      required-actions list automatically, with no per-user step:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update authentication/required-actions/CONFIGURE_TOTP \
+  -r northwind-apps -s alias=CONFIGURE_TOTP -s name="Configure OTP" -s providerId=CONFIGURE_TOTP \
+  -s enabled=true -s defaultAction=true -s priority=54</code></pre>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get authentication/required-actions/CONFIGURE_TOTP \
+  -r northwind-apps</code></pre>
+<pre><code>{ "alias" : "CONFIGURE_TOTP", "name" : "Configure OTP", "enabled" : true,
+  "defaultAction" : true, "priority" : 54 }</code></pre></li>
+    </ol>
+
+    <p>This pairs naturally with the conditional OTP flow above: the flow change makes OTP
+    <em>mandatory at login</em> for anyone holding <code>tenant-admin</code>; the required-action change
+    makes sure a brand-new user, tenant-admin or not, is actually walked through <em>enrolling</em> OTP
+    the first time they'd otherwise need it, rather than hitting a locked door with no way through.</p>
+
+    <h2>Honest accounting: what this chapter actually scripted, and the two gaps it didn't close</h2>
+    <p>Every command and every block of output in the two lab sections above is real — run against a
+    genuine Keycloak 26.8.2 + PostgreSQL 17 stack in this session, with every create/update call
+    independently re-confirmed by a separate GET afterward rather than trusted on its own success
+    message. Two things are explicitly <strong>not</strong> claimed:</p>
+    <ul class="common-mistakes">
+      <li>The Admin Console's actual screens (the flow list, the "Duplicate" menu item, the per-row
+      requirement dropdown, the drag handle for reordering executions) were not personally clicked
+      through — no browser tool exists in this environment. Every claim about what the Console looks like
+      is sourced from Keycloak's current official Server Administration Guide and labeled as such, the
+      same rule chapter 20 followed for the realm-creation screens.</li>
+      <li>This session did not drive an actual end-to-end browser login against the customized flow to
+      watch the OTP challenge appear for a <code>tenant-admin</code> test user and stay absent for an
+      ordinary one. That would require scripting real login-page form submissions, and this session chose
+      not to attempt it rather than ship an ambiguous result — the configuration's correctness is backed
+      by independently re-reading back every value Keycloak stored (Figure 25.3's "after" panel is built
+      entirely from those re-reads), not by a personally observed login round trip.</li>
+    </ul>
+    <p>One more honest note, specific to this test run and not a general Keycloak limitation: the
+    <code>tenant-admin</code> role itself (chapter 23's job) did not exist in this chapter's own disposable
+    test realm. Keycloak's <code>conditional-user-role</code> config accepts a role name as a plain string
+    and does not validate that the role already exists at save time — confirmed directly, since the
+    config above saved and read back cleanly with no such role present. The condition simply never
+    evaluates true until a role with that exact name exists in the realm and is assigned to a user, which
+    chapter 23's realm already has in place for the real <code>northwind-apps</code> used across these
+    chapters.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">A build-environment pitfall, worth recording here too</div>
+      <p>This chapter's own lab run started by colliding with another chapter's lab, running at the same
+      time from the same <code>labs/docker/</code> directory — Docker Compose derives a project name from
+      the directory by default, so two concurrent <code>docker compose up</code> invocations from the same
+      path land on the exact same container names and the same host port, not two separate stacks. This
+      chapter's commands above were run against an isolated copy (a distinct Compose project name and a
+      remapped host port, torn down cleanly afterward) specifically to avoid stepping on, or being stepped
+      on by, that other run. If you ever run two of this course's labs at once on one machine, give each
+      its own <code>-p</code> project name and port rather than assuming <code>docker compose</code> keeps
+      them apart for you.</p>
+    </div>
+
+    <h2>Case study: Meridian Trust's step-up, in the vocabulary this chapter just built</h2>
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Meridian Trust</div>
+      <p><span class="org-chip meridian">Meridian Trust</span> is not the realm this chapter actually
+      configured — Northwind Apps is — but its chapter 5 scenario is the clearest motivating reason a bank
+      would ever need a <em>custom</em> flow instead of a flat realm-wide rule. Recall the shape: a routine
+      login and a routine balance check pass with the normal factor set; the moment the same customer
+      initiates a large, first-time, or unusually-sized wire transfer, Meridian's system interrupts the
+      flow and demands an additional factor before the funds move. In the vocabulary this chapter just
+      built, that is a <strong>CONDITIONAL subflow</strong> gating a second-factor execution — exactly
+      the shape of <code>northwind-apps</code>'s new "Browser - Conditional 2FA" subflow, except Meridian's
+      triggering condition would evaluate transaction context (amount, payee history, device) at the
+      moment of a specific action rather than role membership at login time. Keycloak's authenticator SPI
+      (chapter 39-40's territory) is exactly where a bank like Meridian would implement a custom condition
+      provider for that transaction-aware trigger, since <code>conditional-user-role</code> only answers
+      "who is this user," not "what are they about to do." The mechanism — a condition gating an
+      otherwise-ALTERNATIVE factor into REQUIRED — is the same one this chapter actually built for
+      Northwind; only the condition's own logic would differ.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 300" role="img" aria-labelledby="t4 d4">
+        <title id="t4">Meridian Trust's step-up, expressed as a conditional subflow</title>
+        <desc id="d4">A left-to-right sequence. A customer logs in and the normal browser flow issues a
+        session with no extra prompt. The customer then initiates a wire transfer, a sensitive action.
+        A conditional subflow evaluates transaction-context signals such as amount, new payee, and
+        unrecognized device. If the signals are below threshold, the transfer proceeds immediately. If
+        the signals cross threshold, the conditional subflow's otherwise-alternative second factor is
+        escalated to required, an OTP or push challenge is issued, and the transfer proceeds only after
+        that challenge succeeds. A caption notes this is the same condition-gates-otherwise-alternative-
+        factor mechanism this chapter built for Northwind's tenant-admin role, with a different
+        condition.</desc>
+        <rect x="20" y="110" width="150" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="95" y="140" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Normal login</text>
+        <text x="95" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">session issued, no extra prompt</text>
+
+        <line x1="170" y1="145" x2="230" y2="145" class="diagram-stroke" marker-end="url(#arrowD)"/>
+        <rect x="230" y="110" width="150" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="305" y="140" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Wire transfer initiated</text>
+        <text x="305" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">a sensitive action</text>
+
+        <line x1="380" y1="145" x2="440" y2="145" class="diagram-stroke" marker-end="url(#arrowD)"/>
+        <rect x="440" y="80" width="190" height="130" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="535" y="104" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Conditional subflow</text>
+        <text x="535" y="124" text-anchor="middle" class="diagram-label-muted" font-size="10">evaluates: amount,</text>
+        <text x="535" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">new payee, device</text>
+        <text x="535" y="162" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">(condition, not role,</text>
+        <text x="535" y="178" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">this time)</text>
+
+        <line x1="630" y1="120" x2="690" y2="60" class="diagram-stroke" marker-end="url(#arrowD)"/>
+        <line x1="630" y1="160" x2="690" y2="230" class="diagram-stroke" marker-end="url(#arrowD)"/>
+
+        <rect x="690" y="30" width="170" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="775" y="54" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">Below threshold</text>
+        <text x="775" y="72" text-anchor="middle" class="diagram-label-muted" font-size="9">transfer proceeds</text>
+
+        <rect x="690" y="200" width="170" height="80" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="775" y="222" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">Threshold crossed</text>
+        <text x="775" y="240" text-anchor="middle" class="diagram-label-muted" font-size="9">ALTERNATIVE factor escalated</text>
+        <text x="775" y="256" text-anchor="middle" class="diagram-label-muted" font-size="9">to REQUIRED — OTP/push</text>
+        <text x="775" y="270" text-anchor="middle" class="diagram-label-muted" font-size="9">transfer proceeds after success</text>
+        <defs>
+          <marker id="arrowD" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 25.4 — Meridian Trust's chapter-5 step-up scenario, expressed in this chapter's
+      actual mechanism (a condition gating an otherwise-ALTERNATIVE factor into REQUIRED).</figcaption>
+    </figure>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see an admin try to edit <code>browser</code>'s steps directly and find every control
+      greyed out, the cause is Keycloak's deliberate read-only protection on built-in flows — duplicate it
+      first, then edit the copy.</li>
+      <li>If you see a cloned, fully customized flow apparently having zero effect on real logins, the
+      cause is almost always forgetting the last step: the realm's <code>browserFlow</code> (or whichever
+      binding applies) still points at the original alias until it's explicitly repointed.</li>
+      <li>If you see a conditional 2FA subflow that "should" require OTP for a specific role but doesn't,
+      the cause is often a leftover REQUIRED condition from the original flow still ANDed in — e.g. an old
+      "Condition - user configured" sitting beside a new "Condition - user role," silently adding "and
+      already enrolled" to the rule.</li>
+      <li>If you see <code>condUserRole</code> set to a role name that looks correct but the condition
+      never fires, the cause may simply be that the role doesn't exist (or isn't assigned to the user
+      being tested) yet — Keycloak stores the string without validating the role exists at config-save
+      time, so a typo or a not-yet-created role fails silently rather than with an error.</li>
+      <li>If you see someone conflate a required action with a flow execution because "they both relate to
+      MFA," the cause is missing the timing difference — a flow execution runs during the credential check
+      itself (and can block a session from ever being issued); a required action runs only after
+      authentication has already otherwise succeeded, as a one-time gate before the session is handed
+      over.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>Keycloak ships five built-in flows this course has a reason to care about — Browser, Direct
+      Grant, Registration, Reset Credentials, First Broker Login — each bound to the realm by its own
+      settings field (<code>browserFlow</code>, <code>directGrantFlow</code>, etc.).</li>
+      <li>Every node in a flow is an execution, and every execution carries one of four requirement
+      levels: REQUIRED, ALTERNATIVE, CONDITIONAL (subflows only), or DISABLED.</li>
+      <li>A CONDITIONAL subflow only runs at all if every REQUIRED condition execution directly inside it
+      evaluates true first — and multiple REQUIRED conditions in the same subflow are implicitly ANDed,
+      a real pitfall this chapter's own lab hit and had to fix.</li>
+      <li><code>northwind-apps</code>'s real, default <code>browser</code> flow already ships with a
+      conditional 2FA subflow gated on "has this user already enrolled a credential" — this chapter's
+      lab captured that exact tree live via the Admin REST API before changing anything.</li>
+      <li>Built-in flows cannot be edited in place; the Admin REST API's flow-copy endpoint (and the
+      Console's "Duplicate" action) is the only way to get an editable version, and this chapter actually
+      exercised that endpoint, not just described it.</li>
+      <li>This chapter's conditional-OTP lab added a <code>Condition - user role</code> execution
+      (provider <code>conditional-user-role</code>, configured with <code>condUserRole=tenant-admin</code>)
+      and set OTP Form to REQUIRED beneath it — a real, concrete instance of chapter 5's possession-factor
+      and step-up-authentication concepts, keyed to chapter 23's role.</li>
+      <li>Cloning a flow changes nothing about real logins until the realm's corresponding flow-binding
+      field is explicitly repointed at the clone's alias — a separate, easy-to-forget step.</li>
+      <li>Required actions (chapter 22's per-user assignment) also have a realm-wide
+      <code>defaultAction</code> switch — flipping it for <code>CONFIGURE_TOTP</code> means every newly
+      created user gets OTP enrollment queued automatically, with no per-user step.</li>
+      <li>This chapter is explicit about its verification boundary: every Admin REST API call and its
+      output is real and independently re-read back; the Admin Console's actual screens are described from
+      Keycloak's current documentation, and an actual end-to-end login round trip against the customized
+      flow was not attempted this session.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, without looking back at the chapter, why leaving the default "Condition - user
+      configured" REQUIRED alongside a new "Condition - user role" REQUIRED in the same subflow does not
+      produce "OTP for every tenant-admin."</li>
+      <li>Walk through what would happen, step by step, if you cloned the browser flow, fully reconfigured
+      the copy, but forgot to update the realm's <code>browserFlow</code> setting.</li>
+      <li>Chapter 5 described step-up authentication as a decision triggered by risk/context rather than a
+      fixed schedule. In your own words, map that description onto the specific mechanism (requirement
+      levels + conditions) this chapter actually used to implement it for tenant-admins.</li>
+      <li>Why can't Keycloak's built-in <code>conditional-user-role</code> condition implement Meridian
+      Trust's wire-transfer step-up scenario on its own, and what would have to be built instead?</li>
+      <li>What, specifically, separates a required action from a flow execution — and why does that
+      difference matter for when in the login process each one can act?</li>
+      <li>This chapter admits it did not script an actual login round trip against the customized flow.
+      What was verified instead, and what exactly is still an open gap between that and a real end-user
+      observation?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak docs — Server Administration Guide (authentication flows, required actions)</a></li>
+      <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/">Keycloak docs — Admin REST API reference (flow copy, executions, authenticator config, required-actions endpoints used in this chapter's lab)</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html">Keycloak docs — Server Developer Guide (Authentication SPI — writing a custom condition provider, forward-pointer to chapters 39-40)</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/release_notes/index.html">Keycloak docs — Release notes (version-specific authenticator providers, e.g. Condition - credential)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6238">RFC 6238 — TOTP: Time-Based One-Time Password Algorithm (the mechanism OTP Form validates against)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "authentication-flows", 15);
+  });
+</script>
+</body>
+</html>

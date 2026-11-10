@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roles &amp; Groups — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "roles-and-groups";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part IV — Keycloak Core Administration</span>
+      <span class="badge minutes">~40 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>23. Roles &amp; Groups</h1>
+    <p class="lede">Chapter 22 gave <code>northwind-apps</code> two real people: <code>jane.doe</code> and
+    <code>priya.patel</code>. Real people with accounts but no access are just names in a database — this
+    chapter is where they get something to <em>do</em>. You'll create three realm roles and two groups,
+    assign Jane as a tenant administrator, assign Priya as a support agent, and then do the one thing this
+    course has been building toward since chapter 10: literally move Priya from Support to Platform
+    Engineering in a real running realm, and prove — with real <code>kcadm.sh</code> output, not a
+    description — that her old access was actually removed, not just buried under new access she also
+    now has.</p>
+
+    <h2>Why this matters</h2>
+    <p>Every access-control system an IAM specialist will ever operate needs some structure between "the
+    system has thousands of users" and "every permission is checked one user at a time." Roles and groups
+    are that structure in Keycloak, and they're also where the single most common governance mistake in
+    the entire field actually happens — not in a policy document, but in the two or three admin-console
+    clicks (or <code>kcadm.sh</code> commands) someone makes when a person changes teams. Knowing the
+    mechanics cold, and knowing exactly which step gets skipped when someone gets it wrong, is what this
+    chapter is for.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">What concept is this?</div>
+      <p>Chapter 6 named five authorization models and said Keycloak's realm roles and client roles,
+      "assigned to users directly or via groups, are a direct RBAC implementation" — and promised that this
+      chapter would cover "creating roles, composite roles, and group-based role assignment hands-on against
+      a running realm." That promise is this chapter. Chapter 10 then taught the Joiner-Mover-Leaver
+      vocabulary and specifically warned that a <strong>Mover</strong> event is "not purely additive" — the
+      most common beginner mistake in identity governance is granting new access without removing the old.
+      Chapter 10's own worked example was Priya, moving from Northwind's support team to its platform
+      engineering team. That was a conceptual walkthrough with no real system behind it. This chapter
+      reproduces it, by name, in a real Keycloak realm, with real captured command output proving the old
+      role was actually gone afterward.</p>
+    </div>
+
+    <h2>Realm roles vs. client roles</h2>
+    <p>Keycloak has two kinds of roles, distinguished by scope. A <strong>realm role</strong> lives in the
+    realm's own namespace and is visible to — and can be checked by — every client registered in that
+    realm. A <strong>client role</strong> lives inside one specific client's namespace; Keycloak's own
+    documentation puts it plainly: "Clients can define roles that are specific to them. This is basically a
+    role namespace dedicated to the client." The same role name can exist once as a realm role and
+    separately, meaning something entirely different, as a role on two different clients — there's no
+    collision, because each lives in its own namespace.</p>
+    <p>This chapter only creates realm roles, and that's a deliberate scope choice, not an oversight:
+    <code>tenant-admin</code>, <code>support-agent</code>, and <code>platform-engineer</code> describe
+    Jane's and Priya's <em>organizational</em> roles at Northwind Apps — true regardless of which specific
+    application they're using at the moment. A realm role is the right tool for "what kind of employee is
+    this," checked the same way by every client in the realm. Client roles are the right tool for
+    "what can this identity do inside <em>this one application</em>" — chapter 24 creates the
+    <code>northwind-dashboard</code> client and gives it its own client-role namespace, so hold that
+    thought until then.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 260" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Realm roles are visible realm-wide; client roles live in one client's own namespace</title>
+        <desc id="d1">A large outer box labeled "northwind-apps realm" contains three realm role boxes —
+        tenant-admin, support-agent, platform-engineer — each with arrows pointing to two client boxes
+        inside the same realm, labeled northwind-dashboard and northwind-spa, showing that every realm role
+        is visible to and checkable by both clients. Inside the northwind-dashboard client box sits a
+        separate, smaller set of client-role boxes — such as report-viewer — that exist only in that
+        client's own namespace and are not visible to northwind-spa or to any other client.</desc>
+        <rect x="20" y="20" width="820" height="220" rx="12" class="diagram-fill-surface diagram-stroke"/>
+        <text x="40" y="44" class="diagram-label" font-weight="700" font-size="13">northwind-apps realm</text>
+
+        <rect x="50" y="60" width="190" height="34" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="145" y="83" text-anchor="middle" class="diagram-label" fill="#fff" font-size="11">tenant-admin (realm role)</text>
+        <rect x="50" y="104" width="190" height="34" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="145" y="127" text-anchor="middle" class="diagram-label" fill="#fff" font-size="11">support-agent (realm role)</text>
+        <rect x="50" y="148" width="190" height="34" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="145" y="171" text-anchor="middle" class="diagram-label" fill="#fff" font-size="11">platform-engineer (realm role)</text>
+
+        <line x1="240" y1="77" x2="430" y2="90" class="diagram-stroke"/>
+        <line x1="240" y1="121" x2="430" y2="110" class="diagram-stroke"/>
+        <line x1="240" y1="165" x2="430" y2="130" class="diagram-stroke"/>
+        <line x1="240" y1="77" x2="620" y2="200" class="diagram-stroke"/>
+        <line x1="240" y1="121" x2="620" y2="210" class="diagram-stroke"/>
+        <line x1="240" y1="165" x2="620" y2="220" class="diagram-stroke"/>
+
+        <rect x="430" y="60" width="200" height="100" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="530" y="82" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-dashboard</text>
+        <text x="530" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">sees every realm role</text>
+        <rect x="445" y="112" width="170" height="34" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="530" y="134" text-anchor="middle" class="diagram-label" font-size="10">report-viewer (client role)</text>
+
+        <rect x="650" y="185" width="170" height="50" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="735" y="207" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-spa</text>
+        <text x="735" y="223" text-anchor="middle" class="diagram-label-muted" font-size="10">sees every realm role</text>
+
+        <text x="530" y="256" text-anchor="middle" class="diagram-label-muted" font-size="10">report-viewer exists only inside northwind-dashboard's own namespace — northwind-spa can't see or check it</text>
+      </svg>
+      <figcaption>Figure 23.1 — Realm roles are shared realm-wide; client roles are a namespace dedicated to
+      one client (chapter 24 builds the client-role side of this diagram).</figcaption>
+    </figure>
+
+    <h2>Composite roles: roles that contain other roles</h2>
+    <p>Keycloak's documentation defines a <strong>composite role</strong> plainly: "A composite role is a
+    role that can be associated with other roles." Map a user to a composite role, and Keycloak grants
+    every role it's associated with too — the composite role doesn't carry its own separate set of
+    permissions so much as it bundles existing roles under one name. In the Admin Console, this is done
+    from a role's own page: open <strong>Realm Roles</strong>, click the role, and from its <strong>Action</strong>
+    list choose <strong>Add associated roles</strong> to pick which other realm-level or client-level roles
+    it should carry.</p>
+    <p>This lab doesn't build a composite role — <code>tenant-admin</code>, <code>support-agent</code>, and
+    <code>platform-engineer</code> are kept as three independent, non-overlapping roles on purpose, because
+    the Mover payoff later in this chapter depends on them being independent (if <code>platform-engineer</code>
+    quietly included <code>support-agent</code> as an associated role, moving Priya wouldn't actually remove
+    her support access — it would just hide it one level deeper). But composite roles are a real, commonly
+    used mechanism worth knowing exists: a Northwind <code>tenant-admin</code> role, for example, could
+    reasonably be built as a composite of a narrower <code>user-manager</code> role and a narrower
+    <code>settings-editor</code> role, so each piece stays independently assignable while
+    <code>tenant-admin</code> still grants the full bundle in one assignment.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 700 220" role="img" aria-labelledby="t2 d2">
+        <title id="t2">A composite role bundles other roles; assigning it grants everything it contains</title>
+        <desc id="d2">A composite role box labeled "tenant-admin (composite)" with two arrows pointing down
+        into two associated-role boxes, "user-manager" and "settings-editor". A user box connects to the
+        composite role at the top with an arrow labeled "assigned", and a dashed outline around all three
+        role boxes together is labeled "effectively granted" to show that assigning only the composite role
+        grants the full bundle.</desc>
+        <circle cx="80" cy="60" r="26" class="diagram-fill-accent diagram-stroke"/>
+        <text x="80" y="65" text-anchor="middle" class="diagram-label" font-size="11">User</text>
+        <line x1="106" y1="60" x2="220" y2="60" class="diagram-stroke"/>
+        <text x="163" y="48" text-anchor="middle" class="diagram-label-muted" font-size="10">assigned</text>
+
+        <rect x="220" y="35" width="220" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+        <text x="330" y="65" text-anchor="middle" class="diagram-label" fill="#fff" font-size="12">tenant-admin (composite)</text>
+
+        <line x1="280" y1="85" x2="240" y2="140" class="diagram-stroke"/>
+        <line x1="380" y1="85" x2="420" y2="140" class="diagram-stroke"/>
+
+        <rect x="140" y="145" width="180" height="42" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="230" y="170" text-anchor="middle" class="diagram-label" font-size="11">user-manager</text>
+        <rect x="360" y="145" width="180" height="42" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="450" y="170" text-anchor="middle" class="diagram-label" font-size="11">settings-editor</text>
+
+        <rect x="125" y="20" width="430" height="175" rx="12" fill="none" class="diagram-stroke" stroke-dasharray="6 4"/>
+        <text x="555" y="200" text-anchor="end" class="diagram-label-muted" font-size="10">effectively granted by one assignment</text>
+      </svg>
+      <figcaption>Figure 23.2 — A composite role (not built in this chapter's lab) grants every role
+      "associated" with it from a single assignment.</figcaption>
+    </figure>
+
+    <h2>Groups: carrying access for a set of people at once</h2>
+    <p>A <strong>group</strong> is a named collection of users. Keycloak's docs state the mechanism exactly:
+    "Users that become members of a group inherit the attributes and role mappings that group defines." A
+    group can carry its own role mappings (and attributes), and every current member inherits them
+    automatically — add someone to the group and they immediately get everything the group carries; remove
+    them and they immediately lose it. Groups can also nest: creating a new group under an existing parent
+    makes it a <strong>subgroup</strong>, which inherits the parent's role mappings in addition to its own.</p>
+    <p>Groups and roles solve a related but distinct problem. A role answers "what can this identity do."
+    A group answers "who does this identity sit with organizationally" — and, because Keycloak lets a group
+    carry role mappings, a group becomes a convenient way to grant a whole team's worth of people the same
+    role(s) in one place, instead of assigning (and later individually revoking) the same role on every
+    member one at a time. This chapter's <code>Engineering</code> and <code>Support</code> groups aren't
+    strictly necessary to reproduce chapter 10's Mover scenario — the role assignment alone would do that —
+    but a real organization almost always tracks team membership as groups anyway, and the Mover payoff is
+    more honest if it moves Priya's full organizational picture, group membership included, not just one
+    role.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Roles vs. groups: what each one actually answers</caption>
+        <thead><tr><th>Question</th><th>Answered by</th></tr></thead>
+        <tbody>
+          <tr><td>"What is this identity allowed to do?"</td><td>Roles (realm or client), whether assigned directly or inherited</td></tr>
+          <tr><td>"Which team/org unit does this identity belong to?"</td><td>Groups</td></tr>
+          <tr><td>"If I add someone to this team, what do they automatically get?"</td><td>The group's own role mappings, inherited by every member</td></tr>
+          <tr><td>"Does a role grant other roles automatically?"</td><td>Composite roles — the role mechanism's own form of bundling, independent of groups</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>The lab: building the real role and group model</h2>
+    <p>This section's commands were actually run against a fresh <code>labs/docker</code> stack, not
+    narrated. Each chapter's lab starts from a clean <code>docker compose up -d</code> rather than a shared
+    running instance, so the first steps below recreate the <code>jane.doe</code>/<code>priya.patel</code>
+    users chapter 22 introduced before building on them.</p>
+
+    <ol class="lab-steps">
+      <li><p>Bring the stack up and poll until Keycloak answers (same pattern chapter 20 established —
+      don't assume a fixed sleep is enough):</p>
+<pre><code>cd labs/docker
+docker compose up -d
+for i in $(seq 1 25); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:8080/realms/master/.well-known/openid-configuration)
+  if [ "$code" = "200" ]; then echo "ready after attempt $i"; break; fi
+  sleep 2
+done</code></pre>
+<pre><code>ready after attempt 18</code></pre></li>
+
+      <li><p>Log in <code>kcadm.sh</code> and recreate the realm and both users:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
+  -s realm=northwind-apps -s enabled=true
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
+  -s username=jane.doe -s email=jane.doe@northwindapps.com -s enabled=true
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
+  -s username=priya.patel -s email=priya.patel@northwindapps.com -s enabled=true</code></pre>
+<pre><code>Logging into http://localhost:8080 as user admin of realm master
+Created new realm with id 'northwind-apps'
+Created new user with id '404ef293-45d4-4716-8fc7-5c16592b6f20'
+Created new user with id '758fcf4b-057a-41ca-a8d0-420ccc8f501b'</code></pre></li>
+
+      <li><p>Create the three realm roles:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps \
+  -s name=tenant-admin \
+  -s "description=Full administrative access within a single Northwind Apps customer tenant"
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps \
+  -s name=support-agent \
+  -s "description=Access to support tooling and tenant-facing support queues"
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps \
+  -s name=platform-engineer \
+  -s "description=Access to platform engineering tooling and infrastructure"</code></pre>
+<pre><code>Created new role with id 'tenant-admin'
+Created new role with id 'support-agent'
+Created new role with id 'platform-engineer'</code></pre>
+      <p>Note the role's own <code>id</code> is just its name — unlike users and groups, which get a
+      generated UUID, realm roles are addressed by name directly.</p></li>
+
+      <li><p>Create the two groups:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r northwind-apps -s name=Engineering
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r northwind-apps -s name=Support</code></pre>
+<pre><code>Created new group with id 'a18c8082-db97-44e2-9ccd-f2d32e2ce256'
+Created new group with id 'c1a1f336-455f-40dc-9793-af85a4e0dbd3'</code></pre></li>
+
+      <li><p>Assign Jane as tenant admin, and give Priya her starting support-agent role plus Support group
+      membership:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
+  --uusername jane.doe --rolename tenant-admin
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
+  --uusername priya.patel --rolename support-agent
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/c1a1f336-455f-40dc-9793-af85a4e0dbd3" \
+  -s realm=northwind-apps \
+  -s userId=758fcf4b-057a-41ca-a8d0-420ccc8f501b \
+  -s groupId=c1a1f336-455f-40dc-9793-af85a4e0dbd3 -n</code></pre>
+      <p>All three commands return no output on success — normal <code>kcadm.sh</code> behavior for
+      <code>add-roles</code> and group-membership <code>update</code> calls; the next step confirms the
+      result independently rather than trusting silence.</p>
+      <p>In the Admin Console, the equivalent of that last command is <strong>Users</strong> &rarr; select
+      the user &rarr; <strong>Groups</strong> tab &rarr; <strong>Join Group</strong> &rarr; pick
+      <code>Support</code> from the group tree &rarr; <strong>Join</strong> — and assigning a role directly
+      to a user is <strong>Users</strong> &rarr; the user &rarr; <strong>Role mapping</strong> tab &rarr;
+      <strong>Assign role</strong> &rarr; select the role &rarr; <strong>Assign</strong> (per Keycloak's own
+      Server Administration Guide, fetched live for this chapter — this session had no browser to click
+      through it personally, same limitation chapters 20-21 already flagged).</p></li>
+
+      <li><p>Confirm Priya's starting state independently, before touching anything else:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/role-mappings/realm" -r northwind-apps --fields name
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups" -r northwind-apps --fields name</code></pre>
+<pre><code>[ {
+  "name" : "support-agent"
+}, {
+  "name" : "default-roles-northwind-apps"
+} ]
+[ {
+  "name" : "Support"
+} ]</code></pre>
+      <p>That's Priya's genuine before-state: the realm's automatic <code>default-roles-northwind-apps</code>
+      composite role (every Keycloak realm creates one of these for every user, carrying baseline roles
+      like <code>offline_access</code> and <code>uma_authorization</code>), plus the
+      <code>support-agent</code> role this lab just assigned, and membership in exactly one group,
+      <code>Support</code>.</p></li>
+    </ol>
+
+    <div class="table-wrap">
+      <table>
+        <caption>The <code>kcadm.sh</code> subcommands this lab actually used</caption>
+        <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>create roles -r &lt;realm&gt; -s name=...</code></td><td>Creates a new realm role</td></tr>
+          <tr><td><code>create groups -r &lt;realm&gt; -s name=...</code></td><td>Creates a new top-level group</td></tr>
+          <tr><td><code>add-roles --uusername &lt;u&gt; --rolename &lt;r&gt;</code></td><td>Assigns a realm role directly to a user</td></tr>
+          <tr><td><code>remove-roles --uusername &lt;u&gt; --rolename &lt;r&gt;</code></td><td>Removes a realm role directly assigned to a user</td></tr>
+          <tr><td><code>update users/&lt;id&gt;/groups/&lt;groupId&gt; -n</code></td><td>Adds a user to a group (the REST endpoint is a <code>PUT</code>; <code>-n</code> suppresses reading the resource back first)</td></tr>
+          <tr><td><code>delete users/&lt;id&gt;/groups/&lt;groupId&gt;</code></td><td>Removes a user from a group</td></tr>
+          <tr><td><code>get users/&lt;id&gt;/role-mappings/realm</code></td><td>Lists a user's currently assigned realm roles (direct assignments, not resolved through groups)</td></tr>
+          <tr><td><code>get users/&lt;id&gt;/groups</code></td><td>Lists a user's current group memberships</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>The Mover payoff: reproducing chapter 10, for real</h2>
+    <p>Here is the scenario chapter 10 described conceptually, run for real. <span class="org-chip
+    northwind">Northwind Apps</span> moves Priya from the support team onto the platform engineering team.
+    Chapter 10's pitfall callout named the trap exactly: "the naive implementation just grants the new
+    team's access on top of whatever the person already had." The fix isn't exotic — it's two kinds of
+    grant and two kinds of removal, done together, as one event:</p>
+
+    <ol class="lab-steps">
+      <li><p><strong>Grant the new access</strong> — add Priya to <code>Engineering</code> and assign her
+      <code>platform-engineer</code>:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/a18c8082-db97-44e2-9ccd-f2d32e2ce256" \
+  -s realm=northwind-apps \
+  -s userId=758fcf4b-057a-41ca-a8d0-420ccc8f501b \
+  -s groupId=a18c8082-db97-44e2-9ccd-f2d32e2ce256 -n
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
+  --uusername priya.patel --rolename platform-engineer</code></pre>
+      <p>If the Mover event stopped here — which is exactly the mistake chapter 10 warned about — Priya
+      would now hold <em>both</em> teams' access at once. Nothing above removed anything yet.</p></li>
+
+      <li><p><strong>Remove the old access</strong> — the step chapter 10 called the one beginners skip:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh delete -r northwind-apps \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/c1a1f336-455f-40dc-9793-af85a4e0dbd3"
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh remove-roles -r northwind-apps \
+  --uusername priya.patel --rolename support-agent</code></pre>
+      <p>Two commands, each the exact mirror of a command two steps earlier in this chapter: the same
+      group-membership endpoint, called with <code>delete</code> instead of <code>update</code>; the same
+      role-assignment mechanism, called with <code>remove-roles</code> instead of
+      <code>add-roles</code>. Keycloak doesn't do anything automatically here — removing the old access is
+      a decision a human (or a script) has to make and execute, exactly as deliberately as granting the new
+      access was.</p></li>
+
+      <li><p><strong>Confirm the after-state independently</strong> — the same two read-only commands run
+      before the move, run again:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/role-mappings/realm" -r northwind-apps --fields name
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups" -r northwind-apps --fields name</code></pre>
+<pre><code>[ {
+  "name" : "platform-engineer"
+}, {
+  "name" : "default-roles-northwind-apps"
+} ]
+[ {
+  "name" : "Engineering"
+} ]</code></pre></li>
+    </ol>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — the before/after, side by side</div>
+      <p><span class="org-chip northwind">Northwind Apps</span>'s Priya, before the move: realm roles
+      <code>support-agent</code> + <code>default-roles-northwind-apps</code>; groups: <code>Support</code>.
+      After the move: realm roles <code>platform-engineer</code> + <code>default-roles-northwind-apps</code>;
+      groups: <code>Engineering</code>. <code>support-agent</code> and <code>Support</code> do not appear
+      anywhere in the after-state — not demoted, not hidden, not inherited from somewhere else. They are
+      gone, confirmed by a <code>get</code> call that queries Keycloak's own current state, not by trusting
+      that the earlier <code>delete</code>/<code>remove-roles</code> commands' exit codes were honest.
+      Compare this directly to chapter 10's own framing: "the mover event should trigger a review of the
+      identity's <em>entire</em> current access, not only the addition of the new role's access" — this is
+      that review, and its result is a complete replacement of Priya's access, not a superset of it.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 300" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Priya's real before/after access state, captured via kcadm.sh, proving the old grant was removed</title>
+        <desc id="d3">Two side-by-side state boxes for the same user, Priya, connected by an arrow labeled
+        "the Mover event". The left box, "Before", lists realm role support-agent and group membership
+        Support. The right box, "After", lists realm role platform-engineer and group membership
+        Engineering. A crossed-out note between the two boxes states that support-agent and Support were
+        both explicitly removed via kcadm.sh delete and remove-roles commands, not merely left unused, and
+        that this was confirmed by re-running the same read-only get commands used to capture the before
+        state.</desc>
+        <rect x="30" y="40" width="280" height="160" rx="10" class="diagram-fill-warning diagram-stroke"/>
+        <text x="170" y="66" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">BEFORE</text>
+        <text x="170" y="92" text-anchor="middle" class="diagram-label-muted" font-size="11">realm role:</text>
+        <text x="170" y="110" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">support-agent</text>
+        <text x="170" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">group:</text>
+        <text x="170" y="158" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Support</text>
+
+        <line x1="310" y1="120" x2="420" y2="120" class="diagram-stroke" marker-end="url(#arrowM)"/>
+        <text x="365" y="105" text-anchor="middle" class="diagram-label-muted" font-size="11">Mover event</text>
+
+        <rect x="420" y="40" width="280" height="160" rx="10" class="diagram-fill-success diagram-stroke"/>
+        <text x="560" y="66" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">AFTER</text>
+        <text x="560" y="92" text-anchor="middle" class="diagram-label-muted" font-size="11">realm role:</text>
+        <text x="560" y="110" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">platform-engineer</text>
+        <text x="560" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">group:</text>
+        <text x="560" y="158" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Engineering</text>
+
+        <rect x="120" y="225" width="620" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="430" y="248" text-anchor="middle" class="diagram-label" font-size="11">support-agent and Support do NOT appear in the after-state —</text>
+        <text x="430" y="266" text-anchor="middle" class="diagram-label" font-size="11">removed via delete/remove-roles, then confirmed by re-running the same before-state query</text>
+
+        <defs>
+          <marker id="arrowM" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 23.3 — The real captured before/after state proving Priya's old role and group
+      membership were removed, not merely supplemented.</figcaption>
+    </figure>
+
+    <p>Jane's role mapping is untouched by any of this — a check worth running independently, because the
+    whole point of a correctly scoped Mover event is that it changes exactly one identity's access, not a
+    side effect on anyone else's:</p>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/404ef293-45d4-4716-8fc7-5c16592b6f20/role-mappings/realm" -r northwind-apps --fields name</code></pre>
+<pre><code>[ {
+  "name" : "tenant-admin"
+}, {
+  "name" : "default-roles-northwind-apps"
+} ]</code></pre>
+
+    <h2>Case study: Segregation of Duties, designed into the role set itself</h2>
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Meridian Trust's toxic combinations, and role design</div>
+      <p>Chapter 10 defined a <span class="org-chip meridian">Meridian Trust</span> toxic combination:
+      a teller who can both <em>create</em> a transfer and <em>approve</em> it has no independent check on
+      their own actions. Nothing about Keycloak's roles/groups model prevents a toxic combination from
+      being created — Keycloak enforces whatever roles you assign, it doesn't know what a toxic combination
+      is (chapter 10 made the same point about access reviews generally). But role <em>design</em> is still
+      a real lever: if Meridian defines <code>transfer-creator</code> and <code>transfer-approver</code> as
+      two separate, narrow roles rather than folding both abilities into one broad
+      <code>teller</code> role, then granting both to the same person requires someone to make <em>two</em>
+      separate, visible assignment decisions instead of one — and an access review (chapter 10) can check
+      "does any identity hold both roles" as a single, mechanical query against the role-assignment table,
+      instead of having to reverse-engineer which permissions a monolithic role secretly bundles together.
+      A well-designed role set doesn't enforce SoD by itself, but it makes a toxic combination visible and
+      checkable instead of hidden inside one convenient role — which is exactly what Northwind's own
+      three independent, non-composite roles in this chapter were designed to preserve.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a Mover event's checklist end after the "add" commands, the cause is treating
+      chapter 10's warning as something that applies to other organizations' processes, not to the exact
+      two <code>kcadm.sh</code> commands (or two Admin Console clicks) that were just run — the fix is
+      always a <code>remove-roles</code>/group-removal step paired with every <code>add-roles</code>/
+      group-join step for a role change, not an addition on its own.</li>
+      <li>If you see someone confirm a role change only by checking that the new role now appears, the
+      cause is checking half the state — the before/after comparison in this chapter deliberately re-ran
+      the same query twice, so the old role's <em>absence</em> is evidence, not an assumption.</li>
+      <li>If you see a composite role used to bundle a "starter" role inside a "senior" role without
+      documenting it, the cause is forgetting that composite roles are transitively granted — moving
+      someone off the senior role doesn't help if the starter role was never independently revocable in the
+      first place.</li>
+      <li>If you see every ability a job function needs folded into one broad role instead of several
+      narrow ones, the cause is optimizing for fewer assignment clicks today at the cost of making a future
+      toxic combination invisible to an access review later.</li>
+      <li>If you see a client role used where a realm role was needed (or vice versa), the cause is not
+      asking "is this true of this person everywhere in the realm, or only inside one specific
+      application" before picking which namespace the role belongs in.</li>
+      <li>If you see <code>kcadm.sh</code>'s silent success on <code>add-roles</code>/<code>update</code>
+      group calls treated as "nothing happened," the cause is not knowing that's simply this CLI's normal
+      behavior — confirm with a separate <code>get</code> call, as every step in this chapter did, rather
+      than re-running the same mutating command to "see if it works."</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>Realm roles are visible to every client in a realm; client roles are a namespace dedicated to one
+      specific client — the scope difference decides which one fits a given decision.</li>
+      <li>A composite role grants every role "associated" with it from a single assignment; it wasn't used
+      in this lab specifically so the Mover payoff's role removal stayed visible and unambiguous.</li>
+      <li>A group is a named collection of users that can carry its own role mappings and attributes,
+      inherited automatically by every current member — add or remove a membership and the inherited access
+      changes immediately.</li>
+      <li>This chapter created three independent realm roles (<code>tenant-admin</code>,
+      <code>support-agent</code>, <code>platform-engineer</code>) and two groups (<code>Engineering</code>,
+      <code>Support</code>) in a real <code>northwind-apps</code> realm, confirmed with real
+      <code>kcadm.sh</code> output at every step.</li>
+      <li>Chapter 10's Mover event — moving Priya from support to platform engineering — was reproduced for
+      real: grant the new role and group, then explicitly remove the old role and group, confirmed by
+      re-running the same before-state query and seeing the old access gone.</li>
+      <li>Skipping the removal half of a Mover event is identity governance's most common beginner mistake
+      precisely because the "add" half works, looks complete, and produces no error — nothing forces the
+      removal step to happen on its own.</li>
+      <li>Every Keycloak realm automatically creates a <code>default-roles-&lt;realm&gt;</code> composite
+      role that every user holds, carrying baseline roles like <code>offline_access</code> and
+      <code>uma_authorization</code> — it showed up in every role-mapping query in this chapter's lab and is
+      not something a Mover event needs to touch.</li>
+      <li>Keycloak's roles/groups model doesn't enforce Segregation of Duties on its own — it enforces
+      whatever is assigned — but designing narrow, non-overlapping roles (rather than one broad role per job
+      title) keeps a toxic combination visible to an access review instead of hidden inside a convenient
+      bundle.</li>
+      <li><code>kcadm.sh</code>'s <code>add-roles</code>/<code>remove-roles</code> and the
+      group-membership <code>update</code>/<code>delete</code> calls are exact mirror pairs — grant and
+      revoke use the same underlying mechanism in opposite directions, which is part of why a Mover event
+      is "two adds and two removes," not a fundamentally different operation.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Without looking back at the lab steps, write out the four actions (two kinds of grant, two kinds
+      of removal) a correctly implemented Mover event performs when someone changes teams.</li>
+      <li>Why does a realm role make sense for "what kind of employee is this," while a client role makes
+      more sense for "what can this identity do inside one specific application"? Give a Northwind-specific
+      example of each.</li>
+      <li>Explain why this chapter deliberately avoided building <code>platform-engineer</code> as a
+      composite role containing <code>support-agent</code>. What would have broken about the Mover payoff if
+      it had?</li>
+      <li>A manager reports "I moved Dana to the new team" after only adding Dana's new role. What
+      specifically is still true about Dana's access that shouldn't be, and how would you verify it using
+      the same kind of command this chapter used to verify Priya's before/after state?</li>
+      <li>How does designing two narrow, independent roles instead of one broad role make a Segregation of
+      Duties violation easier to catch in an access review, even though Keycloak itself doesn't know what a
+      toxic combination is?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#assigning-permissions-using-roles-and-groups">Keycloak docs — Server Administration Guide: Assigning permissions using roles and groups</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_groups">Keycloak docs — Server Administration Guide: Groups</a></li>
+      <li><a href="https://csrc.nist.gov/glossary/term/role_based_access_control">NIST Computer Security Resource Center — "role based access control" glossary entry</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "roles-and-groups", 15);
+  });
+</script>
+</body>
+</html>

@@ -12,17 +12,25 @@ treated as approval given it directly followed the GATE-3 presentation; no feedb
 the three gates). Confirms the parallel-subagent-then-central-merge working mode as the permanent
 default.
 
-This finishes **Part III — Protocols** in full (see Done below for detail).
+**Part IV — Keycloak Core Administration (chapters 19-26) is now complete.** All 8 chapters merged,
+verified, `built:true`, committed. **→ GATE-4 reached — stopped here for review, awaiting approval
+before starting Part V.** See the GATE-4 review summary under Gates, and the Done entry for chapters
+21-26, for full detail.
 
-**In progress now: Part IV, chapters 19-26** (Keycloak core administration). Leads to **GATE-4**.
-
-**Done so far**: `labs/docker/docker-compose.yml` + `README.md` + `labs.html` (built and personally
-verified by the coordinator end-to-end before any agent touched them — see Done below), chapter 19
-(architecture) and chapter 20 (installing Keycloak — the `northwind-apps` realm now exists as of this
-chapter, confirmed via a real, captured `kcadm.sh` run, not narrated). Both merged, verified, committed.
-
-**Up next: chapters 21-26**, all building on the `northwind-apps` realm chapter 20 established. Still
-needed below for that round's briefs.
+**Standing process note for future parallel Keycloak-lab rounds** (surfaced independently by 5 of the 6
+chapter-21-26 subagents this round): `labs/docker/docker-compose.yml`'s default Compose project name
+(derived from the `labs/docker` directory name — "docker") and static host port (8080) are shared by
+every agent that runs `docker compose up -d` from that directory with no override. When multiple
+lab-bearing chapters are built in parallel, their stacks collide — containers get silently recreated or
+torn down mid-session by a sibling's own `up`/`down -v`, realms vanish, user IDs change. Every affected
+agent this round worked around it independently and consistently with the same fix: bring up an
+isolated copy under a custom project name and alternate host port (`-p ch22kc` on 18099, `-p ch24kc` on
+18090, `-p afl25` on 18080, etc.), keeping the *chapter's own reader-facing documented commands* as the
+plain `docker compose up -d` form (since a solo reader never hits this concurrency issue — it's purely
+an artifact of this course's own parallel-build working mode). **Recommendation for Part V onward**:
+when dispatching more than one lab-bearing chapter in parallel, assign each one its own `-p
+<chapter-slug>kc` project name and a distinct host port up front in the brief, rather than letting each
+agent discover and route around the collision independently.
 
 **The "Northwind Apps realm" build plan (chapters 20-26 share this exact plan)** — ties back to running
 examples already established in Parts I-II, so these chapters pay off threads the course set up
@@ -107,12 +115,12 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 7. ~~Chapters 13-18~~ — done 2026-11-10 (6 parallel subagents + central merge; see Done below).
    **→ GATE-3 reached, approved 2026-11-10.**
 
-### Part IV (Keycloak core — first real Keycloak labs) — in progress
+### Part IV (Keycloak core — first real Keycloak labs) — DONE
 8. ~~`labs/docker/docker-compose.yml` + `README.md` + `labs.html`~~ — done 2026-11-10, coordinator-built
    and personally verified end-to-end (see Done below).
-9. Chapters 19-26 — **19 and 20 done** 2026-11-10 (see Done below); **21-26 up next**, all sharing the
-   "Northwind Apps realm" plan above.
-   **→ GATE-4: stop here for review.**
+9. ~~Chapters 19-26~~ — done 2026-11-10 (8 chapters total: 19-20 as a first round of 2 parallel
+   subagents, 21-26 as a second round of 6 parallel subagents, both centrally merged; see Done below).
+   **→ GATE-4 reached, awaiting approval.**
 
 ### Part V (Keycloak operations)
 10. Chapters 27-30.
@@ -335,6 +343,77 @@ fixed dead links themselves before shipping — same pattern as ch03/ch04/ch16 i
 glossary/quiz merge checked programmatically: 279 glossary terms / 322 quiz questions, zero duplicates
 of either kind, confirmed via a Node script with a `window` shim, same approach every round has used.
 
+### GATE-4 review summary
+
+**What was built:** Chapters 19-26 (Part IV — Keycloak Core Administration) in full, plus the shared
+`labs/docker` Keycloak+PostgreSQL lab environment that every later Keycloak chapter now depends on.
+This is the course's first unit where Keycloak itself exists and is administered for real, start to
+finish, against the `northwind-apps` realm established in chapter 20. Full per-chapter counts are in
+the Done entry below; highlights here are what needed independent judgment.
+
+**The headline payoff — chapter 23's Mover-event reproduction:** chapter 10 (Part II, governance) used
+Priya moving from Northwind's support team to its platform-engineering team as a worked example of the
+JML "Mover" event, warning that treating it as purely additive (granting new access, never removing
+old) is the most common beginner mistake. Chapter 23's lab reproduces this literally against a real
+running realm: `priya.patel` genuinely held `support-agent`/`Support` before, genuinely holds
+`platform-engineer`/`Engineering` after, and the chapter captured both states via independent read-only
+`kcadm.sh` queries (not inferred from the mutating commands' own exit codes) proving the old role and
+group membership were completely absent afterward, not merely superseded. A chapter 2 scenario and a
+chapter 10 lesson both pay off hands-on here — exactly the concept-to-Keycloak bridge CLAUDE.md asks for.
+
+**A real gotcha, found independently and cross-confirmed by two different subagents:** chapters 22 and
+24 each — independently, days apart in wall-clock terms but the same session — hit the identical real
+Keycloak 26 behavior: writing a custom user attribute (`department`) via `kcadm.sh` returns success
+with zero error output, but the attribute is silently never persisted. Both root-caused it the same way
+(Keycloak's Declarative User Profile only persists attributes it has declared in its schema; anything
+else is an "unmanaged attribute," dropped under the default `unmanagedAttributePolicy`), both fixed it
+the same way (`kcadm.sh update users/profile -s unmanagedAttributePolicy=ENABLED`), and both verified
+the fix the same way (a follow-up `get` showing the attribute now present). Two subagents independently
+converging on the same mechanism, the same fix, and the same verification method is strong
+corroboration on its own — the coordinator judged this did not need a third, separate re-verification
+pass before merging the (deduplicated) `Declarative User Profile` / `Unmanaged attribute (Keycloak)`
+glossary entries. Chapter 24 additionally minted a real token end-to-end and decoded it, confirming the
+custom `department` claim actually appeared in the ID token, the access token, and a live UserInfo
+response — not just that the write succeeded.
+
+**Another real, confirmed finding — Keycloak's theme/REST layer validates nothing:** chapter 26's lab
+set a realm's `adminTheme` to `base`, a theme explicitly marked `abstract=true` (meant only to be
+inherited from, never selected directly) in its own `theme.properties`. The write succeeded and
+persisted with no error. The chapter confirmed this is a UI-only restriction (the Admin Console's
+Themes-tab dropdown hides abstract themes) — the Admin REST API itself enforces no sanity check on
+theme names at all, a real finding with practical consequences (a `loginTheme` typo would persist
+silently and only surface the next time someone actually looks at the rendered login page).
+
+**The Docker Compose project-name/port collision** (detailed above under "Current unit" and folded into
+the `## Deviations from CLAUDE.md` section below) was this round's one real process friction: 5 of the 6
+parallel ch21-26 subagents independently hit it and independently converged on the same workaround.
+Nothing here affected chapter content quality — every affected chapter's actual lab run completed
+cleanly on its isolated stack — but it's worth standardizing on `-p <chapter-slug>kc` project names up
+front for Part V's parallel rounds rather than relying on each agent to rediscover the same fix.
+
+**Cross-chapter dedup catches during merge** (this was the largest merge round so far — 102 new terms
+proposed across 6 chapters before dedup): `Client role` (ch23) and `Client role (Keycloak)` (ch24)
+merged into one entry under ch23's shorter name, combining both chapters' framing (namespace vs. REST
+resource); `Declarative User Profile` and `Unmanaged attribute (Keycloak)` each proposed independently
+and near-identically by ch22 and ch24, merged into one entry each (see above); `Required action` (ch22)
+and `Required action (Keycloak)` (ch25) merged under ch22's name; `Default required action (Keycloak)`
+(ch22) and `Default required action` (ch25) merged the same way. Plus 15 separate extend-existing-term
+requests applied during this merge (`SSO session`, `Role`, `Role change (mover event)`, `Client (OAuth
+role)`, `Scope (OAuth)`, `Custom claim`, `Redirect URI (registered)`, `Step-up authentication`,
+`Multi-factor authentication (MFA)`, `Identifier`, `Credential`, `Attribute`, `Identity lifecycle`,
+`Self-service (account management)`, `Extensibility (plugin architecture)`).
+
+**Verification method (same as every prior round):** all 6 new chapter files re-parsed cleanly (Python
+`html.parser`, zero errors), balanced tags, all 4 required mount points and 5 script tags present in
+order, re-served locally and `curl`-confirmed `200` for every chapter plus the 4 shell pages and all 3
+shared data files. Full glossary/quiz merge checked programmatically via a Node script with a `window`
+shim: **413 glossary terms, zero duplicates, zero dangling chapter-slug references**; **457 quiz
+questions across 27 pools, zero duplicate ids** (new prefixes `rst-`/`usr-`/`rlg-`/`cli-`/`afl-`/`thm-`,
+checked against all prior prefixes). `nav-data.js`'s `built` flag flipped to `true` for all 6 chapters
+only after every check passed. Confirmed via `docker ps -a`/`docker volume ls`/`docker network ls` that
+no stray containers, volumes, or networks from this round's lab work (shared or any sibling's isolated
+project) remain.
+
 ## Done
 
 ### Reference set (chapters 00-02, GATE-1)
@@ -480,6 +559,59 @@ of either kind, confirmed via a Node script with a `window` shim, same approach 
   - The `northwind-apps` realm this project's Part IV plan depends on now genuinely exists as of this
     chapter's real lab run (though each later chapter's own lab recreates it fresh, per the plan).
 
+### Part IV, completed — chapters 21-26 (GATE-4)
+- 2026-11-10 chapters 21 (realms), 22 (users & credentials), 23 (roles & groups), 24 (clients & client
+  scopes), 25 (authentication flows), 26 (themes & branding) complete — 6 chapters, 6 parallel
+  subagents, then centrally merged and independently re-verified:
+  - Structural: all 6 files parse cleanly (Python `html.parser`, zero errors), balanced tags, all 4
+    required mount points and 5 script tags present in order, re-served locally and `curl`-confirmed
+    `200` for every chapter plus the 4 shell pages and all 3 shared data files. All deep-dive links
+    live-curled `200` by their own subagent before shipping.
+  - Each chapter ran a real lab against the shared `labs/docker` Keycloak 26.8.2 + PostgreSQL 17 stack
+    (or an isolated copy of it — see the Docker collision note below), continuing the `northwind-apps`
+    realm chapter 20 created. Chapter 23 literally reproduces chapter 10's Priya "Mover event" scenario
+    against real before/after state (see GATE-4 review summary above for detail). Chapter 24 minted a
+    real token and decoded it to confirm a custom claim actually appeared in the ID token, access
+    token, and UserInfo response. Chapter 25 cloned the real browser flow, added and configured a real
+    `conditional-user-role` execution, and rebound the realm to the clone. Chapter 26 inspected
+    Keycloak's actual bundled themes JAR (`org.keycloak.keycloak-themes-26.8.2.jar`) via Python's
+    `zipfile` module rather than assuming directory layout, since the image ships no `unzip`.
+  - **Real finding, cross-confirmed by two independent subagents**: chapters 22 and 24 each
+    independently hit and correctly root-caused the same Keycloak 26 behavior — a custom user attribute
+    write succeeds with no error but is silently dropped unless the realm's Declarative User Profile
+    either declares the attribute or has `unmanagedAttributePolicy` set away from its default. Both
+    fixed and verified it the same way. Treated as strong corroboration; not independently re-verified a
+    third time by the coordinator (see GATE-4 review summary above for the reasoning).
+  - **Real finding, chapter 26**: the Admin REST API performs zero validation that a `loginTheme` /
+    `accountTheme` / `adminTheme` / `emailTheme` value names a real, directly-usable theme — it even
+    accepted an `abstract=true` theme (`base`) as a direct realm setting. The "abstract" restriction is
+    enforced only by the Admin Console's own dropdown UI.
+  - **Docker Compose project-name/port collision** (see "Current unit" above for the full note): 5 of
+    the 6 subagents this round independently hit it and independently converged on the same fix —
+    isolating their own test stack under a custom `-p <chapter-slug>kc` project name and alternate host
+    port, while keeping each chapter's reader-facing documented commands as the plain, standard form.
+    No chapter's actual content or verified lab results were compromised by this; flagged here as a
+    process note for Part V onward.
+  - Caught and resolved 4 cross-chapter glossary collisions during merge: `Client role` (ch23) / `Client
+    role (Keycloak)` (ch24) merged under ch23's name; `Declarative User Profile` (ch22/ch24, proposed
+    near-identically by both) merged into one entry; `Unmanaged attribute (Keycloak)` (ch22/ch24) merged
+    the same way; `Required action` (ch22) / `Required action (Keycloak)` (ch25) merged under ch22's
+    name; `Default required action (Keycloak)` (ch22) / `Default required action` (ch25) merged under
+    ch22's name. (That's 5 merges across what were 6 originally-independent proposals — `Client role`
+    counted once above plus the other 4.)
+  - Merged 102 new glossary terms (ch21: 15, ch22: 17, ch23: 15, ch24: 21 after dropping 3 duplicates,
+    ch25: 16 after dropping 2 duplicates, ch26: 18) plus 15 extend-existing-term requests (`SSO
+    session`, `Role`, `Role change (mover event)`, `Client (OAuth role)`, `Scope (OAuth)`, `Custom
+    claim`, `Redirect URI (registered)`, `Step-up authentication`, `Multi-factor authentication (MFA)`,
+    `Identifier`, `Credential`, `Attribute`, `Identity lifecycle`, `Self-service (account management)`,
+    `Extensibility (plugin architecture)`) — total glossary now **413 terms, zero duplicates, zero
+    dangling chapter-slug references** (checked programmatically).
+  - Merged 103 new quiz questions (ch21: 15, ch22: 18, ch23: 18, ch24: 18, ch25: 18, ch26: 16) — total
+    now **457 questions across 27 pools, zero duplicate ids** (prefixes `rst-`/`usr-`/`rlg-`/`cli-`/
+    `afl-`/`thm-`, checked against all prior prefixes programmatically).
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 21-26 only after all checks passed.
+  - **Part IV is now complete** (chapters 19-26, 8 chapters total). **→ GATE-4 reached.**
+
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
   available in this environment, so nobody has actually looked at the rendered pages yet. Recommend the
@@ -499,6 +631,14 @@ of either kind, confirmed via a Node script with a `window` shim, same approach 
   a time, with glossary/quiz merging done centrally afterward specifically to avoid shared-file write
   conflicts. This worked cleanly and is a reasonable model for future rounds once GATE-1 is approved —
   see "Open questions" item 4 below, which anticipated this.
+- One process deviation discovered during Part IV's chapters 21-26 round, also intentional/unavoidable
+  given parallel subagents: `labs/docker/docker-compose.yml`'s default Compose project name and host
+  port are shared by every agent running `docker compose up -d` from that directory with no override.
+  5 of the 6 parallel agents this round hit a collision (sibling stacks silently recreated/torn down
+  mid-session) and each independently isolated their own test under a custom `-p <slug>kc` project name
+  and alternate port, while keeping the chapter's reader-facing documented commands as the plain form.
+  No chapter content was compromised, but recommend standardizing this (assign each parallel lab-bearing
+  chapter its own project name/port up front in the brief) for Part V's parallel rounds.
 
 ## Cross-volume / shared-asset notes
 

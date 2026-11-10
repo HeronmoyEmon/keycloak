@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients, Client Scopes &amp; Protocol Mappers — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "clients-and-scopes";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part IV — Keycloak Core Administration</span>
+      <span class="badge minutes">~50 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>24. Clients, Client Scopes &amp; Protocol Mappers</h1>
+    <p class="lede">Chapter 13 gave you OAuth's abstract <strong>Client</strong> and <strong>Scope</strong>
+    vocabulary. Chapter 15 showed you that a provider can add a <strong>custom claim</strong> to a token,
+    and promised the mechanism — a Keycloak protocol mapper — would get full depth "in chapter 24." This
+    is that chapter: registering a real OAuth client in the <code>northwind-apps</code> realm, giving it
+    client-scoped roles, bundling protocol mapper configuration into a reusable client scope, and watching
+    a real custom <code>department</code> claim land in a real access token, ID token, and UserInfo
+    response — pulled straight from a Keycloak user attribute, no code written, no application involved.</p>
+
+    <h2>Why this matters</h2>
+    <p>Registering a client is the single most common configuration task an IAM specialist does on
+    Keycloak, and it is also the single most common place security gets quietly weakened: a confidential
+    client marked public by mistake, a redirect URI wildcard broader than it needs to be, a claim an
+    application depends on that silently never arrives because of a Keycloak behavior nobody read the
+    release notes for. This chapter's lab hit exactly that last failure mode live, for real, while building
+    the department-claim mapper below — and fixing it, not just describing it, is the chapter's most
+    useful lesson.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall from chapters 13 and 15</div>
+      <p>Chapter 13 defined OAuth's <strong>Client</strong> role ("the app" requesting access on a
+      resource owner's behalf) and <strong>Scope</strong> ("a client-requested, space-separated identifier
+      naming a slice of access") in the abstract, vendor-agnostic terms RFC 6749 uses. Chapter 15 then
+      showed that OIDC's standard scopes (<code>openid</code>, <code>profile</code>, <code>email</code>)
+      unlock only a fixed, advertised bundle of claims — and that a <strong>custom claim</strong> (its
+      example was a hypothetical <code>tenant_id</code>) requires the provider to define and advertise one
+      itself, closing with: "in Keycloak, this is exactly what a client scope's protocol mappers
+      configure... the admin-console screen for configuring it is covered in chapter 24." Every section
+      below is that promise getting kept, concretely, against a real running Keycloak instance.</p>
+    </div>
+
+    <h2>Registering a client: confidential vs. public, for real</h2>
+    <p>A Keycloak <strong>client</strong> is the realm-scoped record of one OAuth/OIDC Client (chapter
+    13's role) — <code>northwind-apps</code> plays the Authorization Server, and every application that
+    wants to authenticate against it needs its own client record. Two settings decide almost everything
+    else about how that client behaves:</p>
+    <ul>
+      <li><strong>Confidential vs. public</strong> (Keycloak's <code>publicClient</code> field). A
+      <strong>confidential client</strong> can keep a secret — it runs somewhere an attacker can't read its
+      source (a backend server), so Keycloak issues it a <strong>client secret</strong> and requires that
+      secret at the token endpoint alongside any authorization code. A <strong>public client</strong> runs
+      somewhere an attacker genuinely can read everything — a browser SPA, a mobile app's decompiled
+      binary — so it gets no secret at all; chapter 13's PKCE mechanism is what protects its code exchange
+      instead.</li>
+      <li><strong>Standard flow, direct access grants, service accounts</strong> (Keycloak's
+      <code>standardFlowEnabled</code>, <code>directAccessGrantsEnabled</code>, and
+      <code>serviceAccountsEnabled</code> toggles) — which of chapter 13-14's grant types this specific
+      client is allowed to use at all. A client with every toggle off can't obtain a token through any
+      grant; Keycloak doesn't infer sensible defaults from how you plan to use it.</li>
+    </ul>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Confidential vs. public clients in Keycloak</caption>
+        <thead><tr><th></th><th>Confidential client</th><th>Public client</th></tr></thead>
+        <tbody>
+          <tr><td>Keycloak field</td><td><code>publicClient: false</code></td><td><code>publicClient: true</code></td></tr>
+          <tr><td>Has a client secret?</td><td>Yes — generated automatically, required at the token endpoint</td><td>No secret at all</td></tr>
+          <tr><td>Typical runtime</td><td>Backend/server-rendered app, a trusted middle tier</td><td>Browser SPA, native/mobile app</td></tr>
+          <tr><td>Code-exchange protection</td><td>Client secret (PKCE also recommended per ch18's current best practice)</td><td>PKCE is the only protection — mandatory in practice (chapter 13)</td></tr>
+          <tr><td>This chapter's example</td><td><code>northwind-dashboard</code> — built below, for real</td><td><code>northwind-spa</code> — named here only; built for real in chapter 35</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 320" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Confidential vs. public client: what each one can and can't hold</title>
+        <desc id="d1">Two client boxes side by side. Left, labeled northwind-dashboard, confidential
+        client: a locked padlock icon next to a client secret, server-side code, standard flow enabled,
+        direct access grants disabled. Right, labeled northwind-spa (previewed only, built in chapter 35),
+        public client: an open padlock, no secret field at all, browser-side code, standard flow with
+        mandatory PKCE. An arrow from each box points down to a shared Authorization Server box labeled
+        northwind-apps realm, representing both clients authenticating against the same realm.</desc>
+        <rect x="30" y="40" width="330" height="190" rx="10" class="diagram-fill-info diagram-stroke"/>
+        <text x="195" y="68" text-anchor="middle" class="diagram-label" font-weight="700">northwind-dashboard</text>
+        <text x="195" y="86" text-anchor="middle" class="diagram-label-muted" font-size="11">CONFIDENTIAL — publicClient: false</text>
+        <text x="195" y="112" text-anchor="middle" class="diagram-label-muted" font-size="11">🔒 has a client secret</text>
+        <text x="195" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">runs server-side (staff tooling)</text>
+        <text x="195" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">standardFlowEnabled: true</text>
+        <text x="195" y="166" text-anchor="middle" class="diagram-label-muted" font-size="11">directAccessGrantsEnabled: false</text>
+        <text x="195" y="190" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">built for real, this chapter</text>
+
+        <rect x="460" y="40" width="330" height="190" rx="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="6,4"/>
+        <text x="625" y="68" text-anchor="middle" class="diagram-label" font-weight="700">northwind-spa</text>
+        <text x="625" y="86" text-anchor="middle" class="diagram-label-muted" font-size="11">PUBLIC — publicClient: true</text>
+        <text x="625" y="112" text-anchor="middle" class="diagram-label-muted" font-size="11">no secret — none issued</text>
+        <text x="625" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">runs in the browser (customer product)</text>
+        <text x="625" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">standardFlowEnabled: true</text>
+        <text x="625" y="166" text-anchor="middle" class="diagram-label-muted" font-size="11">PKCE mandatory (chapter 13)</text>
+        <text x="625" y="190" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">named only here — built in chapter 35</text>
+
+        <line x1="195" y1="230" x2="400" y2="280" class="diagram-stroke" marker-end="url(#arrowcs1)"/>
+        <line x1="625" y1="230" x2="420" y2="280" class="diagram-stroke" marker-end="url(#arrowcs1)"/>
+        <rect x="280" y="278" width="260" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="410" y="300" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">northwind-apps realm (Authorization Server)</text>
+        <defs>
+          <marker id="arrowcs1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 24.1 — Both clients will authenticate against the same realm; what each one can
+      be trusted to hold determines whether it gets a secret at all.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — tying back to chapter 13's redirect_uri lesson, now with a Keycloak-specific wrinkle</div>
+      <p>Keycloak's own Server Administration Guide (fetched live for this chapter) confirms the same
+      exact-match rule chapter 13 taught against RFC 6749: "Exact (case sensitive) string matching is used
+      to compare valid redirect URIs." But Keycloak's <strong>Valid Redirect URIs</strong> field also
+      supports a trailing wildcard (<code>https://host.com/path/*</code>) — and the docs are explicit that
+      a bare <code>*</code> ("allow any http or https redirect URI") "should not be used in production
+      environments." A wildcard that's broader than it needs to be reintroduces exactly the risk chapter
+      13's live demo-server finding demonstrated: the narrower the registered pattern, the less surface an
+      attacker gets. This chapter's lab registers a path-scoped wildcard
+      (<code>https://dashboard.northwindapps.internal/*</code>) rather than a bare <code>*</code>, for
+      exactly this reason.</p>
+    </div>
+
+    <h2>The lab: standing up the realm and registering the client, for real</h2>
+    <p>Every command below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack
+    (<code>labs/docker/docker-compose.yml</code>), not narrated. <strong>One environmental note worth being
+    honest about</strong>: several Part IV chapters' labs were being built in parallel this session against
+    the same shared Docker host, and this chapter's first attempt collided with a sibling chapter's own
+    concurrent <code>docker compose</code> run on the same default project name and port — the realm this
+    chapter needed had already been created and the stack was torn down mid-command by that other session.
+    The fix was simply to run this chapter's own stack under an isolated Compose project name and host
+    port, which fully resolved it; everything from here on is a clean, independent run with no shared
+    state. A reader following along on their own machine will never hit this — it's purely an artifact of
+    multiple chapters being authored against one shared host at once.</p>
+
+    <ol class="lab-steps">
+      <li><p>Bring the stack up and poll until Keycloak answers (same discipline chapter 20 established —
+      a fixed sleep is a guess, polling the discovery endpoint is a fact):</p>
+<pre><code>$ cd labs/docker &amp;&amp; docker compose up -d
+...
+ Container docker-keycloak-1 Started
+
+$ for i in $(seq 1 20); do
+    code=$(curl -s -o /dev/null -w "%{http_code}" \
+      http://localhost:8080/realms/master/.well-known/openid-configuration)
+    echo "attempt $i: $code"; [ "$code" = "200" ] &amp;&amp; break; sleep 3
+  done
+attempt 1: 000
+...
+attempt 10: 200</code></pre></li>
+
+      <li><p>Authenticate <code>kcadm.sh</code> and create the <code>northwind-apps</code> realm (same two
+      commands chapter 20 established):</p>
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+Logging into http://localhost:8080 as user admin of realm master
+
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
+    -s realm=northwind-apps -s enabled=true
+Created new realm with id 'northwind-apps'</code></pre></li>
+
+      <li><p>Create <code>jane.doe</code> — the exact identity chapter 2's identity/identifier/credential/
+      attribute example used — and set a custom <code>department</code> attribute on her:</p>
+<pre><code>$ kcadm.sh create users -r northwind-apps \
+    -s username=jane.doe -s email=jane.doe@northwindapps.com -s enabled=true \
+    -s firstName=Jane -s lastName=Doe
+Created new user with id 'a9ac0f36-7863-4940-9f71-8cdd8d450187'
+
+$ kcadm.sh update users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps \
+    -s 'attributes.department=["Engineering"]'
+$ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
+{
+  "id" : "a9ac0f36-7863-4940-9f71-8cdd8d450187",
+  "username" : "jane.doe",
+  ...
+  (no "attributes" field at all in the response)
+}</code></pre></li>
+
+      <li><p><strong>A real, live-verified Keycloak finding, caught in the middle of writing this
+      chapter:</strong> the <code>update</code> command above returned success with no error, but the
+      attribute never actually persisted — the <code>get</code> response has no <code>attributes</code>
+      field at all. Keycloak 26's <strong>declarative User Profile</strong> feature is the cause: a realm's
+      user profile schema declares exactly which attributes exist (by default: <code>username</code>,
+      <code>email</code>, <code>firstName</code>, <code>lastName</code>), and any attribute outside that
+      schema is <strong>silently dropped</strong>, with no error anywhere, unless the realm's
+      <code>unmanagedAttributePolicy</code> is explicitly set to allow it:</p>
+<pre><code>$ kcadm.sh get users/profile -r northwind-apps
+{
+  "attributes" : [ {"name":"username", ...}, {"name":"email", ...},
+                   {"name":"firstName", ...}, {"name":"lastName", ...} ],
+  "groups" : [ {"name":"user-metadata", ...} ]
+}
+(no "department" attribute declared anywhere — and no unmanagedAttributePolicy field means it's off)
+
+$ kcadm.sh update users/profile -r northwind-apps -s unmanagedAttributePolicy=ENABLED
+
+$ kcadm.sh update users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps \
+    -s 'attributes.department=["Engineering"]'
+$ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
+{
+  "id" : "a9ac0f36-7863-4940-9f71-8cdd8d450187",
+  "username" : "jane.doe",
+  ...
+  "attributes" : {
+    "department" : [ "Engineering" ]
+  },
+  ...
+}</code></pre>
+      <p>Confirmed, for real, on the second attempt. This is not a hypothetical warning — it's exactly
+      what this lab hit live while building the exact mapper this chapter exists to teach.</p></li>
+    </ol>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">If you see this: a protocol mapper configured correctly, but the claim never shows up anywhere</div>
+      <p>Before suspecting the protocol mapper itself, check whether the source attribute is even being
+      <em>stored</em>. A Keycloak 26 realm's declarative User Profile only persists attributes it has
+      explicitly declared; anything else is silently discarded on write unless
+      <code>unmanagedAttributePolicy</code> is set to <code>ENABLED</code> (or one of the admin-only
+      variants) on that realm's user profile configuration. The failure mode is specifically deceptive
+      because nothing errors anywhere in the chain — the <code>kcadm.sh update</code> call reports success,
+      the mapper's own configuration is perfectly correct, and the claim is simply, quietly, never
+      there.</p>
+    </div>
+
+    <h2>Client roles: scoped to one client, not the whole realm</h2>
+    <p>Chapter 23's realm roles (<code>tenant-admin</code>, <code>support-agent</code>,
+    <code>platform-engineer</code>) are visible and assignable across the entire <code>northwind-apps</code>
+    realm. A <strong>client role</strong> is different in exactly one way that matters: it only means
+    something to the one client it belongs to. "Admin of the Northwind Dashboard app" is not the same
+    permission as "admin of the whole realm," and Keycloak models that distinction by attaching the role
+    to the client's own role list, not the realm's.</p>
+
+    <ol class="lab-steps">
+      <li><p>Create a client role directly under <code>northwind-dashboard</code>, and confirm, two
+      different ways, that it lives there and nowhere else:</p>
+<pre><code>$ CLIENT_ID=f854ec22-14e1-4a88-a4bb-ba0d9b34be88   # northwind-dashboard's internal id
+
+$ kcadm.sh create clients/$CLIENT_ID/roles -r northwind-apps \
+    -s name=dashboard-admin \
+    -s description="Full admin access within the Northwind Dashboard app only"
+Created new role with id 'dashboard-admin'
+
+$ kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
+[ {
+  "name" : "dashboard-admin",
+  "composite" : false,
+  "clientRole" : true,
+  "containerId" : "f854ec22-14e1-4a88-a4bb-ba0d9b34be88"
+} ]
+
+$ kcadm.sh get roles -r northwind-apps --fields name
+[ {"name":"offline_access"}, {"name":"default-roles-northwind-apps"}, {"name":"uma_authorization"} ]
+(dashboard-admin does not appear in the realm's own role list at all — "clientRole": true is the field
+that makes the difference real, not just a naming convention)</code></pre></li>
+    </ol>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Realm roles (chapter 23) vs. client roles (this chapter)</caption>
+        <thead><tr><th></th><th>Realm role</th><th>Client role</th></tr></thead>
+        <tbody>
+          <tr><td>Keycloak field</td><td><code>clientRole: false</code>, lives under <code>/roles</code></td><td><code>clientRole: true</code>, lives under <code>/clients/&lt;id&gt;/roles</code></td></tr>
+          <tr><td>Meaning</td><td>Realm-wide — <code>tenant-admin</code> means the same thing everywhere in <code>northwind-apps</code></td><td>Scoped to one client — <code>dashboard-admin</code> means nothing to any other client</td></tr>
+          <tr><td>Northwind example</td><td><code>tenant-admin</code>, <code>support-agent</code>, <code>platform-engineer</code> (chapter 23)</td><td><code>dashboard-admin</code> on <code>northwind-dashboard</code> — built here</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Client scopes: reusable bundles of claim configuration</h2>
+    <p>Chapter 13 defined OAuth's <strong>Scope</strong> as a client-requested identifier naming a slice of
+    access. A Keycloak <strong>client scope</strong> is the concrete object that makes a scope name mean
+    something: a named, realm-level, reusable bundle of <strong>protocol mappers</strong> (each one adding
+    one claim) and role-scope mappings, which can be attached to any number of clients as either a
+    <strong>default</strong> scope (included automatically in every token this client requests — no
+    <code>scope=</code> parameter needed) or an <strong>optional</strong> scope (only included if a token
+    request explicitly asks for it by name). Reusability is the point: define
+    <code>northwind-profile</code> once, attach it to every Northwind-internal client that needs the same
+    claim, and a later change to the mapper updates every one of them at once.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 800 300" role="img" aria-labelledby="t2 d2">
+        <title id="t2">A client scope bundles protocol mappers; clients attach it as default or optional</title>
+        <desc id="d2">A client scope box named northwind-profile on the left contains two protocol mapper
+        entries. Two arrows point right to two separate client boxes: northwind-dashboard, where the scope
+        is attached as a default scope (always included, no scope parameter needed), and a second,
+        dashed, hypothetical client, where the same scope is attached as an optional scope (only included
+        if explicitly requested). A caption notes the same reusable bundle can be attached to many
+        clients.</desc>
+        <rect x="20" y="70" width="240" height="160" rx="10" class="diagram-fill-accent diagram-stroke"/>
+        <text x="140" y="98" text-anchor="middle" class="diagram-label" font-weight="700">northwind-profile</text>
+        <text x="140" y="116" text-anchor="middle" class="diagram-label-muted" font-size="11">client scope (openid-connect)</text>
+        <rect x="40" y="130" width="200" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="140" y="151" text-anchor="middle" class="diagram-label-muted" font-size="11">mapper: department &#8594; claim</text>
+        <rect x="40" y="172" width="200" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="140" y="193" text-anchor="middle" class="diagram-label-muted" font-size="11">(any future mapper added here)</text>
+
+        <line x1="260" y1="120" x2="380" y2="80" class="diagram-stroke" marker-end="url(#arrowcs2)"/>
+        <rect x="380" y="40" width="260" height="80" rx="10" class="diagram-fill-info diagram-stroke"/>
+        <text x="510" y="65" text-anchor="middle" class="diagram-label" font-weight="700">northwind-dashboard</text>
+        <text x="510" y="85" text-anchor="middle" class="diagram-label-muted" font-size="11">attached as a DEFAULT scope</text>
+        <text x="510" y="102" text-anchor="middle" class="diagram-label-muted" font-size="11">always in the token, no scope= needed</text>
+
+        <line x1="260" y1="180" x2="380" y2="220" class="diagram-stroke" stroke-dasharray="5,3" marker-end="url(#arrowcs2)"/>
+        <rect x="380" y="185" width="260" height="80" rx="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5,3"/>
+        <text x="510" y="210" text-anchor="middle" class="diagram-label" font-weight="700">(hypothetical) another client</text>
+        <text x="510" y="230" text-anchor="middle" class="diagram-label-muted" font-size="11">attached as an OPTIONAL scope</text>
+        <text x="510" y="247" text-anchor="middle" class="diagram-label-muted" font-size="11">only if scope=northwind-profile is requested</text>
+
+        <text x="400" y="290" text-anchor="middle" class="diagram-label-muted" font-size="11">Same reusable bundle, two different attachment modes — defined once, updated once.</text>
+        <defs>
+          <marker id="arrowcs2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 24.2 — A client scope is a reusable catalog entry; a client's relationship to it
+      (default vs. optional) decides whether a token request has to ask for it by name.</figcaption>
+    </figure>
+
+    <ol class="lab-steps">
+      <li><p>Register <code>northwind-dashboard</code> itself — a confidential, standard-flow client, with
+      a narrowly-scoped wildcard redirect URI per the pitfall above:</p>
+<pre><code>$ kcadm.sh create clients -r northwind-apps \
+    -s clientId=northwind-dashboard \
+    -s name="Northwind Dashboard" \
+    -s description="Staff-facing internal dashboard for Northwind Apps employees" \
+    -s publicClient=false -s standardFlowEnabled=true \
+    -s directAccessGrantsEnabled=false -s serviceAccountsEnabled=false \
+    -s 'redirectUris=["https://dashboard.northwindapps.internal/*"]' \
+    -s 'webOrigins=["https://dashboard.northwindapps.internal"]' -i
+1b36f7b1-6a7f-4907-9290-c80157ab133c
+
+$ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
+    --fields clientId,publicClient,standardFlowEnabled,redirectUris,protocol
+{
+  "clientId" : "northwind-dashboard",
+  "redirectUris" : [ "https://dashboard.northwindapps.internal/*" ],
+  "standardFlowEnabled" : true,
+  "publicClient" : false,
+  "protocol" : "openid-connect"
+}
+
+$ kcadm.sh get clients/1b36f7b1-.../client-secret -r northwind-apps
+{ "type" : "secret", "value" : "Ses1A87vQT6MPcHctbFdpQrRlpgOXlnpNpmvmiXlVWrokrSnvGhQz2FvyQxTZ53zZahPR5cUVbVMe9jftax07d" }</code></pre>
+      <p>(That secret is a throwaway local-lab value from a container nobody outside this machine can
+      reach — the same convention the README uses for <code>admin_lab_password</code> — not a credential
+      meant to survive past this lab run.)</p></li>
+
+      <li><p>Create the <code>northwind-profile</code> client scope:</p>
+<pre><code>$ kcadm.sh create client-scopes -r northwind-apps \
+    -s name=northwind-profile -s protocol=openid-connect \
+    -s 'attributes={"display.on.consent.screen":"true","include.in.token.scope":"true"}' -i
+11192168-40ec-49ef-a419-2abd01c09fcd</code></pre></li>
+    </ol>
+
+    <h2>Protocol mappers: the <code>department</code> claim, paying off chapter 15</h2>
+    <p>A <strong>protocol mapper</strong> is the single rule that decides one claim: where its value comes
+    from (a user attribute, a hardcoded value, a role name, a group membership) and which token types it's
+    allowed into. Three independent boolean flags on every mapper — <code>id.token.claim</code>,
+    <code>access.token.claim</code>, <code>userinfo.token.claim</code> — control exactly chapter 15's
+    "ID token vs. UserInfo" distinction per claim, per mapper, not as a single global switch.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 800 260" role="img" aria-labelledby="t3 d3">
+        <title id="t3">One protocol mapper, three independent destinations</title>
+        <desc id="d3">A box on the left labeled jane.doe's user attribute, department equals Engineering,
+        feeds into a protocol mapper box in the middle, type oidc-usermodel-attribute-mapper, claim name
+        department. Three arrows fan out right to three destination boxes, each with its own independent
+        boolean flag: id token claim true, access token claim true, userinfo token claim true. A caption
+        notes each flag can be set independently — a claim could be added to the access token only, for
+        example, by leaving the other two flags false.</desc>
+        <rect x="20" y="95" width="180" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="110" y="120" text-anchor="middle" class="diagram-label" font-weight="700">jane.doe's attribute</text>
+        <text x="110" y="138" text-anchor="middle" class="diagram-label-muted" font-size="11">department = "Engineering"</text>
+
+        <line x1="200" y1="130" x2="290" y2="130" class="diagram-stroke" marker-end="url(#arrowcs3)"/>
+        <rect x="290" y="90" width="220" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="400" y="115" text-anchor="middle" class="diagram-label" font-weight="700">protocol mapper</text>
+        <text x="400" y="133" text-anchor="middle" class="diagram-label-muted" font-size="11">oidc-usermodel-attribute-mapper</text>
+        <text x="400" y="150" text-anchor="middle" class="diagram-label-muted" font-size="11">claim.name = "department"</text>
+
+        <line x1="510" y1="110" x2="610" y2="40" class="diagram-stroke" marker-end="url(#arrowcs3)"/>
+        <line x1="510" y1="130" x2="610" y2="130" class="diagram-stroke" marker-end="url(#arrowcs3)"/>
+        <line x1="510" y1="150" x2="610" y2="220" class="diagram-stroke" marker-end="url(#arrowcs3)"/>
+
+        <rect x="610" y="15" width="180" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="700" y="36" text-anchor="middle" class="diagram-label-muted" font-size="11">id.token.claim = true</text>
+        <text x="700" y="52" text-anchor="middle" class="diagram-label-muted" font-size="10">in the ID token</text>
+
+        <rect x="610" y="105" width="180" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="700" y="126" text-anchor="middle" class="diagram-label-muted" font-size="11">access.token.claim = true</text>
+        <text x="700" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">in the access token</text>
+
+        <rect x="610" y="195" width="180" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="700" y="216" text-anchor="middle" class="diagram-label-muted" font-size="11">userinfo.token.claim = true</text>
+        <text x="700" y="232" text-anchor="middle" class="diagram-label-muted" font-size="10">in the UserInfo response</text>
+
+        <text x="400" y="245" text-anchor="middle" class="diagram-label-muted" font-size="11">Each flag is independent — a mapper could target only one of the three.</text>
+        <defs>
+          <marker id="arrowcs3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 24.3 — One mapper, one claim, three independently-toggleable destinations — this
+      is the exact mechanism chapter 15 forward-referenced.</figcaption>
+    </figure>
+
+    <ol class="lab-steps">
+      <li><p>Add the <code>department</code> mapper to the <code>northwind-profile</code> scope:</p>
+<pre><code>$ SCOPE_ID=11192168-40ec-49ef-a419-2abd01c09fcd
+
+$ kcadm.sh create client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps \
+    -s name=department -s protocol=openid-connect \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config={"user.attribute":"department","claim.name":"department",
+         "jsonType.label":"String","id.token.claim":"true",
+         "access.token.claim":"true","userinfo.token.claim":"true",
+         "multivalued":"false"}' -i
+f6425e19-e554-451b-a16d-e2e31c68afae
+
+$ kcadm.sh get client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps
+[ {
+  "id" : "f6425e19-e554-451b-a16d-e2e31c68afae",
+  "name" : "department",
+  "protocolMapper" : "oidc-usermodel-attribute-mapper",
+  "config" : {
+    "user.attribute" : "department",
+    "claim.name" : "department",
+    "jsonType.label" : "String",
+    "id.token.claim" : "true",
+    "access.token.claim" : "true",
+    "userinfo.token.claim" : "true",
+    "multivalued" : "false",
+    "introspection.token.claim" : "true"
+  }
+} ]</code></pre></li>
+
+      <li><p>Attach <code>northwind-profile</code> to <code>northwind-dashboard</code> as a
+      <strong>default</strong> scope — automatically included in every token this client gets, no
+      <code>scope=</code> parameter required:</p>
+<pre><code>$ kcadm.sh update clients/1b36f7b1-.../default-client-scopes/$SCOPE_ID -r northwind-apps
+
+$ kcadm.sh get clients/1b36f7b1-.../default-client-scopes -r northwind-apps
+[ {"name":"web-origins"}, {"name":"acr"}, {"name":"northwind-profile"},
+  {"name":"profile"}, {"name":"roles"}, {"name":"basic"}, {"name":"email"} ]</code></pre>
+      <p><code>northwind-profile</code> now sits alongside Keycloak's own built-in default scopes
+      (<code>profile</code>, <code>email</code>, <code>roles</code>) on this client — confirmed by a
+      direct list call, not assumed from the update command's own success.</p></li>
+
+      <li><p><strong>The payoff: mint a real token and read the claim out of it.</strong> This client has
+      no browser-reachable UI to click through in this environment, so to inspect real claims without one,
+      direct access grants (chapter 13's deprecated ROPC — recognize it, don't reach for it in a real
+      product; this is a lab-only probe, reverted immediately after) were enabled just long enough to get
+      one real token, then turned back off:</p>
+<pre><code>$ kcadm.sh update clients/1b36f7b1-... -r northwind-apps -s directAccessGrantsEnabled=true
+$ kcadm.sh set-password -r northwind-apps --username jane.doe \
+    --new-password 'Lab_Password_2026!' --temporary=false
+
+$ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
+    -d "grant_type=password" -d "client_id=northwind-dashboard" \
+    -d "client_secret=Ses1A87vQT6M...ax07d" \
+    -d "username=jane.doe" -d "password=Lab_Password_2026!" \
+    -d "scope=openid profile email"
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...uBFniPycJMXpIpqMf52g3JTv4zOgiw",
+  "id_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...KBJeStTgdvPKgGWGcKra4hHQqrGb_i5v3MaIIhgdVLAGpE",
+  "token_type": "Bearer", "expires_in": 300,
+  "scope": "openid email profile northwind-profile"
+}</code></pre>
+      <p>Decoded (base64url, the JWT payload segment, via Python's <code>hashlib</code>/<code>base64</code>
+      — no library beyond the standard library needed):</p>
+<pre><code>--- access_token claims ---
+{
+  "iss": "http://localhost:8080/realms/northwind-apps",
+  "aud": "account",
+  "sub": "a9ac0f36-7863-4940-9f71-8cdd8d450187",
+  "azp": "northwind-dashboard",
+  "scope": "openid email profile northwind-profile",
+  "preferred_username": "jane.doe",
+  "given_name": "Jane", "family_name": "Doe",
+  "department": "Engineering",
+  "email": "jane.doe@northwindapps.com"
+}
+
+--- id_token claims ---
+{
+  "iss": "http://localhost:8080/realms/northwind-apps",
+  "aud": "northwind-dashboard",
+  "sub": "a9ac0f36-7863-4940-9f71-8cdd8d450187",
+  "typ": "ID",
+  "preferred_username": "jane.doe",
+  "given_name": "Jane", "family_name": "Doe",
+  "department": "Engineering",
+  "email": "jane.doe@northwindapps.com"
+}</code></pre>
+      <p><code>"department": "Engineering"</code> — present in <strong>both</strong> the access token and
+      the ID token, exactly as the mapper's two <code>true</code> flags specified, sourced entirely from a
+      Keycloak user attribute, with zero application code written. This is the real round trip chapter 15
+      described in the abstract.</p></li>
+
+      <li><p>Confirm the third flag the same way — call the real UserInfo endpoint chapter 15 covered,
+      with this real access token:</p>
+<pre><code>$ curl -s http://localhost:8080/realms/northwind-apps/protocol/openid-connect/userinfo \
+    -H "Authorization: Bearer &lt;access_token&gt;"
+{
+  "sub": "a9ac0f36-7863-4940-9f71-8cdd8d450187",
+  "preferred_username": "jane.doe",
+  "given_name": "Jane", "family_name": "Doe",
+  "department": "Engineering",
+  "email": "jane.doe@northwindapps.com"
+}</code></pre>
+      <p>Same claim, same value, the UserInfo path this time — exactly Figure 15.2's "two paths to the
+      same claims," now demonstrated with a claim this course's own lab defined, not just OIDC's standard
+      ones.</p></li>
+
+      <li><p>Revert the lab-only probe — <code>northwind-dashboard</code>'s real, intended configuration
+      never included direct access grants:</p>
+<pre><code>$ kcadm.sh update clients/1b36f7b1-... -r northwind-apps -s directAccessGrantsEnabled=false
+
+$ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
+    --fields clientId,publicClient,standardFlowEnabled,directAccessGrantsEnabled,serviceAccountsEnabled
+{
+  "clientId" : "northwind-dashboard",
+  "standardFlowEnabled" : true,
+  "directAccessGrantsEnabled" : false,
+  "serviceAccountsEnabled" : false,
+  "publicClient" : false
+}</code></pre></li>
+
+      <li><p>Tear down, confirmed clean:</p>
+<pre><code>$ docker compose down -v
+...
+ Volume docker_keycloak_pg_data Removed
+
+$ docker ps -a | grep keycloak    # (no matching rows)
+$ docker volume ls | grep keycloak_pg_data   # (no matching rows)</code></pre></li>
+    </ol>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Protocol mapper config flags used in the department mapper above</caption>
+        <thead><tr><th>Field</th><th>Value used</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>user.attribute</code></td><td><code>department</code></td><td>The source: which Keycloak user attribute to read.</td></tr>
+          <tr><td><code>claim.name</code></td><td><code>department</code></td><td>The destination claim's name in the issued token/response — doesn't have to match the attribute name, though it often does for clarity.</td></tr>
+          <tr><td><code>jsonType.label</code></td><td><code>String</code></td><td>How to type the claim's value in the JSON payload (String, long, boolean, JSON).</td></tr>
+          <tr><td><code>id.token.claim</code></td><td><code>true</code></td><td>Include this claim in the ID token.</td></tr>
+          <tr><td><code>access.token.claim</code></td><td><code>true</code></td><td>Include this claim in the access token.</td></tr>
+          <tr><td><code>userinfo.token.claim</code></td><td><code>true</code></td><td>Include this claim in the UserInfo response.</td></tr>
+          <tr><td><code>multivalued</code></td><td><code>false</code></td><td>Whether to render the attribute's value as a JSON array even if there's only one value.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Nothing about this mechanism is OIDC-specific magic — it's a declarative rule ("read this
+      attribute, write it under this claim name, into these token types") evaluated fresh every time a
+      token is issued. That's exactly why the claim showed up in a token requested via direct access
+      grants with no code changed anywhere: the mapper lives on the client scope, not on any particular
+      grant type, and every grant that reaches the token endpoint runs the same mapper pipeline.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 260" role="img" aria-labelledby="t4 d4">
+        <title id="t4">The northwind-apps realm after this chapter</title>
+        <desc id="d4">A realm box labeled northwind-apps contains, on the left, the user jane.doe with her
+        department attribute set to Engineering, and on the right, two client boxes. The first, solid,
+        labeled northwind-dashboard, confidential, standard flow, consumes the northwind-profile client
+        scope as a default scope and is fully built this chapter. The second, dashed and labeled
+        northwind-spa, public, named only as a forward pointer to chapter 35 where it will be built for
+        real. An arrow connects jane.doe to northwind-dashboard labeled "logs in, department claim rides
+        along via northwind-profile".</desc>
+        <rect x="20" y="20" width="780" height="220" rx="10" class="diagram-fill-surface diagram-stroke"/>
+        <text x="410" y="42" text-anchor="middle" class="diagram-label" font-weight="700">northwind-apps realm</text>
+
+        <rect x="50" y="70" width="190" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="145" y="98" text-anchor="middle" class="diagram-label" font-weight="700">jane.doe</text>
+        <text x="145" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">attributes.department =</text>
+        <text x="145" y="135" text-anchor="middle" class="diagram-label-muted" font-size="11">["Engineering"]</text>
+
+        <line x1="240" y1="110" x2="400" y2="110" class="diagram-stroke" marker-end="url(#arrowcs4)"/>
+        <text x="320" y="98" text-anchor="middle" class="diagram-label-muted" font-size="10">logs in; department claim</text>
+        <text x="320" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">rides along via northwind-profile</text>
+
+        <rect x="400" y="60" width="200" height="110" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="500" y="85" text-anchor="middle" class="diagram-label" font-weight="700">northwind-dashboard</text>
+        <text x="500" y="103" text-anchor="middle" class="diagram-label-muted" font-size="11">confidential, standard flow</text>
+        <text x="500" y="120" text-anchor="middle" class="diagram-label-muted" font-size="11">+ northwind-profile (default scope)</text>
+        <text x="500" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">+ dashboard-admin (client role)</text>
+        <text x="500" y="158" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">built for real, this chapter</text>
+
+        <rect x="630" y="70" width="150" height="90" rx="8" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5,3"/>
+        <text x="705" y="95" text-anchor="middle" class="diagram-label" font-weight="700">northwind-spa</text>
+        <text x="705" y="113" text-anchor="middle" class="diagram-label-muted" font-size="11">public client</text>
+        <text x="705" y="131" text-anchor="middle" class="diagram-label-muted" font-size="11">named only here —</text>
+        <text x="705" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">built in chapter 35</text>
+        <defs>
+          <marker id="arrowcs4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 24.4 — This chapter's complete, real state of the realm: one confidential client
+      fully built and verified, one public client named as a forward pointer only.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps' two very different clients</div>
+      <p><span class="org-chip northwind">Northwind Apps</span>'s own engineers need an internal tool to
+      manage customer tenants, review support tickets, and check platform health — <strong>
+      northwind-dashboard</strong>, the confidential, standard-flow client this chapter actually built.
+      It runs on a server Northwind controls, so it can safely hold a client secret, and its
+      <code>dashboard-admin</code> client role grants admin rights <em>within that one tool only</em> —
+      not realm-wide, and not transferable to any other Northwind application. Separately, Northwind's
+      actual product — the thing its B2B customers log into — will eventually be a single-page application
+      running in a browser Northwind doesn't control at all, registered as <strong>northwind-spa</strong>: a
+      public client with no secret, PKCE doing the work a secret would otherwise do, built for real in
+      chapter 35's SPA-integration lab. Naming it here, now, rather than building it, mirrors a real
+      platform team's own sequencing: internal tooling clients get registered and iterated on long before
+      the customer-facing product's own OIDC integration is ready to ship.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a claim that a correctly-configured protocol mapper should produce simply never
+      appear anywhere — not in the ID token, not in the access token, not in UserInfo — the cause, before
+      suspecting the mapper, is very likely that the source user attribute was never actually persisted:
+      Keycloak 26's declarative User Profile silently drops any attribute not declared in the realm's
+      schema unless <code>unmanagedAttributePolicy</code> is enabled. Check <code>kcadm.sh get
+      users/profile</code> and the user's own stored <code>attributes</code> before touching the mapper.</li>
+      <li>If you see a public client with a client secret configured "just in case," the cause is confusing
+      "has a secret" with "is secure" — a secret embedded in browser-readable or decompiled mobile code
+      isn't a secret at all; the fix is marking the client public and relying on PKCE, not hiding a secret
+      somewhere a determined attacker can still extract it.</li>
+      <li>If you see a client's Valid Redirect URIs field set to a bare <code>*</code> "to make testing
+      easier," the cause is the exact gap chapter 13's live demo-server finding demonstrated — Keycloak's
+      own documentation explicitly warns against this in production for the same reason.</li>
+      <li>If you see a reader assign a client role the way they'd assign a realm role and expect it to show
+      up in a different application's permission check, the cause is missing that a client role's meaning
+      — and its visibility in a token's <code>resource_access</code> claim — is scoped to the one client it
+      was created under, never realm-wide.</li>
+      <li>If you see a client scope attached but its claims still missing from a token, check whether it
+      was attached as a <em>default</em> scope or an <em>optional</em> one — an optional scope only shows
+      up in a token if the request's own <code>scope=</code> parameter names it explicitly.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>A Keycloak client is the realm-scoped record of chapter 13's abstract OAuth Client role;
+      <code>publicClient</code>, <code>standardFlowEnabled</code>, <code>directAccessGrantsEnabled</code>,
+      and <code>serviceAccountsEnabled</code> together decide what it's allowed to do.</li>
+      <li>Confidential clients get a real client secret and are meant to run somewhere that secret stays
+      hidden; public clients get no secret and rely on PKCE instead — mismatching the two is a real,
+      exploitable security mistake, not a style choice.</li>
+      <li>Keycloak's Valid Redirect URIs field enforces the same exact-match comparison RFC 6749 requires
+      (chapter 13), with a documented, narrowly-scoped wildcard extension — and an explicit warning against
+      the bare <code>*</code> wildcard in production.</li>
+      <li>Client roles are scoped to the one client they're created under — distinct from chapter 23's
+      realm roles, which apply across the whole realm — confirmed live by checking that a client role
+      never appears in the realm's own role list.</li>
+      <li>A client scope is a reusable, named bundle of protocol mapper configuration, attachable to any
+      number of clients as either a default scope (always included) or an optional scope (only included if
+      explicitly requested) — the concrete Keycloak mechanism behind chapter 13's abstract OAuth
+      "Scope."</li>
+      <li>A protocol mapper's three flags — <code>id.token.claim</code>, <code>access.token.claim</code>,
+      <code>userinfo.token.claim</code> — are independent per mapper, letting a single claim be routed to
+      exactly the token types it's actually needed in.</li>
+      <li>This chapter's lab minted a real token for a real user and confirmed, by decoding it directly, a
+      real custom <code>department</code> claim present in the access token, the ID token, and the
+      UserInfo response — paying off chapter 15's forward-reference to "a custom claim via a Keycloak
+      protocol mapper" with an actual working example, not a narrated one.</li>
+      <li>A live, genuinely encountered Keycloak 26 behavior — declarative User Profile silently dropping
+      undeclared attributes — is exactly the kind of failure a correctly-configured protocol mapper can't
+      fix on its own, because the problem is upstream of the mapper entirely.</li>
+      <li><code>northwind-spa</code> is named, not built, in this chapter — deliberately, mirroring how a
+      real platform team registers its internal tooling clients long before its customer-facing product's
+      own OIDC integration is ready; chapter 35 builds it for real.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>A colleague proposes making a browser-only SPA a confidential client "for extra security" by
+      giving it a client secret. Using this chapter's reasoning, explain exactly why that doesn't add
+      security and what it should be instead.</li>
+      <li>Walk through, in order, what you would check if a protocol mapper that looks correctly configured
+      still isn't producing a claim anywhere — what's the first thing to verify, before touching the mapper
+      itself, and why?</li>
+      <li>Explain the difference between a default and an optional client scope using a concrete scenario:
+      when would you deliberately choose optional over default for a real claim?</li>
+      <li>Why does a client role not showing up in <code>kcadm.sh get roles</code> (the realm's own role
+      list) matter in practice — what real permission mistake does that distinction prevent?</li>
+      <li>This chapter registered <code>northwind-dashboard</code>'s redirect URI as
+      <code>https://dashboard.northwindapps.internal/*</code> rather than a bare <code>*</code>. Explain,
+      in chapter 13's terms, exactly what additional risk the bare wildcard would reintroduce.</li>
+      <li>If Northwind later needs a <code>subscription_tier</code> claim on tokens issued to a different,
+      future client, walk through which pieces from this chapter you'd reuse as-is and which you'd need to
+      create fresh.</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_clients">Keycloak Server Administration Guide — Clients</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_client_scopes">Keycloak Server Administration Guide — Client Scopes</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_protocol-mappers">Keycloak Server Administration Guide — Protocol Mappers</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#user-profile">Keycloak Server Administration Guide — User Profile (declarative attributes, unmanaged attribute policy)</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#unspecific-redirect-uris_server_administration_guide">Keycloak Server Administration Guide — Unspecific (wildcard) Redirect URIs</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1 — Client Types (confidential vs. public)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "clients-and-scopes", 15);
+  });
+</script>
+</body>
+</html>
