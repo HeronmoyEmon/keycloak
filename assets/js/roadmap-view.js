@@ -146,7 +146,7 @@
     svg.setAttribute("height", mapRect.height);
     svg.setAttribute("viewBox", "0 0 " + mapRect.width + " " + mapRect.height);
 
-    var STANDOFF = 22; // px of breathing room between a box edge and where its connector line starts/ends
+    var STANDOFF = 16; // px of breathing room between a box edge and where its connector line starts/ends
     var paths = [];
     var rows = Array.prototype.slice.call(document.querySelectorAll(".road-row"));
     rows.forEach(function (row) {
@@ -158,21 +158,44 @@
       var badgeRect = badge.getBoundingClientRect();
       var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left + dir * STANDOFF;
       var by = (badgeRect.top + badgeRect.height / 2) - mapRect.top;
+
       var leaves = Array.prototype.slice.call(cluster.querySelectorAll(".road-leaf"));
-      leaves.forEach(function (leaf, leafIndex) {
-        var leafRect = leaf.getBoundingClientRect();
-        var lx = (side === "right" ? leafRect.left : leafRect.right) - mapRect.left - dir * STANDOFF;
-        var ly = (leafRect.top + leafRect.height / 2) - mapRect.top;
-        // Vary the curve's bend per leaf (0.38 / 0.5 / 0.62, cycling) instead of always splitting the
-        // control points at the exact midpoint — a roadmap.sh-style branch reads as organically curved
-        // rather than every line being an identical mechanical elbow.
-        var split = 0.5 + ((leafIndex % 3) - 1) * 0.12;
-        var c1x = bx + (lx - bx) * split;
-        var c2x = bx + (lx - bx) * (1 - split);
+      if (!leaves.length) return;
+
+      // A cluster's leaves all share the same column edge — only their y differs — so one shared
+      // "trunk" line down that edge plus a short straight stub per leaf reads far cleaner than N
+      // individual curves all converging on the same point next to the badge, especially for a big
+      // Part like IAM Foundations (9 chapters): that fan of curves was the congestion.
+      var firstLeafRect = leaves[0].getBoundingClientRect();
+      var lx = (side === "right" ? firstLeafRect.left : firstLeafRect.right) - mapRect.left - dir * STANDOFF;
+      var leafYs = leaves.map(function (leaf) {
+        var r = leaf.getBoundingClientRect();
+        return (r.top + r.height / 2) - mapRect.top;
+      });
+      var stemTop = Math.min.apply(null, leafYs);
+      var stemBottom = Math.max.apply(null, leafYs);
+      var stemX = bx + (lx - bx) * 0.55;
+      var stemMidY = (stemTop + stemBottom) / 2;
+      var approachMidX = (bx + stemX) / 2;
+
+      // One curved approach from the badge to the trunk's vertical center.
+      paths.push(
+        '<path class="road-connector" d="M' + bx.toFixed(1) + ',' + by.toFixed(1) +
+        ' C ' + approachMidX.toFixed(1) + ',' + by.toFixed(1) + ' ' + approachMidX.toFixed(1) + ',' + stemMidY.toFixed(1) +
+        ' ' + stemX.toFixed(1) + ',' + stemMidY.toFixed(1) + '"></path>'
+      );
+      // The trunk itself (degenerates to nothing for a single-chapter Part — fine, no gap results).
+      if (stemTop !== stemBottom) {
         paths.push(
-          '<path class="road-connector" d="M' + bx.toFixed(1) + ',' + by.toFixed(1) +
-          ' C ' + c1x.toFixed(1) + ',' + by.toFixed(1) + ' ' + c2x.toFixed(1) + ',' + ly.toFixed(1) +
-          ' ' + lx.toFixed(1) + ',' + ly.toFixed(1) + '"></path>'
+          '<path class="road-connector" d="M' + stemX.toFixed(1) + ',' + stemTop.toFixed(1) +
+          ' L ' + stemX.toFixed(1) + ',' + stemBottom.toFixed(1) + '"></path>'
+        );
+      }
+      // A short straight stub from the trunk to each leaf — flat and non-overlapping by construction.
+      leafYs.forEach(function (ly) {
+        paths.push(
+          '<path class="road-connector" d="M' + stemX.toFixed(1) + ',' + ly.toFixed(1) +
+          ' L ' + lx.toFixed(1) + ',' + ly.toFixed(1) + '"></path>'
         );
       });
     });
