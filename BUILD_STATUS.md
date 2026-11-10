@@ -7,76 +7,34 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
-**GATE-1 approved 2026-11-10** ("approve GATE-1, continue with chapters 03-09" — no feedback given,
-approved as built). Confirms the parallel-subagent-then-central-merge working mode as the default going
-forward (Open questions item 4).
+**GATE-1 approved 2026-11-10** ("approve GATE-1, continue with chapters 03-09"). **GATE-2 approved
+2026-11-10** ("approve GATE-2, continue with chapters 10-12"). Both approved as built, no feedback.
+Confirms the parallel-subagent-then-central-merge working mode as the default (Open questions item 4).
 
-**Chapters 03-09 complete 2026-11-10** (7 chapters, 7 parallel subagents, centrally merged and verified —
-see Done below for full detail). This finishes Part I's chapter content.
+**Part II complete 2026-11-10: chapters 10-12** (Identity Governance & Administration, Compliance for
+IAM, the IAM Market Landscape) — 3 chapters, 3 parallel subagents, centrally merged and independently
+re-verified (structural checks, data-integrity checks; see Done below for full detail, including the
+coordinator's own independent verification of chapter 12's most surprising live-research finding — the
+Palo Alto Networks/CyberArk/"Idira" rebrand — via a direct SEC-filing + multi-source web search, not just
+trusting the subagent's report).
 
-**Queue item 5 complete 2026-11-10: the four shell pages** (`index.html`, `roadmap.html`,
-`glossary.html`, `quizzes.html`) — built in parallel by 4 subagents, each read-only against the shared
-data files, then independently re-verified by the coordinator now that all four exist together (see
-GATE-2 summary below). **GATE-2 reached — awaiting the user's review and explicit approval.**
+This closes out Part II. **There is no gate between Part II and Part III** in this project's own queue
+(CLAUDE.md's gates sit at GATE-2 after Part I, GATE-3 after Part III) — so unlike every round so far,
+nothing is blocking the next unit on user approval. Part III (chapters 13-18, protocols) is bigger (6
+chapters) and has real open design decisions the user hasn't weighed in on yet (what ch13-15's curl-only
+labs run against — a public test IdP or a throwaway Keycloak instance; see queue item 7's note) — flagged
+to the user rather than decided unilaterally before starting that round.
 
-Chapters 03-09 briefs below (kept for the record, first time these were drafted in full, per CLAUDE.md
-§7's "just before you need it" rule — chapter
-00-02's briefs were already in CLAUDE.md §6, these are new). All extend existing glossary terms from
-chapters 00-02 where the concept is the same (forward-referenced there with "full depth in chapter N") —
-each brief names which existing term(s) it should extend rather than duplicate.
+Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11): `hhs.gov`
+and some other government/vendor domains return HTTP 403 to automated fetches in this sandboxed
+environment (looks like bot-blocking, not a dead link). Subagents have been substituting verified
+alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue that
+pattern rather than re-discovering the same block each time.
 
-- [x] Ch 03 — AuthN vs. AuthZ vs. Accounting (and audit). Extends: `Authentication (AuthN)`,
-      `Authorization (AuthZ)`, `Audit trail` (all currently chapter-1-only, forward-pointing here).
-      Brief: the formal AAA model; where "Audit" sits relative to "Accounting" (the recording act vs.
-      the after-the-fact review — note any terminology ambiguity honestly); real bugs from conflating
-      AuthN/AuthZ (e.g. checking "is logged in" when the real question is "is allowed to do X"); forward
-      pointers to ch05 (AuthN mechanisms) and ch06 (AuthZ models). Case-study: Meridian Trust / Riverside
-      Health audit-trail requirements.
-- [x] Ch 04 — Directory services & identity stores. New territory (LDAP/X.500 concepts, Active
-      Directory), vendor-agnostic. Brief: directory information tree, distinguished names, entries/
-      objectClasses/attributes (ties to ch02's `Attribute` concept, concretely), the bind operation; why
-      most orgs already have a directory before adopting any IAM tool (motivates federation, ch07, and
-      user federation, ch32); keep Kerberos to a one-line mention, not a deep dive (out of this course's
-      scope). Case-study: Riverside Health's clinician AD; Northwind's staff-only AD vs. its CIAM
-      customer store (not in AD).
-- [x] Ch 05 — Authentication factors & MFA. Extends: `Multi-factor authentication (MFA)` (chapter-1-
-      only so far, forward-pointing here). Brief: factor categories (knowledge/possession/inherence, and
-      newer context/behavior signals); OTP (TOTP/HOTP) at a conceptual level, not crypto depth (that's
-      ch16's job); WebAuthn/FIDO2/passkeys as phishing-resistant, public-key-based auth; risk-based/
-      adaptive/step-up auth. Case-study: Meridian Trust step-up before a wire transfer (set up in ch02's
-      org intro — pay this off concretely); Riverside clinician badge-tap as a possession factor.
-- [x] Ch 06 — Authorization models. New territory: ACL, RBAC, ABAC (ties to ch02's `Attribute`), PBAC,
-      ReBAC, Zero Trust/least privilege. Brief: a comparison table/diagram across all five models and
-      their trade-offs; forward pointers to ch23 (Keycloak roles/groups = RBAC) and ch37/ch38 (Keycloak
-      Authorization Services, ABAC/ReBAC). Case-study: Northwind's per-tenant RBAC; Meridian's ABAC
-      transaction limits; Riverside's ReBAC "care team" chart-access relationships.
-- [x] Ch 07 — SSO & federation concepts. Extends: `Single Sign-On (SSO)`, `Identity broker`,
-      `Federation (identity federation)` (all chapter-1-only so far, forward-pointing here). Brief:
-      formal IdP/SP/RP roles (and that SP is SAML terminology, RP is OIDC terminology, for roughly the
-      same role — a common beginner confusion worth naming directly); brokering vs. federation revisited
-      in full depth; JIT (just-in-time) provisioning as a new term, tied back to ch02's "federated/
-      brokered creation" lifecycle entry point; "trust" between IdP and SP/RP (metadata/certs, setting
-      up ch15's discovery and ch17's SAML metadata). Case-study: Northwind's enterprise customer SSO;
-      Riverside brokering clinician logins via the hospital's AD-backed IdP.
-- [x] Ch 08 — Tokens & sessions, conceptually. Can lightly extend `Subject` (ch02) if natural — a token
-      is one concrete representation of a subject. Brief: bearer tokens (anyone holding it can use it —
-      the security implication); claims (conceptual, not JWT format yet — that's ch16); stateless vs.
-      stateful auth architecture trade-offs; the revocation problem (a stateless bearer token can't be
-      easily invalidated before expiry) and a preview of mitigations, forward-pointing to ch14
-      (introspection/revocation) and ch16 (JWKS/key rotation). Case-study: Meridian's short-lived banking
-      API tokens; Northwind's refresh-token lifetime trade-offs for SaaS sessions.
-- [x] Ch 09 — IAM threat landscape. New territory: credential stuffing, phishing, token theft/replay
-      (ties to ch08), session hijacking, MFA fatigue/push bombing. Brief: tie each threat to the defense
-      that answers it later in the course (ch05 MFA, ch18 OAuth/OIDC security, ch30 Keycloak brute-force
-      config) so this reads as motivation, not just a list. Case-study: one believable incident sketch
-      per org — Meridian (credential stuffing), Riverside (phishing targeting clinicians), Northwind
-      (token theft via a customer-side XSS bug).
-
-All seven: full topic-chapter minimums (3+ diagrams, 15+ glossary terms, 15+ quiz questions, 8+
-takeaways, 5+ self-check), Part I badge, no lab. `bug`-type quiz questions fit naturally in 03 (AuthN/
-AuthZ conflation), 06 (misconfigured model), 08 (revocation-problem bugs), 09 (missing-defense bugs) —
-use them there. Quiz id prefixes: `aaa-`, `dir-`, `mfa-`, `azm-`, `sso-`, `tok-`, `thr-` (no collision
-with existing `htuc-`/`wii-`/`idf-`).
+The detailed pre-build briefs for chapters 03-12 have been dropped from this section now that those
+chapters are built — the "Done" entries below describe what was actually built (counts, verification,
+merge decisions), which is the more useful record going forward; the original brief text is still in
+this file's git history if ever needed, per CLAUDE.md §7's routine of keeping "current" lean.
 
 ## Queue
 
@@ -91,20 +49,20 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
    Northwind Apps / Riverside Health / Meridian Trust.
    **→ GATE-1 reached. Stopped here for review — see Gates below.**
 
-### Part I completion (requires GATE-1 approved)
+### Part I completion (requires GATE-1 approved) — DONE
 4. ~~Chapters 03-09~~ — done 2026-11-10 (7 parallel subagents + central merge; see Done below).
-5. **In progress**: `index.html`, `roadmap.html`, `glossary.html`, `quizzes.html` — built in parallel by
-   4 subagents, each read-only against the shared data files. `nav-data.js`/`roadmap-data.js` already
-   populated for all 50 chapters since the GATE-1 round (even unbuilt ones, marked `built: false` per the
-   `sde-prep` index convention of disabling not-yet-built links instead of dead-linking them).
-   **→ GATE-2: stop here for review once these land.**
+5. ~~`index.html`, `roadmap.html`, `glossary.html`, `quizzes.html`~~ — done 2026-11-10 (4 parallel
+   subagents, each read-only against the shared data files).
+   **→ GATE-2 reached, approved 2026-11-10.**
 
-### Part II (requires GATE-2 approved)
-6. Chapters 10-12.
+### Part II (requires GATE-2 approved) — DONE
+6. ~~Chapters 10-12~~ — done 2026-11-10 (3 parallel subagents + central merge; see Done below). No gate
+   sits between Part II and Part III — approval isn't blocking the next unit, but item 7 below has an
+   open design decision the user hasn't weighed in on yet (see Open questions).
 
-### Part III (protocols)
+### Part III (protocols) — up next
 7. Chapters 13-18 (13-15 are curl-only labs against public test IdPs or a throwaway Keycloak instance —
-   decide which when chapter 13 is drafted).
+   **decision needed**: which one, before drafting chapter 13 — see Open questions).
    **→ GATE-3: stop here for review.**
 
 ### Part IV (Keycloak core — first real Keycloak labs)
@@ -147,9 +105,8 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 ## Gates
 
 - **GATE-1: approved 2026-11-10**, no feedback given (approved as built). See summary below.
-- **GATE-2: awaiting review (reached 2026-11-10).** See summary below. Approve with
-  `approve GATE-2: <feedback>` in chat.
-- GATE-3: not reached
+- **GATE-2: approved 2026-11-10**, no feedback given (approved as built). See summary below.
+- GATE-3: not reached — next up, after Part III (chapters 13-18)
 - GATE-4: not reached
 - GATE-5: not reached
 - Final QA gate: not reached
@@ -327,8 +284,39 @@ match the same convention rather than reinvent it.
   subagents (each read-only against the shared data files, no merge step needed), then independently
   re-verified by the coordinator once all four existed together (see GATE-2 summary above for full
   detail: re-parse, re-served + re-curled including cross-link resolution between the four pages, plus
-  each subagent's own hand-traced/Node-replicated logic checks). GATE-2 reached, awaiting the user's
-  approval. This completes Part I end to end (content + shell pages).
+  each subagent's own hand-traced/Node-replicated logic checks). **GATE-2 approved 2026-11-10.** This
+  completes Part I end to end (content + shell pages).
+
+### Part II — Governance & Compliance (chapters 10-12)
+- 2026-11-10 chapters 10-12 complete — 3 chapters, 3 parallel subagents, then centrally merged and
+  independently re-verified by the coordinator:
+  - Structural: all 3 files parse cleanly, balanced tags, all mount points/script tags present, served
+    and `curl`-confirmed 200.
+  - Merged 49 new glossary terms (ch10: 15, ch11: 16, ch12: 18, no collisions among them or against the
+    existing 127) plus 5 extend-existing-term requests applied (`Provisioning`, `Deprovisioning` from
+    ch10; `Compliance-readiness` from ch11; `Workforce IAM`, `CIAM` from ch12) — total glossary now
+    **176 terms, zero duplicates** (checked programmatically).
+  - Merged 55 new quiz questions (ch10: 17, ch11: 20, ch12: 18) — total now **220, zero duplicate ids**
+    (id prefixes `iga-`/`cmp-`/`mkt-`, checked programmatically alongside all 10 existing prefixes).
+  - Ch10 defined `IGA` as the governance/process discipline; ch12 correctly only referenced it (market/
+    tooling category) without redefining it — the cross-chapter dependency this round specifically
+    planned for worked as intended.
+  - Ch11's live compliance-framework research (GDPR, SOC 2 TSC, HIPAA Security Rule, PCI-DSS, ISO
+    27001:2022) is summarized in its Done note below with explicit hedges where sources disagreed
+    (SOC 2's draft revision, HIPAA's NPRM slippage, PCI-DSS's rumored successor version) — matches the
+    no-invented-facts discipline.
+  - **Ch12's most surprising claim — Palo Alto Networks acquiring CyberArk (Feb 2026, ~$25B) and
+    rebranding it "Idira" (May 2026) — was independently re-verified by the coordinator**, not just
+    accepted from the subagent's report: confirmed via a direct SEC 8-K filing search plus multiple
+    independent news sources (247wallst, DigiTimes, pulse.bot), and the `paloaltonetworks.com/idira`
+    URL the subagent cited was live-curled to `200` by the coordinator directly. This is exactly the
+    kind of surprising-but-checkable claim worth re-verifying rather than trusting on the strength of
+    a subagent's own citation list alone.
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 10-12 only after all checks passed.
+  - This completes **Part II — Governance & Compliance** (chapters 10-12) in full. No gate sits between
+    Part II and Part III in this project's plan (CLAUDE.md §8) — approval of this round isn't a hard
+    blocker on starting Part III, but see Open questions for a real design decision Part III needs
+    before chapter 13 can be drafted.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
@@ -358,10 +346,19 @@ ever lifted from `sde-prep`'s pattern (CLAUDE.md §12), note the adaptation here
 2. **GitHub remote**: assumed to exist already (per the git status at session start showing a clean repo
    tracking `origin/main`) — confirm the remote URL before the Vercel import step.
 3. **Chat widget** (CLAUDE.md §12): deferred by default; ask again once the core 50 chapters exist.
-4. **Working mode**: updated 2026-11-10 — at the user's request, the reference-set chapters were built
-   by 3 parallel subagents (one per chapter) instead of sequentially, with shared-file merging done
-   centrally afterward. It worked cleanly with no conflicts. Proposed default from here on: continue
-   fanning out multiple chapters per round (bounded by how many chapters in the current Part are
-   mutually independent), as long as each round's merge step keeps doing the same checks GATE-1's did
-   (structural HTML checks, live link checks, data-integrity checks, duplicate-term/id dedup) before
-   marking chapters built. Confirm this is still the right default when approving GATE-1.
+4. **Working mode**: confirmed through three rounds now (GATE-1's 3 chapters, Part I's 7, Part II's 3) —
+   parallel subagents per chapter/page + central merge, with the coordinator independently re-verifying
+   (structural checks, data-integrity checks, and spot-checking at least one surprising live-research
+   claim per round rather than trusting subagent citations blindly). No further confirmation needed;
+   this is the standing default.
+5. **Part III lab target (new, blocking chapter 13)**: CLAUDE.md §5/BUILD_STATUS queue item 7 flags that
+   chapters 13-15 (OAuth 2.0 core/extended, OpenID Connect) need curl-only hands-on labs, but leaves open
+   *what* those labs run against — a public OAuth/OIDC test IdP (e.g. a well-known sandbox IdP) or a
+   throwaway local Keycloak instance stood up early, ahead of Part IV's planned chapter 20 install. Each
+   has a real trade-off: a public test IdP needs no local setup but the reader doesn't control its
+   configuration and it could change/disappear; a throwaway local Keycloak instance is fully controlled
+   but means chapter 13 quietly breaks the "Keycloak doesn't show up until chapter 20" rule this course
+   has stated explicitly three times already (ch00, ch08, elsewhere) as a deliberate pedagogical choice.
+   Recommend: a public, stable, well-known OAuth test IdP for ch13/14 (keeps the "no Keycloak yet" rule
+   intact) and reconsider for ch15 (OIDC) once ch13/14's choice is proven out — but this is a real
+   decision point, not something to default past. **Needs the user's input before chapter 13 is drafted.**

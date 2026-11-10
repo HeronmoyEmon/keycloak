@@ -23,11 +23,11 @@ window.COURSE_NAV = [
   { number: 9, slug: "iam-threat-landscape", title: "IAM Threat Landscape", part: "Part I — IAM Foundations", minutes: 35, hasLab: false, built: true,
     blurb: "Credential stuffing, phishing, token theft/replay, session hijacking, MFA fatigue." },
 
-  { number: 10, slug: "identity-governance", title: "Identity Governance & Administration (IGA)", part: "Part II — Governance & Compliance", minutes: 35, hasLab: false, built: false,
+  { number: 10, slug: "identity-governance", title: "Identity Governance & Administration (IGA)", part: "Part II — Governance & Compliance", minutes: 35, hasLab: false, built: true,
     blurb: "Provisioning, deprovisioning, access reviews, SoD, joiner-mover-leaver." },
-  { number: 11, slug: "compliance-for-iam", title: "Compliance for IAM", part: "Part II — Governance & Compliance", minutes: 40, hasLab: false, built: false,
+  { number: 11, slug: "compliance-for-iam", title: "Compliance for IAM", part: "Part II — Governance & Compliance", minutes: 40, hasLab: false, built: true,
     blurb: "What GDPR, SOC2, HIPAA, PCI-DSS, and ISO 27001 each demand of an IAM system." },
-  { number: 12, slug: "iam-market-landscape", title: "The IAM Market Landscape", part: "Part II — Governance & Compliance", minutes: 35, hasLab: false, built: false,
+  { number: 12, slug: "iam-market-landscape", title: "The IAM Market Landscape", part: "Part II — Governance & Compliance", minutes: 35, hasLab: false, built: true,
     blurb: "Workforce IAM vs. CIAM vs. PAM vs. IGA; Keycloak vs. Okta vs. Auth0/Entra vs. Ping/ForgeRock." },
 
   { number: 13, slug: "oauth2-core", title: "OAuth 2.0 Core", part: "Part III — Protocols", minutes: 45, hasLab: true, built: false,

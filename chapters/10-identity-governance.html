@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Identity Governance &amp; Administration (IGA) — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "identity-governance";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part II — Governance &amp; Compliance</span>
+      <span class="badge minutes">~35 min</span>
+    </div>
+    <h1>10. Identity Governance &amp; Administration (IGA)</h1>
+    <p class="lede">Chapter 2 gave you a generalized identity lifecycle — create, activate, modify,
+    suspend, delete — and two lifecycle-stage terms, <strong>Provisioning</strong> and
+    <strong>Deprovisioning</strong>, that both explicitly promised "the formal governance process around
+    this is chapter 10's subject." This is that chapter. Provisioning and deprovisioning are the
+    <em>mechanics</em> of granting and removing access. Governance is the discipline that keeps asking,
+    for as long as an identity exists: is the access it currently holds still the access it should hold —
+    and who is answerable for that being true?</p>
+
+    <h2>Why this matters</h2>
+    <p>Every identity that has existed for more than a few months has almost certainly accumulated access
+    it no longer needs — a project it finished, a team it left, a temporary exception nobody revoked. None
+    of that is caused by a provisioning bug. It's the predictable, structural result of organizations
+    constantly changing while access, once granted, tends to stay granted unless something actively goes
+    looking for it. An IAM specialist who only knows how to create and disable accounts is managing half
+    the problem. The other half — catching accumulated access before an auditor, a regulator, or an
+    attacker finds it first — is identity governance and administration, and it's the subject every
+    compliance framework in chapter 11 will assume you already understand.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall — chapter 2's identity lifecycle</div>
+      <p>Chapter 2 defined a vendor-agnostic lifecycle every identity moves through: <strong>create →
+      activate → modify → suspend → delete</strong>. That lifecycle is the thing this chapter governs — it
+      doesn't get replaced or re-derived here. Everything below, especially Joiner-Mover-Leaver, is a
+      different name laid on top of those same five stages, not a competing model.</p>
+    </div>
+
+    <h2>What IGA actually is</h2>
+    <p><strong>Identity Governance &amp; Administration (IGA)</strong> is the discipline of provisioning,
+    reviewing, and governing access over an identity's entire lifetime — making sure access is granted
+    correctly, stays correct as circumstances change, and is provably correct when someone asks. "Correct"
+    has a specific, checkable meaning here: every entitlement an identity holds should be traceable to a
+    legitimate business reason that still applies today, not just the reason that was true when it was
+    granted. IGA is a <em>process</em> discipline first — the market of products that automate that process
+    (SailPoint, Saviynt, and others) is a separate subject, covered as a tooling category in chapter 12.
+    This chapter is about the process itself: what has to happen, regardless of which tool — if any — does
+    it.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Provisioning/deprovisioning versus governance: what each actually answers</caption>
+        <thead>
+          <tr><th>Question</th><th>Who answers it</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>"Grant this new identity its starting access."</td><td>Provisioning (ch. 2)</td><td>At the moment of creation/role change</td></tr>
+          <tr><td>"Remove this identity's access when it's no longer needed."</td><td>Deprovisioning (ch. 2)</td><td>At the moment of suspension/departure</td></tr>
+          <tr><td>"Is the access this identity holds <em>right now</em> still justified?"</td><td>Access review / recertification (this chapter)</td><td>Periodically, independent of any single event</td></tr>
+          <tr><td>"Could this identity's combined access let it commit fraud undetected?"</td><td>Segregation of Duties (this chapter)</td><td>Continuously, checked at grant time and at review time</td></tr>
+          <tr><td>"Who formally attests this access is correct, and can we prove it later?"</td><td>Attestation / certification campaigns (this chapter)</td><td>On a scheduled cadence, often tied to an audit calendar</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak has no built-in access-review, recertification-campaign, or SoD-conflict-detection
+      feature anywhere in its admin console. That's not an oversight to work around — it's a real,
+      specialist-level distinction worth naming precisely: Keycloak is an <strong>IAM</strong> product (it
+      authenticates, issues tokens, and enforces the authorization decisions you configure), not an
+      <strong>IGA</strong> product (it doesn't run periodic campaigns asking "should Priya still have
+      this role," and it doesn't know what a toxic combination is). Chapter 12 places Keycloak precisely on
+      this market map against products that do govern access as their core job.</p>
+    </div>
+
+    <h2>Joiner-Mover-Leaver: the enterprise name for the lifecycle you already know</h2>
+    <p><strong>Joiner-Mover-Leaver (JML)</strong> is the HR-driven vocabulary enterprises use for exactly
+    the lifecycle chapter 2 already generalized. It isn't a new lifecycle to learn — it's a relabeling that
+    groups the same five stages into three HR-recognizable events:</p>
+    <ul>
+      <li><strong>Joiner</strong> — maps onto <strong>create + activate</strong>. Someone joins the
+      organization (or a new system within it) and gets an identity with its starting access.</li>
+      <li><strong>Mover</strong> — maps onto <strong>modify</strong>. Someone changes role, team, or
+      location within the organization, and their access needs to change to match.</li>
+      <li><strong>Leaver</strong> — maps onto <strong>suspend + delete</strong>. Someone leaves the
+      organization (or a role within it) and their access needs to end.</li>
+    </ul>
+    <p>Joiner and Leaver are the easy cases — most organizations get them right, because an obvious HR
+    event (hire, termination) triggers an obvious IAM event (create an account, disable an account). Mover
+    is where beginners consistently get it wrong, and it deserves a close look.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 280" role="img" aria-labelledby="t1 d1">
+        <title id="t1">Joiner-Mover-Leaver mapped onto chapter 2's create-activate-modify-suspend-delete lifecycle</title>
+        <desc id="d1">A horizontal timeline of five lifecycle stages from chapter 2 — create, activate, modify, suspend, delete — drawn as five boxes left to right. Above the timeline, three labeled brackets group these stages into the JML vocabulary: a "Joiner" bracket spans create and activate; a "Mover" bracket spans modify alone; a "Leaver" bracket spans suspend and delete. A callout notes that Mover is not purely additive — it should also trigger removal of access tied to the identity's previous role.</desc>
+        <rect x="20" y="120" width="120" height="50" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="80" y="150" text-anchor="middle" class="diagram-label" font-size="12">Create</text>
+        <rect x="155" y="120" width="120" height="50" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="215" y="150" text-anchor="middle" class="diagram-label" font-size="12">Activate</text>
+        <rect x="290" y="120" width="120" height="50" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="350" y="150" text-anchor="middle" class="diagram-label" font-size="12">Modify</text>
+        <rect x="425" y="120" width="120" height="50" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="485" y="150" text-anchor="middle" class="diagram-label" font-size="12">Suspend</text>
+        <rect x="560" y="120" width="100" height="50" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="610" y="150" text-anchor="middle" class="diagram-label" font-size="12">Delete</text>
+
+        <line x1="140" y1="145" x2="155" y2="145" class="diagram-stroke"></line>
+        <line x1="275" y1="145" x2="290" y2="145" class="diagram-stroke"></line>
+        <line x1="410" y1="145" x2="425" y2="145" class="diagram-stroke"></line>
+        <line x1="545" y1="145" x2="560" y2="145" class="diagram-stroke"></line>
+
+        <path d="M20,100 L275,100 L275,85 L20,85 Z" class="diagram-fill-accent diagram-stroke"></path>
+        <text x="147" y="97" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Joiner</text>
+
+        <path d="M290,100 L410,100 L410,85 L290,85 Z" class="diagram-fill-accent-strong diagram-stroke"></path>
+        <text x="350" y="97" text-anchor="middle" class="diagram-label" fill="#fff" font-size="12" font-weight="700">Mover</text>
+
+        <path d="M425,100 L660,100 L660,85 L425,85 Z" class="diagram-fill-accent diagram-stroke"></path>
+        <text x="542" y="97" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Leaver</text>
+
+        <rect x="230" y="200" width="240" height="60" rx="8" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="350" y="222" text-anchor="middle" class="diagram-label" font-size="11">Mover must also REMOVE the old</text>
+        <text x="350" y="240" text-anchor="middle" class="diagram-label" font-size="11">role's access, not just add the new one —</text>
+        <text x="350" y="255" text-anchor="middle" class="diagram-label-muted" font-size="10">the mistake beginners make most often</text>
+        <line x1="350" y1="200" x2="350" y2="170" class="diagram-stroke"></line>
+      </svg>
+      <figcaption>Figure 10.1 — Joiner-Mover-Leaver doesn't add new lifecycle stages; it groups chapter 2's
+      five existing stages under HR-recognizable event names.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — the Mover trap</div>
+      <p>A role change is not purely additive. When <span class="org-chip northwind">Northwind Apps</span>
+      moves a support engineer onto the platform engineering team, the naive implementation just grants the
+      new team's access on top of whatever the person already had — because "modify" sounds like "add
+      something," and adding is simpler than figuring out what to take away. The correct behavior: the
+      mover event should trigger a review of the identity's <em>entire</em> current access, not only the
+      addition of the new role's access. Chapter 6 established Northwind's RBAC as <em>per-tenant and
+      per-team scoped</em> — a support engineer's role-scoped access to the support team's tooling and
+      tenant-facing queues has no legitimate reason to persist once they're a platform engineer. If it does
+      persist, that's not a feature, it's accumulated privilege nobody revoked — exactly the "stale access"
+      an access review exists to catch.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps' Mover flow</div>
+      <p><span class="org-chip northwind">Northwind Apps</span> staff occasionally move between
+      product teams — say, from the support team to the platform engineering team. A correctly designed
+      Mover event does two things, not one: it grants the platform engineering team's role-scoped access
+      <em>and</em> it removes the support team's role-scoped access the person no longer has a job-related
+      reason to hold. Skipping the second half is the single most common JML mistake — the person ends up
+      with the union of every role they've ever held instead of the role they currently hold, and nobody
+      notices until an access review (next section) specifically goes looking for exactly this pattern.</p>
+    </div>
+
+    <h2>Access reviews and recertification</h2>
+    <p>An <strong>access review</strong> (also called <strong>recertification</strong>) is a periodic,
+    deliberate check of who has access to what, specifically to catch access that accumulated but is no
+    longer justified — the Mover-trap pattern above, access left over from a finished project, an
+    exception granted "just for this week" eighteen months ago. Access reviews exist because provisioning
+    and deprovisioning, even when both work correctly, only react to events someone remembered to trigger.
+    Nothing in a purely event-driven system catches access that nobody remembered to revoke, because by
+    definition no one noticed it needed revoking. A review is the deliberate, scheduled act of looking
+    anyway.</p>
+    <p>The access under review is usually broken into individual <strong>entitlements</strong> — a single,
+    specific grant (one role, one group membership, one permission on one system) rather than "everything
+    this person can do" as one undifferentiated blob. Reviewing entitlement by entitlement is what makes a
+    review actionable: a reviewer can confirm "yes, this specific EHR-write entitlement is still correct"
+    without having to re-justify every other thing the same person can do.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 260" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Access accumulating silently between reviews, then being caught at the next scheduled recertification</title>
+        <desc id="d3">A horizontal timeline showing one identity's access grants accumulating over several months: a grant is added in January, another in March, another in June, with none ever removed by an event. At a quarterly review checkpoint in July, a reviewer examines each entitlement and marks the January grant as stale (revoked) while confirming the March and June grants as still justified.</desc>
+        <line x1="40" y1="130" x2="640" y2="130" class="diagram-stroke"></line>
+        <circle cx="100" cy="130" r="6" class="diagram-fill-accent-strong diagram-stroke"></circle>
+        <text x="100" y="110" text-anchor="middle" class="diagram-label-muted" font-size="11">Jan: grant A</text>
+        <circle cx="280" cy="130" r="6" class="diagram-fill-accent-strong diagram-stroke"></circle>
+        <text x="280" y="110" text-anchor="middle" class="diagram-label-muted" font-size="11">Mar: grant B</text>
+        <circle cx="460" cy="130" r="6" class="diagram-fill-accent-strong diagram-stroke"></circle>
+        <text x="460" y="110" text-anchor="middle" class="diagram-label-muted" font-size="11">Jun: grant C</text>
+
+        <rect x="560" y="60" width="110" height="140" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="615" y="80" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Jul review</text>
+        <rect x="572" y="95" width="86" height="26" rx="5" class="diagram-fill-danger diagram-stroke"></rect>
+        <text x="615" y="112" text-anchor="middle" class="diagram-label" font-size="10">A: revoke (stale)</text>
+        <rect x="572" y="128" width="86" height="26" rx="5" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="615" y="145" text-anchor="middle" class="diagram-label" font-size="10">B: certify</text>
+        <rect x="572" y="161" width="86" height="26" rx="5" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="615" y="178" text-anchor="middle" class="diagram-label" font-size="10">C: certify</text>
+
+        <text x="340" y="230" text-anchor="middle" class="diagram-label-muted" font-size="12">No event removed grant A — only the scheduled review caught that it was no longer justified</text>
+      </svg>
+      <figcaption>Figure 10.2 — Access accumulates silently between events; a scheduled access review is
+      what catches the entitlement nothing else triggered a removal for.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Riverside Health's clinician access certification</div>
+      <p><span class="org-chip riverside">Riverside Health</span> runs periodic access certification
+      campaigns over clinician EHR access specifically because chart access, once granted for a rotation or
+      a care-team assignment (chapter 6's ReBAC relationship), tends to outlive the clinical reason for it
+      — a clinician rotates off a ward but keeps chart-read access to patients they no longer treat. This is
+      precisely the kind of accumulated access the HIPAA Security Rule's <strong>minimum necessary</strong>
+      standard is concerned with — access should be limited to what's needed for the current task, not
+      everything a clinician has ever needed. Chapter 11 covers HIPAA's requirements formally; the point
+      here is narrower: a recurring access certification is the operational mechanism that makes
+      "minimum necessary" something you can actually demonstrate, rather than just assert.</p>
+    </div>
+
+    <h2>Access certification campaigns and attestation</h2>
+    <p>An <strong>access certification</strong> is the specific act, performed by a reviewer with the
+    authority to judge it, of examining one entitlement and deciding whether to keep it or revoke it. A
+    <strong>recertification campaign</strong> is the organized, scheduled exercise that bundles many
+    individual certifications together — typically all of one manager's reports, or all access to one
+    sensitive system, reviewed on the same cadence (quarterly and annual campaigns are both common) so the
+    organization can point to a complete, dated record rather than an ad-hoc patchwork of individual
+    checks. <strong>Attestation</strong> is the formal confirmation itself — the reviewer's recorded "yes,
+    this access is still correct" (or "no, revoke it") for a specific entitlement, which is what turns a
+    review from an informal glance into something an auditor can later verify actually happened.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — rubber-stamping</div>
+      <p>A recertification campaign only works if the reviewer actually evaluates each entitlement against
+      a real question ("does this person still need this, for a reason I can state?"). The common failure
+      mode is <strong>rubber-stamping</strong>: a manager facing a list of forty entitlements for twelve
+      direct reports, under a deadline, clicks "certify all" without checking any of them individually. The
+      campaign still produces a dated, signed-off record — which is exactly what makes rubber-stamping
+      dangerous: it looks indistinguishable from a real review in an audit log, while providing none of the
+      actual security benefit. A review's value comes entirely from the judgment applied during it, not
+      from the fact that a review nominally occurred.</p>
+    </div>
+
+    <h2>Segregation of Duties (SoD) and toxic combinations</h2>
+    <p><strong>Segregation of Duties (SoD)</strong> — also called Separation of Duties — is the principle
+    that no single identity should hold two permissions whose combination lets that one identity both carry
+    out a sensitive action <em>and</em> be the only check on that same action. The control isn't about
+    either permission being dangerous alone; a person who can create payment requests is fine, and a
+    separate person who can approve payment requests is fine. The danger is one identity holding
+    <em>both</em>, because that identity can then originate a fraudulent action and approve its own
+    wrongdoing, with no independent party ever seeing it.</p>
+    <p>A <strong>toxic combination</strong> is the specific pair (or set) of permissions that creates this
+    condition. What makes a combination toxic is precise, not vague: it's the ability to <em>both perform
+    an action and be the sole check on that same action</em>. "Can read customer data" plus "can read
+    employee data" is not toxic by this definition — neither permission checks the other. "Can create a
+    wire transfer" plus "can approve a wire transfer" is toxic, because the second permission exists
+    specifically to check the first, and one identity holding both erases the check entirely.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 260" role="img" aria-labelledby="t2 d2">
+        <title id="t2">A toxic combination: one identity holding both the create and approve permissions on the same action</title>
+        <desc id="d2">Two separate scenarios side by side. Left, labeled "safe": two different people, Ana and Ben, each hold one permission — Ana holds create-transfer, Ben holds approve-transfer — with no overlap, so a transfer always passes through two distinct people. Right, labeled "toxic combination": a single person, Cho, holds both create-transfer and approve-transfer, shown as both permission boxes connecting to the same person node, with a warning marker indicating Cho could both originate and approve the same fraudulent transfer with no independent check.</desc>
+        <text x="150" y="30" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Safe: duties separated</text>
+        <circle cx="70" cy="90" r="24" class="diagram-fill-success diagram-stroke"></circle>
+        <text x="70" y="95" text-anchor="middle" class="diagram-label" font-size="11">Ana</text>
+        <rect x="140" y="70" width="140" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="210" y="94" text-anchor="middle" class="diagram-label" font-size="11">Create transfer</text>
+        <line x1="94" y1="90" x2="138" y2="90" class="diagram-stroke"></line>
+
+        <circle cx="70" cy="180" r="24" class="diagram-fill-success diagram-stroke"></circle>
+        <text x="70" y="185" text-anchor="middle" class="diagram-label" font-size="11">Ben</text>
+        <rect x="140" y="160" width="140" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="210" y="184" text-anchor="middle" class="diagram-label" font-size="11">Approve transfer</text>
+        <line x1="94" y1="180" x2="138" y2="180" class="diagram-stroke"></line>
+
+        <line x1="340" y1="20" x2="340" y2="240" class="diagram-stroke"></line>
+
+        <text x="520" y="30" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Toxic combination</text>
+        <circle cx="440" cy="130" r="26" class="diagram-fill-danger diagram-stroke"></circle>
+        <text x="440" y="135" text-anchor="middle" class="diagram-label" font-size="11">Cho</text>
+        <rect x="520" y="80" width="140" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="590" y="104" text-anchor="middle" class="diagram-label" font-size="11">Create transfer</text>
+        <rect x="520" y="160" width="140" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+        <text x="590" y="184" text-anchor="middle" class="diagram-label" font-size="11">Approve transfer</text>
+        <line x1="464" y1="118" x2="518" y2="100" class="diagram-stroke"></line>
+        <line x1="464" y1="142" x2="518" y2="180" class="diagram-stroke"></line>
+        <text x="440" y="175" text-anchor="middle" class="diagram-label-muted" font-size="10">one identity,</text>
+        <text x="440" y="188" text-anchor="middle" class="diagram-label-muted" font-size="10">both permissions —</text>
+        <text x="440" y="201" text-anchor="middle" class="diagram-label-muted" font-size="10">no independent check</text>
+      </svg>
+      <figcaption>Figure 10.3 — A toxic combination isn't either permission alone; it's one identity holding
+      both the action and the sole check on that action.</figcaption>
+    </figure>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Meridian Trust's payment-approval SoD control</div>
+      <p><span class="org-chip meridian">Meridian Trust</span> enforces SoD on its payment-approval chain
+      as a direct fraud control: a teller who can <em>create</em> a transfer request must not also hold the
+      permission to <em>approve</em> that same transfer. This is the textbook toxic combination — without
+      the separation, a single compromised or dishonest teller identity could originate a fraudulent
+      transfer and approve it themselves, leaving no independent party who ever had the chance to catch it.
+      Meridian's access reviews specifically check for this combination across every teller identity, not
+      just at the point either permission is granted — because a teller who legitimately held only
+      "create" could later be granted "approve" for an unrelated reason (covering a vacationing colleague,
+      say) and the toxic combination would form silently, with no single provisioning action looking wrong
+      in isolation.</p>
+    </div>
+
+    <h2>When true separation isn't practical: compensating controls</h2>
+    <p>Small teams sometimes can't fully separate duties — a two-person back office may not have a third
+    person available to be the independent approver. When separation itself isn't feasible, organizations
+    use a <strong>compensating control</strong>: a different safeguard that substitutes for the missing
+    separation, such as a mandatory secondary review by someone outside the team, an automatic flag on any
+    transaction a toxic-combination holder both created and approved, or a hard dollar cap below which the
+    conflict is tolerated and above which a true second approver is required. A compensating control is an
+    explicit, documented trade-off — "we accept this specific risk because of this specific mitigating
+    safeguard" — not a silent gap where the organization pretends the conflict doesn't exist.</p>
+    <p>The underlying principle behind true separation is sometimes called the <strong>four-eyes
+    principle</strong> (or dual control): a sensitive action requires two different people to look at it —
+    one to perform it, one to independently verify it — before it takes effect. SoD is the organizational
+    policy of assigning permissions so that four-eyes is structurally guaranteed rather than merely hoped
+    for.</p>
+
+    <h2>Orphaned accounts: when deprovisioning and governance both miss</h2>
+    <p>An <strong>orphaned account</strong> is an account whose owning identity has left the organization
+    (or a role) but whose access was never actually removed — deprovisioning that should have happened,
+    didn't. Orphaned accounts are usually not caused by a missing <em>process</em>; they're caused by a
+    missing <em>trigger</em> for an existing process — an offboarding step that depended on someone
+    remembering to flip a switch, and nobody did. This is exactly what access reviews exist to catch as a
+    backstop: even if the Leaver event that should have deprovisioned the account was missed entirely, the
+    next scheduled review should surface "this identity's manager says they left four months ago, and this
+    account is still active" as a finding, independent of whether the original offboarding trigger ever
+    fired.</p>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>Treating a Mover event as purely additive — granting the new role's access without reviewing
+      whether the old role's access should be removed (the Northwind trap above).</li>
+      <li>Running access certification campaigns on a schedule but letting reviewers rubber-stamp them
+      without actually evaluating each entitlement.</li>
+      <li>Confusing "no single permission is dangerous" with "no combination of permissions is dangerous" —
+      SoD is specifically about combinations, not individual grants.</li>
+      <li>Treating a toxic combination as fixed forever once checked at grant time, instead of re-checking
+      it at every access review — combinations can form later, from two separately reasonable-looking
+      grants.</li>
+      <li>Leaving a small team's unavoidable SoD gap undocumented, instead of recording it explicitly as a
+      compensating control with its own safeguard.</li>
+      <li>Assuming Keycloak (or any pure IAM product) will surface stale access or SoD conflicts on its own
+      — it enforces whatever access you've configured, but it doesn't ask whether that access is still
+      justified.</li>
+      <li>Relying only on event-driven deprovisioning to catch every departure, with no periodic review as
+      a backstop for the Leaver events that get missed and turn into orphaned accounts.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>IGA is the discipline of provisioning, reviewing, and governing access over an identity's whole
+      lifetime — a process discipline, distinct from the IGA tooling market category chapter 12 covers.</li>
+      <li>Joiner-Mover-Leaver doesn't introduce a new lifecycle — it's the HR-driven vocabulary for chapter
+      2's create/activate/modify/suspend/delete stages, grouped into three events.</li>
+      <li>Mover is the event beginners get wrong most often: a role change should remove access tied to the
+      old role, not just add access for the new one.</li>
+      <li>Access reviews (recertification) exist because accumulated, no-longer-justified access doesn't
+      trigger any event on its own — only a deliberate, scheduled look catches it.</li>
+      <li>Segregation of Duties forbids one identity holding both the ability to perform a sensitive action
+      and the sole check on that same action — a toxic combination is defined by that specific property,
+      not by either permission being dangerous alone.</li>
+      <li>Access certification campaigns bundle individual entitlement reviews into a scheduled, dated
+      exercise; attestation is the reviewer's recorded confirmation that makes the review auditable.</li>
+      <li>Rubber-stamping produces a campaign record indistinguishable from a real review while providing
+      none of its security value — the benefit comes entirely from the judgment applied, not the record.</li>
+      <li>When true separation of duties isn't feasible, an explicit, documented compensating control is
+      the honest alternative to a silent, unacknowledged gap.</li>
+      <li>Keycloak is an IAM product, not an IGA product — it has no built-in access-review, recertification,
+      or SoD-conflict feature, a real and useful distinction rather than a gap to apologize for.</li>
+      <li>Orphaned accounts are the predictable result of a missed Leaver trigger; periodic access review
+      is the backstop that catches them when event-driven deprovisioning alone doesn't.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, without using the words "create" or "add," why a Mover event that only grants new access
+      is incomplete. What specifically should it also do?</li>
+      <li>Give an example of two permissions that are each individually harmless but form a toxic
+      combination together. What specific property makes the combination toxic, not just the pairing
+      itself?</li>
+      <li>Why can't event-driven provisioning and deprovisioning alone guarantee that an identity's access
+      stays correct over time? What gap does a scheduled access review fill that no single event can?</li>
+      <li>A manager "certifies" all forty of their reports' entitlements in under two minutes. What's wrong
+      with this, even though the campaign's record will show it as completed on time?</li>
+      <li>Why is "Keycloak doesn't do access reviews" a meaningful, specific statement about what kind of
+      product Keycloak is — rather than just a missing feature to complain about?</li>
+      <li>Describe a compensating control you'd propose for a two-person team that can't fully separate
+      the duties of creating and approving a sensitive action.</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://csrc.nist.gov/glossary/term/separation_of_duty">NIST Computer Security Resource Center — "separation of duty" glossary entry</a></li>
+      <li><a href="https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final">NIST SP 800-53 Rev. 5 — Security and Privacy Controls (see control AC-5, Separation of Duties, and AC-6, Least Privilege)</a></li>
+      <li><a href="https://csrc.nist.gov/pubs/sp/800/66/r2/final">NIST SP 800-66 Rev. 2 — "Implementing the HIPAA Security Rule: A Cybersecurity Resource Guide" (HHS's own minimum-necessary guidance pages returned HTTP 403 to automated fetches in this environment and could not be live-verified; chapter 11 should re-attempt hhs.gov directly when it covers HIPAA formally)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "identity-governance", 15);
+  });
+</script>
+</body>
+</html>

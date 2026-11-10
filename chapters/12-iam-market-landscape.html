@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The IAM Market Landscape — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "iam-market-landscape";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part II — Governance &amp; Compliance</span>
+      <span class="badge minutes">~35 min</span>
+    </div>
+    <h1>12. The IAM Market Landscape</h1>
+    <p class="lede">Chapter 1 used "IAM" as if it were one thing. It isn't. The moment you start shopping
+    for a product, or interviewing for a role, the market splits into at least four distinct categories
+    with different buyers, different vendors, and different jobs — and this chapter is where that split
+    finally gets named properly, closing the loop chapter 1 opened and setting up the honest "does
+    Keycloak fit here" question this course has been deferring since page one.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist is routinely asked questions like "should we buy Okta or build on Keycloak?" or
+    "do we need a PAM tool on top of what we already have?" — questions that are unanswerable until you
+    know the market has real seams in it, not just competing brand names for the same thing. This chapter
+    gives you the taxonomy and the vendor map so those conversations go from guesswork to an informed
+    trade-off discussion, and it gives you a live, dated snapshot of who owns what, because this is a
+    market that reorganizes itself through acquisitions faster than most textbooks get reprinted.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall from chapter 1</div>
+      <p>Chapter 1 introduced two terms as one-liners and promised full depth here: <strong>Workforce
+      IAM</strong> — "managing an organization's own employees and internal systems access" — and
+      <strong>CIAM</strong> — "managing external, customer-facing identities." Chapter 1 also distinguished
+      Keycloak from "commercial alternatives like Okta, Auth0, Microsoft Entra ID, and Ping Identity"
+      without comparing them, promising that comparison for this chapter. Both promises get paid off
+      below.</p>
+    </div>
+
+    <h2>The market has four seams, not one</h2>
+    <p>"IAM" as a job title, a budget line, and a market category is really four overlapping-but-distinct
+    businesses. Knowing which one a given tool, vendor, or conversation is actually about is the single
+    most useful piece of market literacy an IAM specialist can have — most confused procurement
+    conversations trace back to two people silently assuming different quadrants of this diagram.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 460" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The four-category IAM market taxonomy: Workforce IAM, CIAM, PAM, and IGA</title>
+        <desc id="d1">A two-by-two grid. The horizontal axis is labeled "who is being managed", running from
+        "an organization's own workforce" on the left to "external customers or the public" on the right.
+        The vertical axis is labeled "what kind of access", running from "everyday application access" at
+        the top to "elevated, administrative, or governance-level access" at the bottom. Top-left quadrant:
+        Workforce IAM — employees logging into internal and SaaS business applications. Top-right quadrant:
+        CIAM — customers logging into a public-facing product at consumer scale. Bottom-left quadrant: PAM —
+        privileged, administrative access to the most sensitive internal systems, scoped to a small set of
+        accounts. Bottom-right quadrant, drawn differently to show it is not really an access category but
+        an oversight layer: IGA — governance and review of who holds which access across the other three
+        quadrants, defined fully in chapter 10 and only referenced here as a market category.</desc>
+
+        <text x="340" y="26" text-anchor="middle" class="diagram-label" font-weight="700">Four categories, one acronym</text>
+
+        <line x1="60" y1="240" x2="620" y2="240" class="diagram-stroke"></line>
+        <line x1="340" y1="60" x2="340" y2="420" class="diagram-stroke"></line>
+
+        <text x="90" y="55" text-anchor="start" class="diagram-label-muted" font-size="11">own workforce</text>
+        <text x="590" y="55" text-anchor="end" class="diagram-label-muted" font-size="11">external customers / public</text>
+        <text x="345" y="75" class="diagram-label-muted" font-size="11">everyday application access</text>
+        <text x="345" y="415" class="diagram-label-muted" font-size="11">elevated / admin / governance access</text>
+
+        <rect x="80" y="90" width="230" height="130" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="195" y="145" text-anchor="middle" class="diagram-label" font-weight="700">Workforce IAM</text>
+        <text x="195" y="165" text-anchor="middle" class="diagram-label-muted" font-size="11">Employees logging into</text>
+        <text x="195" y="180" text-anchor="middle" class="diagram-label-muted" font-size="11">internal + SaaS business apps</text>
+
+        <rect x="370" y="90" width="230" height="130" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="485" y="145" text-anchor="middle" class="diagram-label" font-weight="700">CIAM</text>
+        <text x="485" y="165" text-anchor="middle" class="diagram-label-muted" font-size="11">Customers logging into a</text>
+        <text x="485" y="180" text-anchor="middle" class="diagram-label-muted" font-size="11">public product, consumer scale</text>
+
+        <rect x="80" y="255" width="230" height="130" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="195" y="310" text-anchor="middle" class="diagram-label" font-weight="700">PAM</text>
+        <text x="195" y="330" text-anchor="middle" class="diagram-label-muted" font-size="11">A small set of admin accounts</text>
+        <text x="195" y="345" text-anchor="middle" class="diagram-label-muted" font-size="11">with elevated, vaulted access</text>
+
+        <rect x="370" y="255" width="230" height="130" rx="8" class="diagram-fill-danger diagram-stroke" stroke-dasharray="6,4"></rect>
+        <text x="485" y="310" text-anchor="middle" class="diagram-label" font-weight="700">IGA</text>
+        <text x="485" y="330" text-anchor="middle" class="diagram-label-muted" font-size="11">Reviews/governs access across</text>
+        <text x="485" y="345" text-anchor="middle" font-size="11" class="diagram-label-muted">all three — ch. 10's subject</text>
+
+        <text x="340" y="445" text-anchor="middle" class="diagram-label-muted" font-size="11">Dashed border: IGA is an oversight layer, not a fourth access category like the other three</text>
+      </svg>
+      <figcaption>Figure 12.1 — The four seams in the "IAM" market: who is managed (workforce vs.
+      customer) and what kind of access is at stake (everyday vs. elevated/governance).</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>Treating "IAM" as one undifferentiated category is the single most common beginner mistake in
+      this space. A vendor that is excellent at consumer-scale CIAM (millions of social-login signups)
+      is not automatically good at workforce SSO into forty internal SaaS tools, and neither is
+      automatically a substitute for a PAM tool that vaults and records privileged admin sessions. "We
+      already have IAM" is not a complete answer to "do we have PAM" or "do we have IGA" — they are
+      different purchases, often from different vendors, solving different problems.</p>
+    </div>
+
+    <h3>Workforce IAM, in depth</h3>
+    <p><strong>Workforce IAM</strong> manages the identities of an organization's own people — employees,
+    contractors, and the service accounts those people operate on behalf of — authenticating them into
+    internal tools, SaaS business applications (email, CRM, ticketing), VPNs, and increasingly also
+    cloud-provider consoles. Its defining shape is a <em>bounded, known</em> population: the number of
+    identities roughly tracks headcount, every identity is typically backed by an HR record somewhere
+    (feeding the joiner-mover-leaver flow chapter 10 covers), and the buyer is usually IT or security,
+    not product. SSO into SaaS tools, directory federation (chapter 4/32), and role- or group-based
+    authorization (chapter 6/23) are the day-to-day workforce IAM workload.</p>
+
+    <h3>CIAM, in depth</h3>
+    <p><strong>CIAM (Customer Identity and Access Management)</strong> manages identities for people
+    outside the organization — customers, end users, members of the public — who sign up for and log into
+    a product the organization sells or operates. Its defining shape is the opposite of workforce IAM's:
+    the population is <em>unbounded and self-registering</em> (anyone can sign up at 3am), scale is
+    measured in the millions rather than the hundreds or thousands, social login and progressive
+    profiling matter more than directory federation, and the buyer is usually the product organization,
+    not IT. Login-page branding, conversion-rate impact of every added friction step, and consumer-grade
+    uptime expectations are CIAM-specific pressures that workforce IAM rarely faces at the same intensity.</p>
+
+    <h3>PAM: a genuinely new category for this course</h3>
+    <p><strong>PAM (Privileged Access Management)</strong> is the first of the four categories this course
+    hasn't touched yet, and it deserves its own definition rather than a one-line mention. PAM manages the
+    smallest, highest-risk slice of identities in any organization: the accounts that can do the most
+    damage if compromised — database admins, root/domain-admin accounts, cloud-provider root accounts,
+    break-glass emergency accounts, and the service accounts that back automation with broad permissions.
+    A <strong>privileged account</strong> is any account whose normal operating permissions exceed what a
+    typical end user holds — not every admin account is privileged in the PAM sense (a help-desk agent who
+    can reset passwords for one department is a limited admin, not a PAM target; a domain controller admin
+    is).</p>
+    <p>PAM tools exist because workforce IAM's usual tools — SSO, MFA, RBAC — don't by themselves solve
+    privileged access's specific risks. A PAM product adds:</p>
+    <ul>
+      <li><strong>Credential vaulting</strong> — privileged credentials (root passwords, database
+      connection strings, SSH keys, API secrets) are stored in an encrypted vault rather than memorized or
+      shared over chat; a human or script checks a credential out when needed instead of knowing it
+      permanently.</li>
+      <li><strong>Session recording</strong> — once a privileged session starts (an SSH session to a
+      production database, an RDP session to a domain controller), the PAM tool records keystrokes and/or
+      screen activity for later audit, the same way a bank's security camera records who walked into the
+      vault, not just that the vault was opened.</li>
+      <li><strong>Just-in-time (JIT) privilege elevation</strong> — instead of holding elevated permissions
+      permanently (<strong>standing privileged access</strong>), a user requests elevation for a limited
+      window and a specific task, and the permission is automatically revoked afterward — shrinking how
+      long a compromised credential would actually be dangerous.</li>
+      <li><strong>Break-glass access</strong> — a deliberately logged, alarm-raising emergency path to
+      bypass normal elevation when something is on fire and the usual request-approval loop would be too
+      slow; used rarely, audited heavily when it is used.</li>
+      <li>Routing privileged sessions through a <strong>bastion host (jump server)</strong> — a single
+      hardened chokepoint all privileged connections must pass through, so there is one place to monitor,
+      record, and, if necessary, cut off access, instead of admins connecting directly to sensitive
+      systems from anywhere.</li>
+    </ul>
+    <p>Workforce IAM and PAM are complementary, not competing: workforce IAM answers "is this person who
+    they say they are, and what role do they generally hold," while PAM answers the narrower, higher-stakes
+    question "should this already-authenticated person be allowed to touch the most sensitive system
+    <em>right now, for this specific task</em>, and is someone watching while they do it."</p>
+
+    <h3>IGA: referenced here, defined in chapter 10</h3>
+    <p>The fourth category, <strong>IGA (Identity Governance and Administration)</strong>, is the
+    governance and review discipline chapter 10 defines in full — access certification, segregation of
+    duties, and the joiner-mover-leaver pattern. This chapter only needs IGA as a <em>market/tooling
+    category</em>: a distinct class of products (SailPoint and Saviynt are the names that come up most
+    often, discussed below) exists specifically to automate that governance discipline at scale, separate
+    from the identity systems — Workforce IAM, CIAM, or Keycloak itself — whose access those products
+    review. If you need IGA's actual definition, chapter 10 is where it lives; this chapter won't repeat it.</p>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak is a general-purpose IAM product that competently covers Workforce IAM and CIAM
+      use cases — it has no dedicated PAM module (no credential vault, no session recording, no JIT
+      elevation workflow) and no IGA module (no periodic access-certification campaigns, no SoD rule
+      engine). That's not a flaw in Keycloak; it's a category boundary. An organization running Keycloak
+      for workforce/CIAM identity may still need a separate PAM tool for its most sensitive admin accounts
+      and a separate IGA tool (or process) for periodic access review — the same way it would alongside
+      Okta, Auth0, or any other Workforce-IAM/CIAM product.</p>
+    </div>
+
+    <h2>The vendor landscape, live-verified as of November 2026</h2>
+    <p>Corporate ownership in this market changes fast enough that a vendor comparison written even a year
+    earlier can already be wrong — this course's own content rules require live-verifying exactly this
+    kind of fact rather than trusting memory. Here is what a live search turned up for each name in this
+    table, as of this writing (2026-11-10), including the places the sources disagreed or hedged:</p>
+    <ul>
+      <li><strong>Auth0 and Okta</strong> — still the same corporate entity: Okta acquired Auth0 in 2021,
+      and that hasn't changed. What has shifted is branding and internal structure: Okta's current
+      flagship name for the product is "Okta Customer Identity Cloud, powered by Auth0" (also seen
+      written as "Auth0 by Okta"), and Okta's own materials say both names refer to the same technology —
+      expect to see both in the wild. Okta announced in April 2026 that it is unifying the Okta and Auth0
+      product/engineering organizations under one executive, with Auth0's own president departing as part
+      of that reorg — an organizational integration, not a change in who owns the product.</li>
+      <li><strong>ForgeRock and Ping Identity</strong> — ForgeRock was acquired by Thoma Bravo in 2023 and
+      folded into Thoma Bravo's existing portfolio company, Ping Identity; that acquisition is complete and
+      not in question. What is genuinely less settled, and worth saying honestly rather than guessing: how
+      far the product-line merge has gone. Some sources describe ForgeRock's products as being
+      progressively rebranded into the PingOne line; others describe the two platforms as still
+      commercially distinct as of 2026, with existing ForgeRock Identity Platform deployments continuing
+      to receive patches. This course can't resolve that discrepancy with confidence from search results
+      alone — treat "ForgeRock" in this table as "now a Ping Identity brand/product line of uncertain
+      current integration depth," and verify directly against Ping's own site before making a
+      purchasing decision based on it.</li>
+      <li><strong>Microsoft's identity product</strong> — still branded <strong>Microsoft Entra ID</strong>
+      as of November 2026. It was renamed from Azure Active Directory (Azure AD) in 2023; nothing found
+      suggests a further rebrand since. ("Azure AD" and "AAD" are the old names; Microsoft's own
+      documentation now uses Entra ID throughout.)</li>
+      <li><strong>IGA category leaders</strong> — SailPoint is the longer-standing incumbent, frequently
+      cited (on somewhat dated revenue/market-share figures) as the category's largest vendor by revenue.
+      Saviynt is the vendor most visibly gaining analyst recognition in 2026 specifically (named a leader
+      across multiple dimensions in a 2026 KuppingerCole Leadership Compass for IGA, per Saviynt's own
+      reporting of that analyst report). No neutral, up-to-date source in this search named one undisputed
+      "market leader" for 2026 — both names are legitimate to know, and this course names both rather than
+      picking a winner it can't actually verify.</li>
+      <li><strong>PAM category leaders — including a fact worth a second look</strong>: Palo Alto Networks
+      completed a roughly $25 billion acquisition of CyberArk in February 2026, and in May 2026 rebranded
+      the CyberArk product line under the name <strong>Idira</strong> (visible directly on
+      paloaltonetworks.com and reflected in CyberArk's own site). This is the single most consequential,
+      easy-to-get-wrong fact in this chapter — "CyberArk" is still the name most practitioners use and
+      search for, but the current corporate/product reality as of November 2026 is that it now sits inside
+      Palo Alto Networks under the Idira name. BeyondTrust is the long-running, strongly analyst-rated
+      runner-up in the category (named a leader in multiple 2026 analyst reports). Delinea also shows up
+      credibly in 2026 analyst coverage. As with IGA, this course names the field rather than asserting one
+      fixed "winner."</li>
+    </ul>
+
+    <div class="table-wrap">
+      <table>
+        <caption>IAM/CIAM/PAM/IGA vendor landscape (live-verified November 2026) — open-source/self-hosted
+        vs. commercial/SaaS, workforce vs. consumer-scale focus, and a rough total-cost-of-ownership read</caption>
+        <thead>
+          <tr><th>Vendor / product</th><th>Category</th><th>Delivery model</th><th>Primary focus</th><th>TCO shape</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Keycloak</td><td>Workforce IAM + CIAM</td><td>Open-source, self-hosted (or self-managed on any infra)</td><td>Both — generalist, used for either</td><td>No license fee; real infrastructure + operational-expertise cost (someone has to run, patch, and tune it)</td></tr>
+          <tr><td>Okta</td><td>Workforce IAM (core product)</td><td>Commercial SaaS</td><td>Workforce-heavy, enterprise SSO</td><td>Per-user subscription; low operational burden, premium pricing at scale</td></tr>
+          <tr><td>Okta Customer Identity Cloud ("Auth0 by Okta")</td><td>CIAM</td><td>Commercial SaaS</td><td>Consumer-scale, developer-first CIAM</td><td>Usage/MAU-based subscription; low operational burden</td></tr>
+          <tr><td>Microsoft Entra ID</td><td>Workforce IAM (CIAM via a separate Entra External ID offering)</td><td>Commercial SaaS</td><td>Workforce-heavy, deeply tied to the Microsoft/Azure ecosystem</td><td>Per-user licensing, often bundled with existing Microsoft 365/Azure spend</td></tr>
+          <tr><td>Ping Identity (incl. the former ForgeRock line)</td><td>Workforce IAM + CIAM</td><td>Commercial SaaS and self-hosted options</td><td>Large-enterprise workforce and CIAM</td><td>Enterprise licensing/subscription; moderate operational burden depending on deployment model</td></tr>
+          <tr><td>SailPoint</td><td>IGA</td><td>Commercial SaaS and self-hosted options</td><td>Governance/review across whatever identity systems an org already has</td><td>Enterprise subscription; IGA programs also carry real process/people cost beyond the software</td></tr>
+          <tr><td>CyberArk (now "Idira" under Palo Alto Networks, as of 2026)</td><td>PAM</td><td>Commercial SaaS and self-hosted options</td><td>Privileged/admin account vaulting, session recording, JIT elevation</td><td>Enterprise subscription; typically layered on top of whatever Workforce IAM/CIAM system already exists, not a replacement for one</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 420" role="img" aria-labelledby="t2 d2">
+        <title id="t2">Vendor positioning: delivery model vs. primary population focus</title>
+        <desc id="d2">A scatter-style plot. Horizontal axis: delivery model, from open-source/self-hosted on
+        the left to commercial SaaS on the right. Vertical axis: primary population focus, from workforce at
+        the top to consumer/customer scale at the bottom. Keycloak sits far left, spanning the middle
+        vertically (it serves both). Okta sits upper-right (commercial SaaS, workforce-heavy). Okta Customer
+        Identity Cloud/Auth0 sits lower-right (commercial SaaS, consumer-scale). Microsoft Entra ID sits
+        upper-right, close to Okta. Ping Identity sits right-of-center, spanning workforce and CIAM. SailPoint
+        and CyberArk/Idira are drawn off to the side in a separate box, labeled as a different axis entirely
+        (governance and privileged-access tooling, not a point on this workforce/consumer spectrum).</desc>
+
+        <line x1="70" y1="210" x2="560" y2="210" class="diagram-stroke"></line>
+        <line x1="70" y1="30" x2="70" y2="390" class="diagram-stroke"></line>
+        <text x="75" y="24" class="diagram-label-muted" font-size="11">workforce-focused</text>
+        <text x="75" y="385" class="diagram-label-muted" font-size="11">consumer/customer-scale</text>
+        <text x="80" y="205" class="diagram-label-muted" font-size="11">open-source / self-hosted</text>
+        <text x="555" y="205" text-anchor="end" class="diagram-label-muted" font-size="11">commercial SaaS</text>
+
+        <rect x="85" y="150" width="110" height="120" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
+        <text x="140" y="200" text-anchor="middle" class="diagram-label" font-weight="700">Keycloak</text>
+        <text x="140" y="218" text-anchor="middle" class="diagram-label-muted" font-size="10">spans both populations</text>
+
+        <rect x="400" y="60" width="130" height="55" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="465" y="92" text-anchor="middle" class="diagram-label" font-size="12">Okta</text>
+
+        <rect x="400" y="130" width="150" height="55" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+        <text x="475" y="155" text-anchor="middle" class="diagram-label" font-size="11">Microsoft Entra ID</text>
+
+        <rect x="300" y="60" width="150" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="375" y="92" text-anchor="middle" class="diagram-label" font-size="11">Ping Identity (+ ForgeRock)</text>
+
+        <rect x="400" y="300" width="150" height="60" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="475" y="325" text-anchor="middle" class="diagram-label" font-size="11">Okta CIC /</text>
+        <text x="475" y="343" text-anchor="middle" class="diagram-label" font-size="11">"Auth0 by Okta"</text>
+
+        <rect x="40" y="300" width="600" height="95" rx="8" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5,3"></rect>
+        <text x="340" y="320" text-anchor="middle" class="diagram-label" font-weight="700">Governance &amp; privileged-access tooling — a different axis entirely</text>
+        <text x="200" y="345" text-anchor="middle" class="diagram-label" font-size="12">SailPoint — IGA</text>
+        <text x="480" y="345" text-anchor="middle" class="diagram-label" font-size="12">CyberArk / Idira — PAM</text>
+        <text x="340" y="365" text-anchor="middle" class="diagram-label-muted" font-size="11">reviews or elevates access across whichever IAM/CIAM system is already in place</text>
+      </svg>
+      <figcaption>Figure 12.2 — Where each vendor sits on delivery model and population focus; IGA and
+      PAM tools sit outside that spectrum entirely, layered on top of it.</figcaption>
+    </figure>
+
+    <h2>Total cost of ownership: "free" isn't free</h2>
+    <p>The most consequential, specialist-level framing in this chapter is <strong>total cost of
+    ownership (TCO)</strong>: the full cost of running an identity system, not just its sticker price.
+    <strong>Open-source vs. commercial IAM</strong> and <strong>self-hosted vs. SaaS/managed IAM</strong>
+    are two related but separate axes worth pulling apart:</p>
+    <ul>
+      <li>Keycloak carries no license fee and can be self-hosted anywhere — but "no license fee" is not
+      "no cost." Someone has to run the Postgres/database backend, apply security patches, size and tune
+      the deployment, handle clustering and failover (Part IX), and genuinely understand OAuth2/OIDC/SAML
+      well enough to configure it correctly (Part III) — real, ongoing operational expertise, not a
+      one-time setup task.</li>
+      <li>A commercial SaaS product (Okta, Auth0/Okta CIC, Entra ID, Ping) trades that operational burden
+      for a recurring subscription cost, usually scaling with user count or monthly active users. The
+      vendor runs the infrastructure, ships the patches, and is contractually on the hook for availability
+      — at a price premium that grows with scale, and with less control over exactly how the system
+      behaves or where data physically lives.</li>
+      <li><strong>Data residency</strong> — where identity data is physically stored and which jurisdiction's
+      laws govern it — is a real driver toward self-hosting for regulated organizations, independent of
+      the pure dollar-cost comparison.</li>
+      <li><strong>Vendor lock-in</strong> — the harder-to-quantify cost of how difficult it would be to
+      leave a given product later (proprietary extensions, migration tooling quality, contract terms) —
+      belongs in the same TCO conversation even though it rarely shows up on an invoice.</li>
+    </ul>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 280" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Where the cost actually sits: self-hosted open-source vs. commercial SaaS</title>
+        <desc id="d3">Two stacked horizontal bars compared side by side. The top bar, labeled Keycloak
+        self-hosted, is mostly made of a large segment labeled operational expertise and infrastructure,
+        with a small segment labeled license cost at zero. The bottom bar, labeled commercial SaaS, is
+        mostly made of a large segment labeled subscription/license cost, with a small segment labeled
+        operational burden, much smaller than Keycloak's operational segment. A caption notes that total
+        bar length is illustrative, not a literal dollar comparison, since the real trade-off depends
+        heavily on an organization's existing operational capacity.</desc>
+
+        <text x="320" y="24" text-anchor="middle" class="diagram-label" font-weight="700">Same job, cost sits in different places</text>
+
+        <text x="60" y="80" class="diagram-label" font-size="12">Keycloak</text>
+        <text x="60" y="95" class="diagram-label-muted" font-size="10">self-hosted</text>
+        <rect x="150" y="60" width="18" height="36" class="diagram-fill-success diagram-stroke"></rect>
+        <rect x="168" y="60" width="380" height="36" class="diagram-fill-warning diagram-stroke"></rect>
+        <text x="159" y="82" text-anchor="middle" class="diagram-label" font-size="9">$0</text>
+        <text x="358" y="82" text-anchor="middle" class="diagram-label" font-size="11">operational expertise + infrastructure</text>
+
+        <text x="60" y="170" class="diagram-label" font-size="12">Commercial</text>
+        <text x="60" y="185" class="diagram-label-muted" font-size="10">SaaS</text>
+        <rect x="150" y="150" width="340" height="36" class="diagram-fill-warning diagram-stroke"></rect>
+        <rect x="490" y="150" width="58" height="36" class="diagram-fill-success diagram-stroke"></rect>
+        <text x="320" y="172" text-anchor="middle" class="diagram-label" font-size="11">subscription / license cost</text>
+        <text x="519" y="172" text-anchor="middle" class="diagram-label" font-size="9">low ops</text>
+
+        <text x="320" y="245" text-anchor="middle" class="diagram-label-muted" font-size="11">Illustrative proportions only — the real ratio depends on team size, scale, and</text>
+        <text x="320" y="261" text-anchor="middle" class="diagram-label-muted" font-size="11">existing operational capacity, not a fixed dollar figure</text>
+      </svg>
+      <figcaption>Figure 12.3 — The same identity-management job costs money in different places depending
+      on delivery model; "free to license" and "cheap overall" are not the same claim.</figcaption>
+    </figure>
+
+    <h2>Case study: which category would each org actually buy?</h2>
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study</div>
+      <p><span class="org-chip northwind">Northwind Apps</span> is squarely a <strong>CIAM</strong> buyer:
+      its whole business is a multi-tenant B2B SaaS product with thousands of end-customer logins across
+      many tenant companies, consumer-scale signup/login traffic patterns, and a need for enterprise SSO
+      into its own product for its larger customers — the exact shape CIAM vendors are built around.</p>
+      <p><span class="org-chip riverside">Riverside Health</span> evaluates primarily <strong>self-hosted
+      workforce IAM</strong>: its clinician workforce is the core identity population, and HIPAA-driven
+      data-residency and control concerns (chapter 11) push it toward wanting its own infrastructure and
+      full visibility into where identity data lives, rather than handing that control to a SaaS vendor —
+      a real, defensible reason an organization might lean toward something like Keycloak specifically.</p>
+      <p><span class="org-chip meridian">Meridian Trust</span> needs <strong>workforce IAM plus a PAM
+      layer on top</strong>: everyday employee access to internal banking systems is a workforce IAM
+      problem, but the small set of accounts with direct administrative access to core banking
+      infrastructure is exactly the higher-risk, smaller-population problem PAM tooling exists for — a
+      bank is a textbook case for not treating "we have workforce IAM" as a substitute for "we have
+      vaulted, recorded, time-boxed privileged access to the systems that move money."</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>Assuming one vendor's strength in one category (e.g. consumer-scale CIAM) automatically means
+      it's the right fit for a completely different category (e.g. workforce SSO or PAM) — these are
+      different products solving different problems, often from different teams within the same vendor.</li>
+      <li>Comparing Keycloak's "free" license cost to a SaaS subscription without counting the operational
+      expertise, infrastructure, and ongoing patching/tuning labor Keycloak requires — the comparison that
+      matters is total cost of ownership, not license price alone.</li>
+      <li>Treating a corporate acquisition or rebrand (Auth0/Okta, ForgeRock/Ping, CyberArk/Idira) as
+      settled forever rather than checking current status before a real purchasing decision — this market
+      moves fast enough that a "fact" from even a year ago can already be stale.</li>
+      <li>Assuming "we have an IAM system" answers "do we have PAM" or "do we have IGA" — they are
+      different purchases, not implied by having solved workforce or customer identity.</li>
+      <li>Forgetting that IGA (chapter 10) is a governance/process discipline, not only a piece of
+      software — buying an IGA tool without the underlying review process and organizational buy-in just
+      automates a process that doesn't actually exist yet.</li>
+    </ul>
+
+    <h2>Back to chapter 1's question: when does Keycloak specifically make sense?</h2>
+    <p>Chapter 1 asked, vendor-agnostically, when to adopt an IAM system at all. With the market mapped
+    out, that question narrows to something more specific and more honest: given that you've decided you
+    need Workforce IAM and/or CIAM, when does <em>Keycloak</em> make sense versus a commercial
+    alternative?</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall from chapter 1, narrowed</div>
+      <p>Chapter 1's "reach for centralized IAM when" / "it's overkill when" framing still applies before
+      this question even comes up. Assuming that bar is already cleared, the Keycloak-specific version of
+      the question is: does this organization want <em>control</em> badly enough to accept the
+      <em>operational burden</em> that control costs?</p>
+    </div>
+
+    <p><strong>Keycloak tends to fit well when:</strong> the organization has (or is willing to build) real
+    operational capacity to run and patch a production service; data residency, regulatory control, or
+    cost-at-scale make a per-user SaaS subscription unattractive; the team wants to customize deeply via
+    SPIs (Part VIII) in ways a closed commercial product wouldn't allow; or the organization is already
+    comfortable operating its own infrastructure (Kubernetes, databases, clustering) and sees Keycloak as
+    one more well-understood workload rather than a novel burden.</p>
+    <p><strong>A commercial alternative tends to fit better when:</strong> the organization wants to
+    outsource the operational burden entirely and is comfortable paying a premium for that; it needs
+    extremely rapid time-to-value with minimal in-house protocol expertise; it needs enterprise support
+    contracts and SLAs a vendor is contractually bound to; or its scale/consumer-facing needs point it
+    specifically toward a CIAM-optimized product most commercial vendors have invested in more deeply than
+    Keycloak has.</p>
+    <p>Neither answer is "better" in the abstract — this is a genuine trade-off, not a sales pitch for
+    either side, and the honest answer depends on an organization's existing operational muscle more than
+    on any feature checklist. This course picked Keycloak as its hands-on vehicle because it's free to run
+    yourself and because its openness makes it an excellent teaching tool for the protocols underneath —
+    not because it's objectively the "best" IAM product for every organization reading this. Part III
+    builds the protocol depth (OAuth2/OIDC/SAML) this decision assumes, and Part IV is where Keycloak
+    itself finally gets installed and operated for real.</p>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>"IAM" as a market splits into at least four distinct categories — Workforce IAM, CIAM, PAM, and
+      IGA — with different buyers, different vendors, and different day-to-day workloads.</li>
+      <li>Workforce IAM manages a bounded, HR-backed population of an organization's own people; CIAM
+      manages an unbounded, self-registering population of external customers at consumer scale.</li>
+      <li>PAM is the first genuinely new category in this chapter: it protects the small set of
+      highest-risk privileged accounts via credential vaulting, session recording, and just-in-time
+      privilege elevation — distinct from everyday authentication/authorization.</li>
+      <li>IGA is a governance/review discipline (chapter 10 owns its full definition) that also exists as
+      a distinct market category of tooling, separate from the identity systems whose access it reviews.</li>
+      <li>Corporate ownership in this market changes fast: Auth0 remains part of Okta (branding evolving),
+      ForgeRock is now inside Ping Identity (integration depth disputed in sources), Microsoft's product is
+      still Entra ID, and CyberArk was rebranded Idira under Palo Alto Networks in 2026 — verify any of
+      these again before relying on them in a real decision, since this market moves faster than most
+      references get updated.</li>
+      <li>Total cost of ownership, not license price alone, is the right lens for comparing Keycloak to a
+      commercial SaaS alternative — "free to license" and "cheap overall" are different claims.</li>
+      <li>Data residency and vendor lock-in are real TCO factors that don't show up on an invoice but
+      belong in the same comparison as subscription cost and operational burden.</li>
+      <li>No single vendor dominates every category at once — a vendor's strength in one quadrant of the
+      taxonomy says little about its fit for a different quadrant.</li>
+      <li>Keycloak fits organizations that want control and have (or will build) the operational capacity
+      to run it; commercial alternatives fit organizations that would rather pay to outsource that
+      operational burden — this is a genuine trade-off, not a case either side automatically wins.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, without naming Keycloak, why a vendor that's excellent at CIAM isn't automatically a
+      good choice for a PAM need, even though both get called "IAM."</li>
+      <li>Describe a privileged account at an organization you know (or can imagine) and explain what
+      specifically makes it "privileged" rather than just "an admin account."</li>
+      <li>Pick one of the three case-study orgs and argue for the <em>opposite</em> category/delivery-model
+      choice this chapter gave it — what circumstances would have to change for that to become the better
+      call?</li>
+      <li>Why is "Keycloak has no license fee" an incomplete answer to "which is cheaper, Keycloak or a
+      SaaS competitor?" What's missing from that comparison?</li>
+      <li>Pick one of the four corporate facts verified in this chapter (Auth0/Okta, ForgeRock/Ping, Entra
+      ID naming, or CyberArk/Idira) and explain, in your own words, why getting it wrong in a professional
+      setting would be an embarrassing, not just a trivial, mistake.</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.okta.com/blog/product-innovation/introducing-new-icons-for-our-flagship-product-lines/">Okta — "Introducing new icons for our flagship product lines" (current Auth0/Okta branding)</a></li>
+      <li><a href="https://learn.microsoft.com/entra/fundamentals/new-name">Microsoft Learn — "Microsoft Entra ID: new name for Azure Active Directory"</a></li>
+      <li><a href="https://www.paloaltonetworks.com/idira">Palo Alto Networks — Idira (the current CyberArk product line, post-acquisition)</a></li>
+      <li><a href="https://csrc.nist.gov/glossary/term/privileged_user">NIST Computer Security Resource Center — "privileged user" glossary entry (the PAM-relevant concept, vendor-neutral)</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/">Keycloak Server Administration Guide (official docs index, for later chapters)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "iam-market-landscape", 15);
+  });
+</script>
+</body>
+</html>
