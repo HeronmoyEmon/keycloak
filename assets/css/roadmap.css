@@ -26,7 +26,10 @@
 /* ---------- The roadmap map ---------- */
 .road-map { position: relative; margin: 1.8em 0 0; }
 .road-svg-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
-.road-connector { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 4 5; }
+/* accent-strong (not --border) so the curves stay clearly visible against the page in every theme —
+   it's defined per theme with enough contrast against --bg to read as text, which is more than enough
+   contrast to read as a thin line too. */
+.road-connector { fill: none; stroke: var(--accent-strong); stroke-width: 1.75; stroke-dasharray: 4 5; opacity: 0.55; }
 
 .road-rows { position: relative; z-index: 1; }
 .road-spine-line {

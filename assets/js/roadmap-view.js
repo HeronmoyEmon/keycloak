@@ -159,14 +159,19 @@
       var bx = (side === "right" ? badgeRect.right : badgeRect.left) - mapRect.left + dir * STANDOFF;
       var by = (badgeRect.top + badgeRect.height / 2) - mapRect.top;
       var leaves = Array.prototype.slice.call(cluster.querySelectorAll(".road-leaf"));
-      leaves.forEach(function (leaf) {
+      leaves.forEach(function (leaf, leafIndex) {
         var leafRect = leaf.getBoundingClientRect();
         var lx = (side === "right" ? leafRect.left : leafRect.right) - mapRect.left - dir * STANDOFF;
         var ly = (leafRect.top + leafRect.height / 2) - mapRect.top;
-        var midX = (bx + lx) / 2;
+        // Vary the curve's bend per leaf (0.38 / 0.5 / 0.62, cycling) instead of always splitting the
+        // control points at the exact midpoint — a roadmap.sh-style branch reads as organically curved
+        // rather than every line being an identical mechanical elbow.
+        var split = 0.5 + ((leafIndex % 3) - 1) * 0.12;
+        var c1x = bx + (lx - bx) * split;
+        var c2x = bx + (lx - bx) * (1 - split);
         paths.push(
           '<path class="road-connector" d="M' + bx.toFixed(1) + ',' + by.toFixed(1) +
-          ' C ' + midX.toFixed(1) + ',' + by.toFixed(1) + ' ' + midX.toFixed(1) + ',' + ly.toFixed(1) +
+          ' C ' + c1x.toFixed(1) + ',' + by.toFixed(1) + ' ' + c2x.toFixed(1) + ',' + ly.toFixed(1) +
           ' ' + lx.toFixed(1) + ',' + ly.toFixed(1) + '"></path>'
         );
       });
