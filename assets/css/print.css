@@ -11,4 +11,18 @@
   }
   a { color: #000; text-decoration: underline; }
   figure.diagram { background: #fff; }
+
+  /* Slide-deck chapters: print the whole chapter stacked, not just the active slide. */
+  .deck-outline, .deck-pager, .deck-position, .outline-toggle, .roadmap-link { display: none !important; }
+  .deck-layout { display: block; }
+  .deck-main { padding: 0; max-width: 100%; }
+  .deck-viewport { max-width: 100%; }
+  .slide { display: block !important; break-inside: avoid-page; page-break-before: always; }
+  .slide:first-child { page-break-before: avoid; }
+
+  /* Roadmap landing page: flatten the track, drop the connector line and progress rings. */
+  .road-list::before { display: none; }
+  .road-marker { border: 1px solid #999 !important; background: #fff !important; }
+  .road-marker .road-marker-inner { color: #000 !important; }
+  .top-quicklinks { display: none; }
 }

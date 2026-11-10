@@ -1,0 +1,89 @@
+/* ============================================================
+   Visual roadmap landing page (index.html). roadmap.sh-style
+   vertical path, grouped by Part, one continuous connector line.
+   Clean-room build (CLAUDE.md §2.6). Reuses book.css tokens.
+   ============================================================ */
+
+.roadmap-shell { max-width: 880px; margin: 0 auto; padding: 2.2em 1.5em 5em; }
+
+.top-quicklinks { display: flex; gap: 0.3em; flex-wrap: wrap; }
+.top-quicklinks a {
+  color: var(--text-muted); font-size: 0.88em; font-weight: 700;
+  padding: 0.4em 0.7em; border-radius: 7px;
+}
+.top-quicklinks a:hover { background: var(--accent-soft); color: var(--accent-strong); text-decoration: none; }
+
+.roadmap-hero { text-align: center; margin-bottom: 2.2em; }
+.roadmap-hero .badge { margin-bottom: 0.8em; }
+.roadmap-hero h1 { font-size: 2.1em; margin: 0.3em 0 0.5em; }
+.roadmap-hero .lede { max-width: 620px; margin: 0 auto 1.6em; }
+.roadmap-hero .stat-grid { max-width: 640px; margin: 0 auto; }
+
+/* ---------- The roadmap track ---------- */
+.road-list { list-style: none; margin: 2em 0 0; padding: 0; position: relative; }
+.road-list::before {
+  content: ""; position: absolute; left: 27px; top: 8px; bottom: 8px; width: 3px;
+  background: var(--border); border-radius: 999px;
+}
+.road-group-header {
+  position: relative; z-index: 1; margin: 2.2em 0 1em; padding-left: 64px;
+}
+.road-group-header:first-child { margin-top: 0; }
+.road-group-header h2 {
+  margin: 0; border-bottom: none; padding: 0; font-size: 1.1em;
+  color: var(--accent-strong);
+}
+.road-group-header .road-group-progress { font-size: 0.78em; color: var(--text-muted); font-weight: 600; }
+
+.road-node { position: relative; z-index: 1; margin: 0 0 12px; }
+.road-card {
+  display: flex; align-items: center; gap: 16px; text-decoration: none; color: var(--text);
+  padding: 0.5em 0.9em 0.5em 0; border-radius: var(--radius);
+}
+a.road-card:hover { background: var(--accent-soft); text-decoration: none; }
+a.road-card:hover .road-card-title { color: var(--accent-strong); }
+
+.road-marker {
+  flex: 0 0 auto; position: relative; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--surface); border: 3px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+}
+.road-marker .road-marker-inner {
+  width: 44px; height: 44px; border-radius: 50%; background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 0.95em;
+}
+
+/* Built, unread: accent outline ring */
+.road-node.built .road-marker { border-color: var(--accent); }
+.road-node.built .road-marker .road-marker-inner { color: var(--accent-strong); }
+
+/* Built, partially read: conic-gradient progress ring (pct set inline via style) */
+.road-node.in-progress .road-marker { border-color: var(--border); background: conic-gradient(var(--accent) calc(var(--pct, 0) * 1%), var(--border) 0); }
+
+/* Built, fully read: solid filled marker with checkmark */
+.road-node.complete .road-marker { border-color: var(--success); background: var(--success); }
+.road-node.complete .road-marker .road-marker-inner { background: transparent; color: var(--accent-contrast); font-size: 1.3em; }
+
+/* Locked / not built yet */
+.road-node.locked .road-marker { border-color: var(--border); opacity: 0.55; }
+.road-node.locked .road-card { opacity: 0.55; cursor: default; }
+.road-node.locked .road-marker .road-marker-inner { color: var(--text-muted); }
+
+.road-card-body { flex: 1; min-width: 0; }
+.road-card-title { display: block; font-weight: 700; font-size: 1.02em; }
+.road-card-meta { display: flex; gap: 0.5em; align-items: center; margin-top: 0.25em; flex-wrap: wrap; }
+.road-card-meta .badge { font-size: 0.74em; padding: 0.15em 0.6em; }
+.road-card-progress-text { font-size: 0.78em; color: var(--success); font-weight: 700; }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 560px) {
+  .roadmap-shell { padding: 1.4em 1em 4em; }
+  .road-list::before { left: 23px; }
+  .road-group-header { padding-left: 54px; }
+  .road-marker { width: 46px; height: 46px; }
+  .road-marker .road-marker-inner { width: 36px; height: 36px; font-size: 0.85em; }
+  .road-card { gap: 12px; }
+  .top-quicklinks { gap: 0.1em; }
+  .top-quicklinks a { padding: 0.35em 0.5em; font-size: 0.82em; }
+}

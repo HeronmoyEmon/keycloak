@@ -657,6 +657,42 @@ project) remain.
   and alternate port, while keeping the chapter's reader-facing documented commands as the plain form.
   No chapter content was compromised, but recommend standardizing this (assign each parallel lab-bearing
   chapter its own project name/port up front in the brief) for Part V's parallel rounds.
+- **Major pending design change (2026-11-10), not yet approved**: at the user's explicit request, the
+  site is moving away from CLAUDE.md §3/§4's "book" page model (one long scrollable chapter page, a
+  global 50-chapter sidebar on every page) toward two new things:
+  1. **`index.html` is now a roadmap.sh-style visual roadmap** (vertical path, grouped by Part, one
+     chapter per node, clickable once built, showing a progress ring/checkmark once slides are marked
+     read) instead of the old shell/stat-tiles/parts-list landing page. New files:
+     `assets/css/roadmap.css`, `assets/js/roadmap-view.js`.
+  2. **Chapter pages are now slide decks, not single-scroll books**: each chapter's existing content is
+     unchanged but re-chunked into `<section class="slide" data-slide="id" data-title="...">` blocks,
+     one shown at a time, with a left outline panel (this chapter's slides only, not the global 50-
+     chapter list — that panel also carries a "← Back to roadmap" link), a bottom pager (Previous /
+     Mark as read / Next), and a "Slide N of M" position label. The pager's Previous/Next buttons bridge
+     to the adjacent chapter when at the first/last slide, subsuming the old `#chapter-nav-footer`
+     mechanism. New files: `assets/css/slides.css`, `assets/js/slides.js`. Progress persists to
+     `localStorage["iam:read:<slug>"] = {total, done: {slideId: true, ...}}`, which `roadmap-view.js`
+     reads (without loading any chapter page) to compute per-chapter and overall progress on the
+     roadmap. Pattern adapted (clean-room, not copied) from a `localStorage`-backed "mark as
+     learned"/per-lesson-pager pattern the user pointed at as a reference.
+  - `book.js`/`quiz.js`/`glossary-data.js`/`quiz-data.js`/`nav-data.js` are all **unchanged** — the new
+    chapter template still loads them in the same order and still calls `QuizEngine.renderQuiz(...)`;
+    `book.js`'s old `buildSidebar()`/`buildChapterFooter()` simply no-op on the new template since it no
+    longer has `#sidebar-nav`/`#chapter-nav-footer` mount ids (verified safe via their existing
+    null-guards — no edits needed to book.js itself).
+  - **Scope decision (the user chose this explicitly over converting everything at once, or leaving
+    00-30 as-is)**: build the new template + convert ONE chapter (01 — What Is IAM?) as a live
+    reference, verify it works, then stop and show the user before touching the other 29 already-built
+    chapters. Verified via Python's `html.parser` (14 unique slides, balanced tags) and via a full
+    jsdom simulation of the real page (slide switching, `localStorage` round-trip, outline navigation,
+    pager state, the chapter-to-chapter bridge at slide 0/N-1 all confirmed working) — no browser tool
+    exists in this environment, so this jsdom simulation is the strongest verification available short
+    of the user's own eyes.
+  - **Not yet done, pending the user's review of chapter 01**: converting chapters 02-30 to the new
+    slide format (CLAUDE.md §4's old per-chapter template, "Done" entries above, and the skim-reference
+    convention in CLAUDE.md §7 all still describe the old book model — update CLAUDE.md itself once the
+    new design is approved, so future sessions don't resurrect the old template). All future new
+    chapters (31+) should use the new slide template from the start once approved.
 
 ## Cross-volume / shared-asset notes
 
