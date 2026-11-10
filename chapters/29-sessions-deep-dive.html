@@ -5,164 +5,181 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sessions Deep Dive &amp; SSO Behavior — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "sessions-deep-dive";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part V — Keycloak Operations</span>
-      <span class="badge minutes">~40 min</span>
-      <span class="badge lab">Hands-on lab</span>
-    </div>
-    <h1>29. Sessions Deep Dive &amp; SSO Behavior</h1>
-    <p class="lede">Chapter 21 configured <code>ssoSessionIdleTimeout</code>, <code>ssoSessionMaxLifespan</code>,
-    <code>revokeRefreshToken</code>, and the client/offline session fields on <code>northwind-apps</code> — and
-    confirmed each one with a <code>kcadm.sh get</code> read-back. But setting a number on a realm is not the
-    same as watching that number actually do something to a real session. This chapter closes that gap: it
-    creates a real session for a real user, lists it through the Admin REST API, revokes it, and proves the
-    revocation genuinely took effect with an independent second read — not inferred from the revoke call's own
-    (empty) response. It also does the thing chapter 7 could only describe in the abstract: it puts the same
-    browser session in front of <em>two different registered clients</em> in the same realm and shows, with
-    real captured output, that the second one never asks for a password.</p>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
 
-    <h2>Why this matters</h2>
-    <p>"Revoke that user's session right now" is one of the most common incident-response requests an IAM
-    specialist receives — a laptop is reported stolen, an account is suspected compromised, an employee is
-    terminated mid-shift — and it has to be answered correctly and quickly, usually without Admin Console
-    access to the specific realm in front of the person who needs the answer. Knowing the exact REST call that
-    actually kills a session, what "killed" provably means (not what you assume it means), and how that
-    differs from merely rejecting one stale token is the difference between a confident two-minute response and
-    a panicked, half-right one. The SSO mechanism itself is just as operationally important in the other
-    direction: understanding <em>why</em> a second application doesn't re-prompt for a password is what lets you
-    debug it correctly when a reader's own app unexpectedly <em>does</em> re-prompt, instead of guessing.</p>
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part V — Keycloak Operations</span>
+          <span class="badge minutes">~40 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>29. Sessions Deep Dive &amp; SSO Behavior</h1>
+        <p class="lede">Chapter 21 configured <code>ssoSessionIdleTimeout</code>, <code>ssoSessionMaxLifespan</code>,
+        <code>revokeRefreshToken</code>, and the client/offline session fields on <code>northwind-apps</code> — and
+        confirmed each one with a <code>kcadm.sh get</code> read-back. But setting a number on a realm is not the
+        same as watching that number actually do something to a real session. This chapter closes that gap: it
+        creates a real session for a real user, lists it through the Admin REST API, revokes it, and proves the
+        revocation genuinely took effect with an independent second read — not inferred from the revoke call's own
+        (empty) response. It also does the thing chapter 7 could only describe in the abstract: it puts the same
+        browser session in front of <em>two different registered clients</em> in the same realm and shows, with
+        real captured output, that the second one never asks for a password.</p>
 
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">What concept is this?</div>
-      <p>Chapter 7 described an SSO session as state the identity provider keeps for a browser, checked silently
-      on a later redirect from a different connected application so the user isn't asked to log in again.
-      Chapter 8 drew a sharper line: a <strong>session</strong> is the thing on the IdP side that makes repeat
-      logins unnecessary; <strong>tokens</strong> are what get handed to applications, each with its own,
-      usually much shorter, independent lifetime. Both chapters described this entirely in the abstract — no
-      running Keycloak existed yet to point at. This chapter makes every piece of that concrete and observable:
-      a real session with a real id, listed and revoked through two real REST calls, and a real demonstration
-      of exactly which cookie and which silent check is the SSO mechanism chapter 7 was describing all along.</p>
-    </div>
+        <h2>Why this matters</h2>
+        <p>"Revoke that user's session right now" is one of the most common incident-response requests an IAM
+        specialist receives — a laptop is reported stolen, an account is suspected compromised, an employee is
+        terminated mid-shift — and it has to be answered correctly and quickly, usually without Admin Console
+        access to the specific realm in front of the person who needs the answer. Knowing the exact REST call that
+        actually kills a session, what "killed" provably means (not what you assume it means), and how that
+        differs from merely rejecting one stale token is the difference between a confident two-minute response and
+        a panicked, half-right one. The SSO mechanism itself is just as operationally important in the other
+        direction: understanding <em>why</em> a second application doesn't re-prompt for a password is what lets you
+        debug it correctly when a reader's own app unexpectedly <em>does</em> re-prompt, instead of guessing.</p>
 
-    <h2>The session hierarchy: one SSO session, many client sessions</h2>
-    <p>Keycloak's own <a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_timeouts">Server
-    Administration Guide</a> (fetched live for this chapter, version 26.8.2 — the same version this lab ran)
-    states the hierarchy directly, in its description of the Client Session Idle field: <em>"the SSO user
-    session is the parent of zero or more client sessions, one client session is created for every different
-    client app the user logs in."</em> Chapter 21 introduced <code>Client Session Idle</code>/<code>Max</code>
-    as settings; what the guide adds, and what this chapter's lab reproduces for real below, is the shape: one
-    SSO session per browser-realm pair, with one child client session underneath it for every distinct client
-    the browser has authenticated to during that session.</p>
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 7 described an SSO session as state the identity provider keeps for a browser, checked silently
+          on a later redirect from a different connected application so the user isn't asked to log in again.
+          Chapter 8 drew a sharper line: a <strong>session</strong> is the thing on the IdP side that makes repeat
+          logins unnecessary; <strong>tokens</strong> are what get handed to applications, each with its own,
+          usually much shorter, independent lifetime. Both chapters described this entirely in the abstract — no
+          running Keycloak existed yet to point at. This chapter makes every piece of that concrete and observable:
+          a real session with a real id, listed and revoked through two real REST calls, and a real demonstration
+          of exactly which cookie and which silent check is the SSO mechanism chapter 7 was describing all along.</p>
+        </div>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Three session-shaped objects this chapter distinguishes, confirmed against Keycloak 26.8.2</caption>
-        <thead><tr><th>Object</th><th>Scope</th><th>What governs its lifetime</th></tr></thead>
-        <tbody>
-          <tr><td>SSO (user) session</td><td>One per browser per realm</td><td>SSO Session Idle / SSO Session Max (ch. 21) — the parent object; its own id is the <code>sid</code> claim stamped into every token minted under it, and the <code>id</code> field returned by the REST calls this chapter uses.</td></tr>
-          <tr><td>Client session</td><td>One per client the browser has visited within that SSO session</td><td>Client Session Idle / Max — defaults to <code>0</code> on a fresh realm, which per the guide's own wording "uses the same idle timeout [or max lifespan] in the SSO Session Idle [Max] configuration" — <code>0</code> means <em>inherit</em>, not <em>unlimited</em>, confirmed by reading a real fresh realm's fields in this chapter's lab.</td></tr>
-          <tr><td>Offline session</td><td>One per client granted <code>offline_access</code></td><td>Offline Session Idle / Offline Session Max Limited (ch. 21) — survives the SSO session's own death; out of this chapter's lab scope, covered conceptually in ch. 21.</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="session-hierarchy" data-title="Session hierarchy">
+        <h2>The session hierarchy: one SSO session, many client sessions</h2>
+        <p>Keycloak's own <a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_timeouts">Server
+        Administration Guide</a> (fetched live for this chapter, version 26.8.2 — the same version this lab ran)
+        states the hierarchy directly, in its description of the Client Session Idle field: <em>"the SSO user
+        session is the parent of zero or more client sessions, one client session is created for every different
+        client app the user logs in."</em> Chapter 21 introduced <code>Client Session Idle</code>/<code>Max</code>
+        as settings; what the guide adds, and what this chapter's lab reproduces for real below, is the shape: one
+        SSO session per browser-realm pair, with one child client session underneath it for every distinct client
+        the browser has authenticated to during that session.</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 290" role="img" aria-labelledby="t1 d1">
-        <title id="t1">One SSO session as the parent of two client sessions, with jane.doe's real ids</title>
-        <desc id="d1">A tree diagram. At the top, a box labeled SSO session, id vzx2JU48HbGlFh3OkVZSqNes, user
-        jane.doe, governed by SSO Session Idle and SSO Session Max. Two lines branch down to two child boxes:
-        client session for northwind-dashboard, and client session for northwind-support-portal, each labeled
-        as governed by Client Session Idle and Client Session Max, which default to zero meaning "inherit the
-        parent SSO session's own idle and max values," not "unlimited." A caption states both client sessions
-        were confirmed to exist under literally the same SSO session id via a real GET users by id sessions
-        call against a live Keycloak 26.8.2 instance in this chapter's lab.</desc>
-        <rect x="320" y="20" width="260" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">SSO session</text>
-        <text x="450" y="63" text-anchor="middle" class="diagram-label-muted" font-size="10">id: vzx2JU48HbGlFh3OkVZSqNes · user: jane.doe</text>
-        <text x="450" y="79" text-anchor="middle" class="diagram-label-muted" font-size="10">governed by SSO Session Idle / Max</text>
+        <div class="table-wrap">
+          <table>
+            <caption>Three session-shaped objects this chapter distinguishes, confirmed against Keycloak 26.8.2</caption>
+            <thead><tr><th>Object</th><th>Scope</th><th>What governs its lifetime</th></tr></thead>
+            <tbody>
+              <tr><td>SSO (user) session</td><td>One per browser per realm</td><td>SSO Session Idle / SSO Session Max (ch. 21) — the parent object; its own id is the <code>sid</code> claim stamped into every token minted under it, and the <code>id</code> field returned by the REST calls this chapter uses.</td></tr>
+              <tr><td>Client session</td><td>One per client the browser has visited within that SSO session</td><td>Client Session Idle / Max — defaults to <code>0</code> on a fresh realm, which per the guide's own wording "uses the same idle timeout [or max lifespan] in the SSO Session Idle [Max] configuration" — <code>0</code> means <em>inherit</em>, not <em>unlimited</em>, confirmed by reading a real fresh realm's fields in this chapter's lab.</td></tr>
+              <tr><td>Offline session</td><td>One per client granted <code>offline_access</code></td><td>Offline Session Idle / Offline Session Max Limited (ch. 21) — survives the SSO session's own death; out of this chapter's lab scope, covered conceptually in ch. 21.</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-        <line x1="400" y1="90" x2="230" y2="150" class="diagram-stroke" marker-end="url(#arrowSD)"/>
-        <rect x="80" y="150" width="300" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="230" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">client session — northwind-dashboard</text>
-        <text x="230" y="192" text-anchor="middle" class="diagram-label-muted" font-size="10">Client Session Idle/Max: 0 (default)</text>
-        <text x="230" y="208" text-anchor="middle" class="diagram-label-muted" font-size="10">= inherits SSO Session Idle/Max,</text>
-        <text x="230" y="222" text-anchor="middle" class="diagram-label-muted" font-size="10">not "unlimited"</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 290" role="img" aria-labelledby="t1 d1">
+            <title id="t1">One SSO session as the parent of two client sessions, with jane.doe's real ids</title>
+            <desc id="d1">A tree diagram. At the top, a box labeled SSO session, id vzx2JU48HbGlFh3OkVZSqNes, user
+            jane.doe, governed by SSO Session Idle and SSO Session Max. Two lines branch down to two child boxes:
+            client session for northwind-dashboard, and client session for northwind-support-portal, each labeled
+            as governed by Client Session Idle and Client Session Max, which default to zero meaning "inherit the
+            parent SSO session's own idle and max values," not "unlimited." A caption states both client sessions
+            were confirmed to exist under literally the same SSO session id via a real GET users by id sessions
+            call against a live Keycloak 26.8.2 instance in this chapter's lab.</desc>
+            <rect x="320" y="20" width="260" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">SSO session</text>
+            <text x="450" y="63" text-anchor="middle" class="diagram-label-muted" font-size="10">id: vzx2JU48HbGlFh3OkVZSqNes · user: jane.doe</text>
+            <text x="450" y="79" text-anchor="middle" class="diagram-label-muted" font-size="10">governed by SSO Session Idle / Max</text>
 
-        <line x1="500" y1="90" x2="670" y2="150" class="diagram-stroke" marker-end="url(#arrowSD)"/>
-        <rect x="520" y="150" width="300" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="670" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">client session — northwind-support-portal</text>
-        <text x="670" y="192" text-anchor="middle" class="diagram-label-muted" font-size="10">Client Session Idle/Max: 0 (default)</text>
-        <text x="670" y="208" text-anchor="middle" class="diagram-label-muted" font-size="10">= inherits SSO Session Idle/Max</text>
+            <line x1="400" y1="90" x2="230" y2="150" class="diagram-stroke" marker-end="url(#arrowSD)"/>
+            <rect x="80" y="150" width="300" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="230" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">client session — northwind-dashboard</text>
+            <text x="230" y="192" text-anchor="middle" class="diagram-label-muted" font-size="10">Client Session Idle/Max: 0 (default)</text>
+            <text x="230" y="208" text-anchor="middle" class="diagram-label-muted" font-size="10">= inherits SSO Session Idle/Max,</text>
+            <text x="230" y="222" text-anchor="middle" class="diagram-label-muted" font-size="10">not "unlimited"</text>
 
-        <text x="450" y="262" text-anchor="middle" class="diagram-label-muted" font-size="11">Confirmed live: a single GET /admin/realms/northwind-apps/users/{id}/sessions call returned one session object whose "clients" map listed both client UUIDs.</text>
-        <defs>
-          <marker id="arrowSD" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 29.1 — One SSO session, two real client sessions underneath it, exactly as Keycloak's
-      own guide describes the hierarchy.</figcaption>
-    </figure>
+            <line x1="500" y1="90" x2="670" y2="150" class="diagram-stroke" marker-end="url(#arrowSD)"/>
+            <rect x="520" y="150" width="300" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="670" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">client session — northwind-support-portal</text>
+            <text x="670" y="192" text-anchor="middle" class="diagram-label-muted" font-size="10">Client Session Idle/Max: 0 (default)</text>
+            <text x="670" y="208" text-anchor="middle" class="diagram-label-muted" font-size="10">= inherits SSO Session Idle/Max</text>
 
-    <h2>The Admin REST API's session-management surface</h2>
-    <p>Every endpoint below was fetched directly from Keycloak's published <a
-    href="https://www.keycloak.org/docs-api/latest/rest-api/openapi.json">Admin REST API OpenAPI
-    definition</a> (not recalled from memory, not paraphrased from a possibly-stale blog post) and then
-    actually called against a live Keycloak 26.8.2 instance in this chapter's lab — every path, verb, and
-    response code below is independently confirmed twice over.</p>
+            <text x="450" y="262" text-anchor="middle" class="diagram-label-muted" font-size="11">Confirmed live: a single GET /admin/realms/northwind-apps/users/{id}/sessions call returned one session object whose "clients" map listed both client UUIDs.</text>
+            <defs>
+              <marker id="arrowSD" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 29.1 — One SSO session, two real client sessions underneath it, exactly as Keycloak's
+          own guide describes the hierarchy.</figcaption>
+        </figure>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Session-management endpoints, quoted from the real OpenAPI definition and exercised live</caption>
-        <thead><tr><th>Endpoint</th><th>OpenAPI summary (verbatim)</th><th>Confirmed response code</th></tr></thead>
-        <tbody>
-          <tr><td><code>GET /admin/realms/{realm}/users/{user-id}/sessions</code></td><td>"Get sessions associated with the user"</td><td><code>200</code>, body: array of session objects (empty array when none exist — confirmed both ways in this lab)</td></tr>
-          <tr><td><code>DELETE /admin/realms/{realm}/sessions/{session}</code></td><td>"Remove a specific user session." "Any client that has an admin url will also be told to invalidate this particular session."</td><td><code>204</code>, no body</td></tr>
-          <tr><td><code>POST /admin/realms/{realm}/users/{user-id}/logout</code></td><td>"Remove all user sessions associated with the user. Also send notification to all clients that have an admin URL to invalidate the sessions for the particular user."</td><td><code>204</code>, no body</td></tr>
-          <tr><td><code>POST /admin/realms/{realm}/logout-all</code></td><td>"Removes all user sessions." "Any client that has an admin url will also be told to invalidate any sessions they have."</td><td><code>200</code> (realm-wide — not exercised in this lab; too destructive for a shared realm, documented here, not run)</td></tr>
-          <tr><td><code>GET /admin/realms/{realm}/clients/{client-uuid}/user-sessions</code></td><td>"Get user sessions for client. Returns a list of user sessions associated with this client."</td><td><code>200</code> — the per-client mirror of the per-user listing above; not exercised live in this lab, documented from the spec</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="rest-api-surface" data-title="Admin REST API: session endpoints">
+        <h2>The Admin REST API's session-management surface</h2>
+        <p>Every endpoint below was fetched directly from Keycloak's published <a
+        href="https://www.keycloak.org/docs-api/latest/rest-api/openapi.json">Admin REST API OpenAPI
+        definition</a> (not recalled from memory, not paraphrased from a possibly-stale blog post) and then
+        actually called against a live Keycloak 26.8.2 instance in this chapter's lab — every path, verb, and
+        response code below is independently confirmed twice over.</p>
 
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall — the session <code>id</code> is not the user id, and not a token</div>
-      <p><code>DELETE /sessions/{session}</code> takes the <strong>session's own id</strong> — the same string
-      that shows up as the <code>sid</code> claim inside every token minted under that session, and as the
-      <code>id</code> field in a <code>GET users/{id}/sessions</code> response — not the user's id (used by the
-      <em>other</em> two endpoints) and not an access or refresh token. If you see a <code>404</code> from this
-      endpoint, the cause is very often exactly this confusion: a user id or a token value was passed where a
-      session id belongs.</p>
-    </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Session-management endpoints, quoted from the real OpenAPI definition and exercised live</caption>
+            <thead><tr><th>Endpoint</th><th>OpenAPI summary (verbatim)</th><th>Confirmed response code</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /admin/realms/{realm}/users/{user-id}/sessions</code></td><td>"Get sessions associated with the user"</td><td><code>200</code>, body: array of session objects (empty array when none exist — confirmed both ways in this lab)</td></tr>
+              <tr><td><code>DELETE /admin/realms/{realm}/sessions/{session}</code></td><td>"Remove a specific user session." "Any client that has an admin url will also be told to invalidate this particular session."</td><td><code>204</code>, no body</td></tr>
+              <tr><td><code>POST /admin/realms/{realm}/users/{user-id}/logout</code></td><td>"Remove all user sessions associated with the user. Also send notification to all clients that have an admin URL to invalidate the sessions for the particular user."</td><td><code>204</code>, no body</td></tr>
+              <tr><td><code>POST /admin/realms/{realm}/logout-all</code></td><td>"Removes all user sessions." "Any client that has an admin url will also be told to invalidate any sessions they have."</td><td><code>200</code> (realm-wide — not exercised in this lab; too destructive for a shared realm, documented here, not run)</td></tr>
+              <tr><td><code>GET /admin/realms/{realm}/clients/{client-uuid}/user-sessions</code></td><td>"Get user sessions for client. Returns a list of user sessions associated with this client."</td><td><code>200</code> — the per-client mirror of the per-user listing above; not exercised live in this lab, documented from the spec</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <h2>SSO across clients: the mechanism, demonstrated with a real cookie jar</h2>
-    <p>Chapter 7 said an identity provider keeps state for a browser so a second application's redirect is
-    recognized silently. This chapter's lab reproduced that mechanism end to end with nothing but
-    <code>curl</code> and a cookie jar — no browser tool exists in this environment, but the mechanism itself
-    is entirely HTTP: a cookie, and a server-side check against it. Two real clients were registered in
-    <code>northwind-apps</code> for this: <code>northwind-dashboard</code> (confidential, already used by
-    chapter 24's lab) and a new one, <code>northwind-support-portal</code> (public, standard flow).</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — the session <code>id</code> is not the user id, and not a token</div>
+          <p><code>DELETE /sessions/{session}</code> takes the <strong>session's own id</strong> — the same string
+          that shows up as the <code>sid</code> claim inside every token minted under that session, and as the
+          <code>id</code> field in a <code>GET users/{id}/sessions</code> response — not the user's id (used by the
+          <em>other</em> two endpoints) and not an access or refresh token. If you see a <code>404</code> from this
+          endpoint, the cause is very often exactly this confusion: a user id or a token value was passed where a
+          session id belongs.</p>
+        </div>
+      </section>
 
-    <ol class="lab-steps">
-      <li><p>Request an authorization code for <strong>client 1</strong> with an empty cookie jar — Keycloak
-      has no session for this browser yet, so it serves a real login form:</p>
+      <section class="slide" data-slide="sso-across-clients" data-title="SSO across clients, with a real cookie jar">
+        <h2>SSO across clients: the mechanism, demonstrated with a real cookie jar</h2>
+        <p>Chapter 7 said an identity provider keeps state for a browser so a second application's redirect is
+        recognized silently. This chapter's lab reproduced that mechanism end to end with nothing but
+        <code>curl</code> and a cookie jar — no browser tool exists in this environment, but the mechanism itself
+        is entirely HTTP: a cookie, and a server-side check against it. Two real clients were registered in
+        <code>northwind-apps</code> for this: <code>northwind-dashboard</code> (confidential, already used by
+        chapter 24's lab) and a new one, <code>northwind-support-portal</code> (public, standard flow).</p>
+
+        <ol class="lab-steps">
+          <li><p>Request an authorization code for <strong>client 1</strong> with an empty cookie jar — Keycloak
+          has no session for this browser yet, so it serves a real login form:</p>
 <pre><code>$ curl -s -c cookies.txt -b cookies.txt \
     "http://localhost:8080/realms/northwind-apps/protocol/openid-connect/auth?\
 client_id=northwind-dashboard&amp;response_type=code&amp;scope=openid&amp;\
@@ -172,9 +189,9 @@ redirect_uri=https://dashboard.northwindapps.internal/callback&amp;state=client1
 session_code=I4dtZfgN93azJX_ZH892b_l20mSK3oYtF1HoIvtDRdA&amp;execution=57410e92-...&amp;\
 client_id=northwind-dashboard&amp;tab_id=cyKTHLMJ3fk&amp;client_data=eyJydSI6..."</code></pre></li>
 
-      <li><p>POST real credentials to that exact form action, same cookie jar, without following the redirect
-      — capturing the <code>Location</code> header is the point, not the (unreachable) redirect target
-      itself:</p>
+          <li><p>POST real credentials to that exact form action, same cookie jar, without following the redirect
+          — capturing the <code>Location</code> header is the point, not the (unreachable) redirect target
+          itself:</p>
 <pre><code>$ curl -s -i -c cookies.txt -b cookies.txt \
     --data-urlencode "username=jane.doe" --data-urlencode "password=Lab_Password_2026!" \
     --data-urlencode "credentialId=" "&lt;form action URL above&gt;"</code></pre>
@@ -182,16 +199,16 @@ client_id=northwind-dashboard&amp;tab_id=cyKTHLMJ3fk&amp;client_data=eyJydSI6...
 Location: https://dashboard.northwindapps.internal/callback?state=client1state&amp;\
 session_state=vzx2JU48HbGlFh3OkVZSqNes&amp;iss=http%3A%2F%2Flocalhost%3A8080%2Frealms%2F\
 northwind-apps&amp;code=6722ba47-...-14ed-dc8d-5fc0-ab84545c1f1f.vzx2JU48HbGlFh3OkVZSqNes.eb3cb5c6-...</code></pre>
-      <p>A real authorization code, and a real <code>session_state</code> — <code>vzx2JU48HbGlFh3OkVZSqNes</code>
-      — the id of the SSO session credentials just created. The cookie jar now holds a real
-      <code>KEYCLOAK_SESSION</code> cookie, set on Keycloak's own domain, not either client's:</p>
+          <p>A real authorization code, and a real <code>session_state</code> — <code>vzx2JU48HbGlFh3OkVZSqNes</code>
+          — the id of the SSO session credentials just created. The cookie jar now holds a real
+          <code>KEYCLOAK_SESSION</code> cookie, set on Keycloak's own domain, not either client's:</p>
 <pre><code>$ grep -v '^#' cookies.txt | awk '{print $1, $6}'</code></pre>
 <pre><code>localhost KEYCLOAK_SESSION
 localhost KC_AUTH_SESSION_HASH</code></pre></li>
 
-      <li><p><strong>The payoff:</strong> request authorization for <strong>client 2</strong> —
-      <code>northwind-support-portal</code>, a completely different registered client — reusing that exact
-      same cookie jar, submitting no credentials at all:</p>
+          <li><p><strong>The payoff:</strong> request authorization for <strong>client 2</strong> —
+          <code>northwind-support-portal</code>, a completely different registered client — reusing that exact
+          same cookie jar, submitting no credentials at all:</p>
 <pre><code>$ curl -s -i -c cookies.txt -b cookies.txt \
     "http://localhost:8080/realms/northwind-apps/protocol/openid-connect/auth?\
 client_id=northwind-support-portal&amp;response_type=code&amp;scope=openid&amp;\
@@ -200,12 +217,12 @@ redirect_uri=https://support.northwindapps.internal/callback&amp;state=client2st
 Location: https://support.northwindapps.internal/callback?state=client2state&amp;\
 session_state=vzx2JU48HbGlFh3OkVZSqNes&amp;iss=http%3A%2F%2Flocalhost%3A8080%2Frealms%2F\
 northwind-apps&amp;code=f4740b0f-...-810d-e35d-dd43-9869e74c4b14.vzx2JU48HbGlFh3OkVZSqNes.1c6b712f-...</code></pre>
-      <p>No login form. No credentials. An immediate <code>302</code> with a fresh authorization code for
-      <strong>client 2</strong> — and the exact same <code>session_state</code>,
-      <code>vzx2JU48HbGlFh3OkVZSqNes</code>, as client 1's redirect. One browser, one cookie, two completely
-      independent applications, one underlying session. A follow-up <code>GET users/{id}/sessions</code>
-      confirmed it directly — a single session object, with <em>both</em> client UUIDs in its
-      <code>clients</code> map:</p>
+          <p>No login form. No credentials. An immediate <code>302</code> with a fresh authorization code for
+          <strong>client 2</strong> — and the exact same <code>session_state</code>,
+          <code>vzx2JU48HbGlFh3OkVZSqNes</code>, as client 1's redirect. One browser, one cookie, two completely
+          independent applications, one underlying session. A follow-up <code>GET users/{id}/sessions</code>
+          confirmed it directly — a single session object, with <em>both</em> client UUIDs in its
+          <code>clients</code> map:</p>
 <pre><code>[ {
   "id" : "vzx2JU48HbGlFh3OkVZSqNes",
   "username" : "jane.doe",
@@ -214,219 +231,228 @@ northwind-apps&amp;code=f4740b0f-...-810d-e35d-dd43-9869e74c4b14.vzx2JU48HbGlFh3
     "eb3cb5c6-8225-4231-a9cc-44501c13288d" : "northwind-dashboard"
   }
 } ]</code></pre></li>
-    </ol>
+        </ol>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 310" role="img" aria-labelledby="t2 d2">
-        <title id="t2">SSO across two clients, one browser cookie, confirmed with real curl output</title>
-        <desc id="d2">A sequence diagram with three lanes: Browser (cookie jar), Keycloak, and two client
-        applications. Step 1: the browser requests authorization for Client 1 with an empty cookie jar;
-        Keycloak returns a real login form. Step 2: the browser posts real credentials; Keycloak sets a
-        KEYCLOAK_SESSION cookie on its own domain and redirects back to Client 1 with an authorization code and
-        a session_state value. Step 3: the browser, reusing the same cookie jar with no credentials submitted,
-        requests authorization for Client 2; Keycloak checks the KEYCLOAK_SESSION cookie silently, finds a
-        live session, and immediately redirects back to Client 2 with a second authorization code and the same
-        session_state value as step 2 — proving one shared session served two independent clients.</desc>
-        <rect x="30" y="20" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
-        <text x="130" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Browser (cookie jar)</text>
-        <rect x="370" y="20" width="160" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
-        <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Keycloak</text>
-        <rect x="670" y="20" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
-        <text x="770" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Client 1 / Client 2</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 310" role="img" aria-labelledby="t2 d2">
+            <title id="t2">SSO across two clients, one browser cookie, confirmed with real curl output</title>
+            <desc id="d2">A sequence diagram with three lanes: Browser (cookie jar), Keycloak, and two client
+            applications. Step 1: the browser requests authorization for Client 1 with an empty cookie jar;
+            Keycloak returns a real login form. Step 2: the browser posts real credentials; Keycloak sets a
+            KEYCLOAK_SESSION cookie on its own domain and redirects back to Client 1 with an authorization code and
+            a session_state value. Step 3: the browser, reusing the same cookie jar with no credentials submitted,
+            requests authorization for Client 2; Keycloak checks the KEYCLOAK_SESSION cookie silently, finds a
+            live session, and immediately redirects back to Client 2 with a second authorization code and the same
+            session_state value as step 2 — proving one shared session served two independent clients.</desc>
+            <rect x="30" y="20" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="130" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Browser (cookie jar)</text>
+            <rect x="370" y="20" width="160" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Keycloak</text>
+            <rect x="670" y="20" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="770" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Client 1 / Client 2</text>
 
-        <line x1="130" y1="60" x2="130" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
-        <line x1="450" y1="60" x2="450" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
-        <line x1="770" y1="60" x2="770" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
+            <line x1="130" y1="60" x2="130" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
+            <line x1="450" y1="60" x2="450" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
+            <line x1="770" y1="60" x2="770" y2="290" class="diagram-stroke" stroke-dasharray="2 4"/>
 
-        <line x1="130" y1="90" x2="450" y2="90" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
-        <text x="290" y="83" text-anchor="middle" class="diagram-label-muted" font-size="10">1. authorize?client_id=dashboard (empty cookie jar)</text>
-        <line x1="450" y1="115" x2="130" y2="115" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
-        <text x="290" y="108" text-anchor="middle" class="diagram-label-muted" font-size="10">real login form (no session yet)</text>
+            <line x1="130" y1="90" x2="450" y2="90" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
+            <text x="290" y="83" text-anchor="middle" class="diagram-label-muted" font-size="10">1. authorize?client_id=dashboard (empty cookie jar)</text>
+            <line x1="450" y1="115" x2="130" y2="115" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
+            <text x="290" y="108" text-anchor="middle" class="diagram-label-muted" font-size="10">real login form (no session yet)</text>
 
-        <line x1="130" y1="150" x2="450" y2="150" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
-        <text x="290" y="143" text-anchor="middle" class="diagram-label-muted" font-size="10">2. POST jane.doe credentials</text>
-        <line x1="450" y1="180" x2="130" y2="180" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
-        <text x="290" y="168" text-anchor="middle" class="diagram-label-muted" font-size="10">302 + code, sets KEYCLOAK_SESSION cookie</text>
-        <text x="290" y="193" text-anchor="middle" class="diagram-label-muted" font-size="9">session_state = vzx2JU48...</text>
+            <line x1="130" y1="150" x2="450" y2="150" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
+            <text x="290" y="143" text-anchor="middle" class="diagram-label-muted" font-size="10">2. POST jane.doe credentials</text>
+            <line x1="450" y1="180" x2="130" y2="180" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
+            <text x="290" y="168" text-anchor="middle" class="diagram-label-muted" font-size="10">302 + code, sets KEYCLOAK_SESSION cookie</text>
+            <text x="290" y="193" text-anchor="middle" class="diagram-label-muted" font-size="9">session_state = vzx2JU48...</text>
 
-        <line x1="450" y1="190" x2="770" y2="190" class="diagram-stroke" stroke-dasharray="3 3"/>
-        <text x="610" y="183" text-anchor="middle" class="diagram-label-muted" font-size="9">code delivered to Client 1</text>
+            <line x1="450" y1="190" x2="770" y2="190" class="diagram-stroke" stroke-dasharray="3 3"/>
+            <text x="610" y="183" text-anchor="middle" class="diagram-label-muted" font-size="9">code delivered to Client 1</text>
 
-        <line x1="130" y1="230" x2="450" y2="230" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
-        <text x="290" y="223" text-anchor="middle" class="diagram-label-muted" font-size="10">3. authorize?client_id=support-portal (SAME cookie jar, no credentials)</text>
-        <line x1="450" y1="260" x2="130" y2="260" class="diagram-stroke" marker-end="url(#arrowSSOg)"/>
-        <text x="290" y="253" text-anchor="middle" class="diagram-label-muted" font-size="10">immediate 302 + new code — same session_state = vzx2JU48...</text>
-        <line x1="450" y1="275" x2="770" y2="275" class="diagram-stroke" stroke-dasharray="3 3"/>
-        <text x="610" y="268" text-anchor="middle" class="diagram-label-muted" font-size="9">code delivered to Client 2 — no login screen rendered</text>
+            <line x1="130" y1="230" x2="450" y2="230" class="diagram-stroke" marker-end="url(#arrowSSO)"/>
+            <text x="290" y="211" text-anchor="middle" class="diagram-label-muted" font-size="10">3. authorize?client_id=support-portal</text>
+            <text x="290" y="223" text-anchor="middle" class="diagram-label-muted" font-size="10">(same cookie jar, no credentials)</text>
+            <line x1="450" y1="260" x2="130" y2="260" class="diagram-stroke" marker-end="url(#arrowSSOg)"/>
+            <text x="290" y="253" text-anchor="middle" class="diagram-label-muted" font-size="10">immediate 302 + new code — same session_state = vzx2JU48...</text>
+            <line x1="450" y1="275" x2="770" y2="275" class="diagram-stroke" stroke-dasharray="3 3"/>
+            <text x="610" y="268" text-anchor="middle" class="diagram-label-muted" font-size="9">code delivered to Client 2 — no login screen rendered</text>
 
-        <defs>
-          <marker id="arrowSSO" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-          <marker id="arrowSSOg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-success"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 29.2 — The exact SSO-across-clients sequence, with the real session_state value this
-      lab captured proving both redirects shared one session.</figcaption>
-    </figure>
+            <defs>
+              <marker id="arrowSSO" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+              <marker id="arrowSSOg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-success"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 29.2 — The exact SSO-across-clients sequence, with the real session_state value this
+          lab captured proving both redirects shared one session.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Session-level revocation vs. refresh-token-level revocation</h2>
-    <p>This chapter's lab deliberately exercised <em>two different</em> things Keycloak calls "revoking"
-    something, because they are not the same operation and the course's own glossary (chapter 21's
-    <code>Revoke Refresh Token</code> entry) risked reading as if they were:</p>
+      <section class="slide" data-slide="revocation-types" data-title="Session revocation vs. refresh-token revocation">
+        <h2>Session-level revocation vs. refresh-token-level revocation</h2>
+        <p>This chapter's lab deliberately exercised <em>two different</em> things Keycloak calls "revoking"
+        something, because they are not the same operation and the course's own glossary (chapter 21's
+        <code>Revoke Refresh Token</code> entry) risked reading as if they were:</p>
 
-    <ol class="lab-steps">
-      <li><p><strong>Session-level revocation.</strong> With <code>directAccessGrantsEnabled</code> turned on
-      just long enough to mint one real token (the same lab-only pattern chapter 24 used, and reverted
-      immediately after, per chapter 13's framing of this grant as deprecated for real applications), jane.doe
-      authenticated and received a real session:</p>
+        <ol class="lab-steps">
+          <li><p><strong>Session-level revocation.</strong> With <code>directAccessGrantsEnabled</code> turned on
+          just long enough to mint one real token (the same lab-only pattern chapter 24 used, and reverted
+          immediately after, per chapter 13's framing of this grant as deprecated for real applications), jane.doe
+          authenticated and received a real session:</p>
 <pre><code>$ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
     -d "grant_type=password" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
     -d "username=jane.doe" -d "password=Lab_Password_2026!" -d "scope=openid profile email"</code></pre>
 <pre><code>{ "access_token": "eyJ...", "refresh_token": "eyJ...", "session_state": "42TBOp47_Tp-ZBsgs5j-K9uv", ... }</code></pre>
-      <p>Listed via the Admin REST API — a real, live session, not assumed:</p>
+          <p>Listed via the Admin REST API — a real, live session, not assumed:</p>
 <pre><code>$ curl -s -H "Authorization: Bearer &lt;admin token&gt;" \
     http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions</code></pre>
 <pre><code>[ { "id": "42TBOp47_Tp-ZBsgs5j-K9uv", "username": "jane.doe",
     "clients": { "eb3cb5c6-...": "northwind-dashboard" } } ]</code></pre>
-      <p>Revoked by session id, confirmed clean with <code>204</code>, then confirmed <em>genuinely</em> gone
-      with a second, independent read — not the <code>DELETE</code> call's own (empty) response:</p>
+          <p>Revoked by session id, confirmed clean with <code>204</code>, then confirmed <em>genuinely</em> gone
+          with a second, independent read — not the <code>DELETE</code> call's own (empty) response:</p>
 <pre><code>$ curl -s -o /dev/null -w "%{http_code}\n" -X DELETE -H "Authorization: Bearer &lt;admin token&gt;" \
     http://localhost:8080/admin/realms/northwind-apps/sessions/42TBOp47_Tp-ZBsgs5j-K9uv
 204
 $ curl -s -H "Authorization: Bearer &lt;admin token&gt;" \
     http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions
 []</code></pre>
-      <p>And the refresh token minted under that dead session is now provably useless, confirmed by actually
-      trying it, not assumed from the session being gone:</p>
+          <p>And the refresh token minted under that dead session is now provably useless, confirmed by actually
+          trying it, not assumed from the session being gone:</p>
 <pre><code>$ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
     -d "grant_type=refresh_token" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
     -d "refresh_token=&lt;the refresh token from above&gt;"</code></pre>
 <pre><code>{ "error": "invalid_grant", "error_description": "Session not active" }</code></pre></li>
 
-      <li><p><strong>Refresh-token-level revocation</strong> (<code>Revoke Refresh Token</code>, chapter 21),
-      enabled for real this time and confirmed:</p>
+          <li><p><strong>Refresh-token-level revocation</strong> (<code>Revoke Refresh Token</code>, chapter 21),
+          enabled for real this time and confirmed:</p>
 <pre><code>$ kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
 $ kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
 <pre><code>{ "revokeRefreshToken" : true }</code></pre>
-      <p>A fresh token mint, then its refresh token used once (succeeds, issues a brand-new refresh token
-      <code>RT2</code>) and then <em>reused</em> a second time (the original <code>RT1</code> again):</p>
+          <p>A fresh token mint, then its refresh token used once (succeeds, issues a brand-new refresh token
+          <code>RT2</code>) and then <em>reused</em> a second time (the original <code>RT1</code> again):</p>
 <pre><code>$ curl -s -X POST .../token -d grant_type=refresh_token -d refresh_token=$RT1   # first use
 { "access_token": "...", "refresh_token": "&lt;RT2, different from RT1&gt;", ... }   # succeeds
 
 $ curl -s -X POST .../token -d grant_type=refresh_token -d refresh_token=$RT1   # RT1 again
 { "error": "invalid_grant", "error_description": "Maximum allowed refresh token reuse exceeded" }</code></pre>
-      <p>That exact error text — <em>"Maximum allowed refresh token reuse exceeded"</em> — is this chapter's
-      own confirmed, real output, not a guess at Keycloak's wording. It matches the refresh-token rotation and
-      reuse-detection behavior <a href="https://www.rfc-editor.org/rfc/rfc9700">RFC 9700</a> (the OAuth 2.0
-      Security Best Current Practice, confirmed live in chapter 18) describes in §2.2.2 and §4.14 as a defense
-      against a leaked refresh token being replayed after the legitimate client has already moved past it.
-      Critically, <strong>the session itself was still alive</strong> — a follow-up
-      <code>GET users/{id}/sessions</code> still returned the session, with an updated
-      <code>lastAccess</code>. Rejecting a stale refresh token and killing the underlying session are two
-      different, independently-confirmable things.</p></li>
-    </ol>
+          <p>That exact error text — <em>"Maximum allowed refresh token reuse exceeded"</em> — is this chapter's
+          own confirmed, real output, not a guess at Keycloak's wording. It matches the refresh-token rotation and
+          reuse-detection behavior <a href="https://www.rfc-editor.org/rfc/rfc9700">RFC 9700</a> (the OAuth 2.0
+          Security Best Current Practice, confirmed live in chapter 18) describes in §2.2.2 and §4.14 as a defense
+          against a leaked refresh token being replayed after the legitimate client has already moved past it.
+          Critically, <strong>the session itself was still alive</strong> — a follow-up
+          <code>GET users/{id}/sessions</code> still returned the session, with an updated
+          <code>lastAccess</code>. Rejecting a stale refresh token and killing the underlying session are two
+          different, independently-confirmable things.</p></li>
+        </ol>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Two different things both called "revocation," with different observable effects</title>
-        <desc id="d3">Two parallel paths from a shared starting point, a live session with a valid refresh
-        token. Path A, labeled session-level revocation: calling DELETE sessions by id or POST users by id
-        logout kills the session entirely; any later refresh attempt against it fails with "Session not
-        active," confirmed by an independent GET returning an empty session list. Path B, labeled refresh
-        token rotation under Revoke Refresh Token: using a refresh token once succeeds and issues a new one;
-        reusing the already-spent refresh token fails with "Maximum allowed refresh token reuse exceeded," but
-        a GET on the session shows it is still alive and active. The diagram's conclusion box states both are
-        real, both were observed live against Keycloak 26.8.2, and they are not interchangeable.</desc>
-        <rect x="350" y="10" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
-        <text x="450" y="35" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Live session, valid refresh token</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Two different things both called "revocation," with different observable effects</title>
+            <desc id="d3">Two parallel paths from a shared starting point, a live session with a valid refresh
+            token. Path A, labeled session-level revocation: calling DELETE sessions by id or POST users by id
+            logout kills the session entirely; any later refresh attempt against it fails with "Session not
+            active," confirmed by an independent GET returning an empty session list. Path B, labeled refresh
+            token rotation under Revoke Refresh Token: using a refresh token once succeeds and issues a new one;
+            reusing the already-spent refresh token fails with "Maximum allowed refresh token reuse exceeded," but
+            a GET on the session shows it is still alive and active. The diagram's conclusion box states both are
+            real, both were observed live against Keycloak 26.8.2, and they are not interchangeable.</desc>
+            <rect x="350" y="10" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="450" y="35" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Live session, valid refresh token</text>
 
-        <line x1="400" y1="50" x2="220" y2="90" class="diagram-stroke" marker-end="url(#arrowRV)"/>
-        <rect x="40" y="90" width="360" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="220" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">A. Session-level revocation</text>
-        <text x="220" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">DELETE sessions/{id} or POST users/{id}/logout</text>
-        <line x1="220" y1="150" x2="220" y2="180" class="diagram-stroke" marker-end="url(#arrowRV)"/>
-        <rect x="40" y="180" width="360" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="220" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Session not active"</text>
-        <text x="220" y="220" text-anchor="middle" class="diagram-label-muted" font-size="10">GET sessions confirms: [] (gone)</text>
+            <line x1="400" y1="50" x2="220" y2="90" class="diagram-stroke" marker-end="url(#arrowRV)"/>
+            <rect x="40" y="90" width="360" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="220" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">A. Session-level revocation</text>
+            <text x="220" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">DELETE sessions/{id} or POST users/{id}/logout</text>
+            <line x1="220" y1="150" x2="220" y2="180" class="diagram-stroke" marker-end="url(#arrowRV)"/>
+            <rect x="40" y="180" width="360" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="220" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Session not active"</text>
+            <text x="220" y="220" text-anchor="middle" class="diagram-label-muted" font-size="10">GET sessions confirms: [] (gone)</text>
 
-        <line x1="500" y1="50" x2="680" y2="90" class="diagram-stroke" marker-end="url(#arrowRV)"/>
-        <rect x="500" y="90" width="360" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="680" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">B. Refresh token rotation (Revoke Refresh Token)</text>
-        <text x="680" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">reusing an already-spent refresh token</text>
-        <line x1="680" y1="150" x2="680" y2="180" class="diagram-stroke" marker-end="url(#arrowRV)"/>
-        <rect x="500" y="180" width="360" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="680" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Maximum allowed reuse exceeded"</text>
-        <text x="680" y="220" text-anchor="middle" class="diagram-label-muted" font-size="10">GET sessions confirms: session still alive</text>
-        <defs>
-          <marker id="arrowRV" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 29.3 — Both paths were run for real in this chapter's lab; only one actually ends the
-      session.</figcaption>
-    </figure>
+            <line x1="500" y1="50" x2="680" y2="90" class="diagram-stroke" marker-end="url(#arrowRV)"/>
+            <rect x="500" y="90" width="360" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="680" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">B. Refresh token rotation (Revoke Refresh Token)</text>
+            <text x="680" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">reusing an already-spent refresh token</text>
+            <line x1="680" y1="150" x2="680" y2="180" class="diagram-stroke" marker-end="url(#arrowRV)"/>
+            <rect x="500" y="180" width="360" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="680" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Maximum allowed reuse exceeded"</text>
+            <text x="680" y="220" text-anchor="middle" class="diagram-label-muted" font-size="10">GET sessions confirms: session still alive</text>
+            <defs>
+              <marker id="arrowRV" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 29.3 — Both paths were run for real in this chapter's lab; only one actually ends the
+          session.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Logout mechanisms, and what a no-browser session can and can't claim</h2>
-    <p>Everything above used the Admin REST API directly — a server-to-client action with no browser in the
-    loop. Keycloak's documentation (fetched live for this chapter) names four separate OIDC logout mechanisms
-    for the browser-driven case, which this chapter can describe accurately but, with no browser tool
-    available, cannot personally click through:</p>
+      <section class="slide" data-slide="logout-mechanisms" data-title="Logout mechanisms">
+        <h2>Logout mechanisms, and what a no-browser session can and can't claim</h2>
+        <p>Everything above used the Admin REST API directly — a server-to-client action with no browser in the
+        loop. Keycloak's documentation (fetched live for this chapter) names four separate OIDC logout mechanisms
+        for the browser-driven case, which this chapter can describe accurately but, with no browser tool
+        available, cannot personally click through:</p>
 
-    <div class="table-wrap">
-      <table>
-        <caption>The four OIDC logout mechanisms Keycloak documents, quoted/paraphrased from the Server Administration Guide</caption>
-        <thead><tr><th>Mechanism</th><th>How it works, per the guide</th></tr></thead>
-        <tbody>
-          <tr><td>Session Management</td><td>"A browser-based logout. The application obtains session status information from Keycloak at a regular basis. When the session is terminated at Keycloak the application will notice and trigger its own logout" — this is what lets logging out in one browser tab trigger automatic logout in other tabs of apps using the Keycloak JavaScript adapter.</td></tr>
-          <tr><td>RP-Initiated Logout</td><td>A browser redirect to Keycloak's own logout endpoint, "usually... when the user clicks the Log Out link"; Keycloak then sends logout requests to every client attached to that browser's SSO session.</td></tr>
-          <tr><td>Front-Channel Logout</td><td>Relies on the browser rendering hidden <code>iframe</code>s per client. The guide's own caution: this "might be impacted by Content Security Policies" and can be blocked, and a session may survive if the user closes the browser before the logout page finishes rendering.</td></tr>
-          <tr><td>Back-Channel Logout</td><td>A direct server-to-server logout request to each client's own Back-Channel Logout URL (falling back to its Admin URL if unset) — no browser involvement, which the guide recommends as "a more reliable and secure approach" than front-channel.</td></tr>
-        </tbody>
-      </table>
-    </div>
+        <div class="table-wrap">
+          <table>
+            <caption>The four OIDC logout mechanisms Keycloak documents, quoted/paraphrased from the Server Administration Guide</caption>
+            <thead><tr><th>Mechanism</th><th>How it works, per the guide</th></tr></thead>
+            <tbody>
+              <tr><td>Session Management</td><td>"A browser-based logout. The application obtains session status information from Keycloak at a regular basis. When the session is terminated at Keycloak the application will notice and trigger its own logout" — this is what lets logging out in one browser tab trigger automatic logout in other tabs of apps using the Keycloak JavaScript adapter.</td></tr>
+              <tr><td>RP-Initiated Logout</td><td>A browser redirect to Keycloak's own logout endpoint, "usually... when the user clicks the Log Out link"; Keycloak then sends logout requests to every client attached to that browser's SSO session.</td></tr>
+              <tr><td>Front-Channel Logout</td><td>Relies on the browser rendering hidden <code>iframe</code>s per client. The guide's own caution: this "might be impacted by Content Security Policies" and can be blocked, and a session may survive if the user closes the browser before the logout page finishes rendering.</td></tr>
+              <tr><td>Back-Channel Logout</td><td>A direct server-to-server logout request to each client's own Back-Channel Logout URL (falling back to its Admin URL if unset) — no browser involvement, which the guide recommends as "a more reliable and secure approach" than front-channel.</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <p>The Admin Console also exposes a realm-wide, timestamp-based revocation policy that this chapter's lab
-    did not exercise (too destructive to run against a shared lab realm, and this course's "real, not narrated"
-    rule means not faking it either): under <strong>Sessions &rarr; Actions &rarr; Revocation</strong>, an
-    administrator can set a cutoff date/time — per the guide, <em>"sessions or tokens issued before that time
-    and date are invalid"</em> — and optionally <strong>Push</strong> that policy to every registered OIDC
-    client running Keycloak's own adapter. This is a different tool from the per-session and per-user REST
-    calls this chapter did run: those target one session or one user precisely; the revocation policy is a
-    blunt, realm-wide "everything before this instant is dead" switch, the kind of thing reached for only in a
-    genuine breach, not routine offboarding.</p>
+        <p>The Admin Console also exposes a realm-wide, timestamp-based revocation policy that this chapter's lab
+        did not exercise (too destructive to run against a shared lab realm, and this course's "real, not narrated"
+        rule means not faking it either): under <strong>Sessions &rarr; Actions &rarr; Revocation</strong>, an
+        administrator can set a cutoff date/time — per the guide, <em>"sessions or tokens issued before that time
+        and date are invalid"</em> — and optionally <strong>Push</strong> that policy to every registered OIDC
+        client running Keycloak's own adapter. This is a different tool from the per-session and per-user REST
+        calls this chapter did run: those target one session or one user precisely; the revocation policy is a
+        blunt, realm-wide "everything before this instant is dead" switch, the kind of thing reached for only in a
+        genuine breach, not routine offboarding.</p>
+      </section>
 
-    <h2>Case study: Meridian Trust ends a stolen session, for real</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Meridian Trust</div>
-      <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank under PCI-DSS, and chapter 11
-      already named exactly this requirement: the ability to act immediately when an employee's access must be
-      cut. The scenario: a teller's laptop is reported stolen mid-shift, still logged into Meridian's internal
-      banking console through Keycloak. A security operator needs to end that employee's access <em>right
-      now</em>, without waiting for the session to naturally idle out, and without guessing whether it worked.</p>
-      <p>This chapter's lab is literally that runbook, run for real against <code>jane.doe</code> standing in
-      for the teller: (1) list the user's active sessions via <code>GET users/{id}/sessions</code> — confirmed
-      live, one real session returned; (2) end it via <code>DELETE sessions/{id}</code> — confirmed
-      <code>204</code>; (3) <strong>never trust step 2's own response</strong> — a second, independent
-      <code>GET users/{id}/sessions</code> call confirmed an empty array, i.e. genuinely zero active sessions,
-      not an assumption. When the teller had logged in from two devices (this lab's concurrent-session test),
-      the faster, broader tool was <code>POST users/{id}/logout</code> — one call, every session for that
-      user gone, confirmed the same way. A PCI-DSS auditor asking "how do you know the access was actually
-      revoked, not just that you sent a revoke request" is asking exactly the question this chapter's lab
-      answers with a second, independent read every single time, never the mutating call's own response.</p>
-    </div>
+      <section class="slide" data-slide="case-study" data-title="Case study: Meridian Trust">
+        <h2>Case study: Meridian Trust ends a stolen session, for real</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank under PCI-DSS, and chapter 11
+          already named exactly this requirement: the ability to act immediately when an employee's access must be
+          cut. The scenario: a teller's laptop is reported stolen mid-shift, still logged into Meridian's internal
+          banking console through Keycloak. A security operator needs to end that employee's access <em>right
+          now</em>, without waiting for the session to naturally idle out, and without guessing whether it worked.</p>
+          <p>This chapter's lab is literally that runbook, run for real against <code>jane.doe</code> standing in
+          for the teller: (1) list the user's active sessions via <code>GET users/{id}/sessions</code> — confirmed
+          live, one real session returned; (2) end it via <code>DELETE sessions/{id}</code> — confirmed
+          <code>204</code>; (3) <strong>never trust step 2's own response</strong> — a second, independent
+          <code>GET users/{id}/sessions</code> call confirmed an empty array, i.e. genuinely zero active sessions,
+          not an assumption. When the teller had logged in from two devices (this lab's concurrent-session test),
+          the faster, broader tool was <code>POST users/{id}/logout</code> — one call, every session for that
+          user gone, confirmed the same way. A PCI-DSS auditor asking "how do you know the access was actually
+          revoked, not just that you sent a revoke request" is asking exactly the question this chapter's lab
+          answers with a second, independent read every single time, never the mutating call's own response.</p>
+        </div>
+      </section>
 
-    <h2>Lab: bring up the environment and run every step above for real</h2>
-    <p>Run fresh from a <code>docker compose up -d</code>, the same base lab environment chapters 20-28 use.
-    <strong>Every output quoted above and below in this chapter was actually captured against a live Keycloak
-    26.8.2 + PostgreSQL 17 stack</strong> — not narrated.</p>
+      <section class="slide" data-slide="lab-setup-and-revoke" data-title="Lab: setup &amp; session revocation">
+        <h2>Lab: bring up the environment and run every step above for real</h2>
+        <p>Run fresh from a <code>docker compose up -d</code>, the same base lab environment chapters 20-28 use.
+        <strong>Every output quoted above and below in this chapter was actually captured against a live Keycloak
+        26.8.2 + PostgreSQL 17 stack</strong> — not narrated.</p>
 
-    <ol class="lab-steps">
-      <li><p>Bring the stack up and poll until ready, then recreate the realm, user, and the two clients this
-      chapter needs:</p>
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll until ready, then recreate the realm, user, and the two clients this
+          chapter needs:</p>
 <pre><code>cd labs/docker
 docker compose up -d
 for i in $(seq 1 30); do
@@ -436,9 +462,9 @@ for i in $(seq 1 30); do
 done</code></pre>
 <pre><code>ready after attempt 9</code></pre></li>
 
-      <li><p>Authenticate <code>kcadm.sh</code>, create <code>northwind-apps</code>, <code>jane.doe</code>, and
-      <code>northwind-dashboard</code> (direct access grants <strong>off</strong> by default — this chapter's
-      real, intended configuration, same as chapter 24's):</p>
+          <li><p>Authenticate <code>kcadm.sh</code>, create <code>northwind-apps</code>, <code>jane.doe</code>, and
+          <code>northwind-dashboard</code> (direct access grants <strong>off</strong> by default — this chapter's
+          real, intended configuration, same as chapter 24's):</p>
 <pre><code>kcadm.sh config credentials --server http://localhost:8080 --realm master \
   --user admin --password admin_lab_password
 kcadm.sh create realms -s realm=northwind-apps -s enabled=true -s displayName="Northwind Apps"
@@ -454,8 +480,8 @@ kcadm.sh create clients -r northwind-apps -s clientId=northwind-dashboard \
 45382aeb-1e70-4580-ac5e-44c3a99089f1
 eb3cb5c6-8225-4231-a9cc-44501c13288d</code></pre></li>
 
-      <li><p>Read the realm's real session-field defaults before changing anything — the baseline every claim
-      in this chapter is measured against:</p>
+          <li><p>Read the realm's real session-field defaults before changing anything — the baseline every claim
+          in this chapter is measured against:</p>
 <pre><code>kcadm.sh get realms/northwind-apps --fields ssoSessionIdleTimeout,ssoSessionMaxLifespan,\
 clientSessionIdleTimeout,clientSessionMaxLifespan,offlineSessionIdleTimeout,\
 offlineSessionMaxLifespanEnabled,revokeRefreshToken</code></pre>
@@ -467,15 +493,15 @@ offlineSessionMaxLifespanEnabled,revokeRefreshToken</code></pre>
   "clientSessionIdleTimeout" : 0,
   "clientSessionMaxLifespan" : 0
 }</code></pre>
-      <p>Note <code>revokeRefreshToken</code> is absent entirely — <code>kcadm.sh</code>'s <code>--fields</code>
-      output omits unset fields, the same behavior chapter 26 documented for theme fields; it defaults to
-      <code>false</code> and simply isn't printed until set. <code>clientSessionIdleTimeout</code> and
-      <code>clientSessionMaxLifespan</code> both read <code>0</code> — per the guide, that specific value means
-      "inherit the SSO session's own idle/max," not "no limit," the fact this chapter's Figure 29.1 is built
-      around.</p></li>
+          <p>Note <code>revokeRefreshToken</code> is absent entirely — <code>kcadm.sh</code>'s <code>--fields</code>
+          output omits unset fields, the same behavior chapter 26 documented for theme fields; it defaults to
+          <code>false</code> and simply isn't printed until set. <code>clientSessionIdleTimeout</code> and
+          <code>clientSessionMaxLifespan</code> both read <code>0</code> — per the guide, that specific value means
+          "inherit the SSO session's own idle/max," not "no limit," the fact this chapter's Figure 29.1 is built
+          around.</p></li>
 
-      <li><p>Temporarily enable direct access grants, mint a real token/session for jane.doe (this lab-only
-      probe, same convention as chapter 24, reverted the moment the token is captured):</p>
+          <li><p>Temporarily enable direct access grants, mint a real token/session for jane.doe (this lab-only
+          probe, same convention as chapter 24, reverted the moment the token is captured):</p>
 <pre><code>kcadm.sh update clients/eb3cb5c6-... -r northwind-apps -s directAccessGrantsEnabled=true
 curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d "grant_type=password" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
@@ -483,9 +509,9 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 <pre><code>{ "access_token": "eyJ...", "refresh_token": "eyJ...", "session_state": "42TBOp47_Tp-ZBsgs5j-K9uv",
   "expires_in": 300, "refresh_expires_in": 1800, ... }</code></pre></li>
 
-      <li><p>List it, revoke it, and <strong>confirm with a second, independent read</strong> — the full
-      Meridian Trust runbook from the case study above, run for real (admin token obtained via
-      <code>admin-cli</code> against the <code>master</code> realm):</p>
+          <li><p>List it, revoke it, and <strong>confirm with a second, independent read</strong> — the full
+          Meridian Trust runbook from the case study above, run for real (admin token obtained via
+          <code>admin-cli</code> against the <code>master</code> realm):</p>
 <pre><code>curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions</code></pre>
 <pre><code>[ { "id": "42TBOp47_Tp-ZBsgs5j-K9uv", "username": "jane.doe", "ipAddress": "172.25.0.1",
@@ -496,15 +522,19 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 <pre><code>curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions</code></pre>
 <pre><code>[]</code></pre></li>
+        </ol>
+      </section>
 
-      <li><p>Confirm the dead session really did kill its own refresh token, by actually trying it:</p>
+      <section class="slide" data-slide="lab-refresh-and-sso" data-title="Lab: refresh tokens, concurrent sessions, SSO">
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p>Confirm the dead session really did kill its own refresh token, by actually trying it:</p>
 <pre><code>curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d "grant_type=refresh_token" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
   -d "refresh_token=&lt;the refresh token from step 4&gt;"</code></pre>
 <pre><code>{ "error": "invalid_grant", "error_description": "Session not active" }</code></pre></li>
 
-      <li><p>Enable <code>Revoke Refresh Token</code>, mint a fresh token, use its refresh token once (succeeds,
-      new refresh token issued), then replay the stale one:</p>
+          <li><p>Enable <code>Revoke Refresh Token</code>, mint a fresh token, use its refresh token once (succeeds,
+          new refresh token issued), then replay the stale one:</p>
 <pre><code>kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
 kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
 <pre><code>{ "revokeRefreshToken" : true }</code></pre>
@@ -513,11 +543,11 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
   -d "grant_type=refresh_token" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
   -d "refresh_token=$RT1"</code></pre>
 <pre><code>{ "error": "invalid_grant", "error_description": "Maximum allowed refresh token reuse exceeded" }</code></pre>
-      <p>A follow-up <code>GET users/{id}/sessions</code> at this point still returned the session, alive —
-      exactly the session-level vs. refresh-token-level distinction Figure 29.3 draws out.</p></li>
+          <p>A follow-up <code>GET users/{id}/sessions</code> at this point still returned the session, alive —
+          exactly the session-level vs. refresh-token-level distinction Figure 29.3 draws out.</p></li>
 
-      <li><p>Mint a second concurrent session (simulating a second device), confirm two sessions exist, then
-      use the broader, "logout everywhere" endpoint and confirm, independently, that both are gone:</p>
+          <li><p>Mint a second concurrent session (simulating a second device), confirm two sessions exist, then
+          use the broader, "logout everywhere" endpoint and confirm, independently, that both are gone:</p>
 <pre><code>curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
   http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions
 # -&gt; two session objects, two different "id" values
@@ -529,13 +559,13 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $ADMI
   http://localhost:8080/admin/realms/northwind-apps/users/45382aeb-.../sessions</code></pre>
 <pre><code>[]</code></pre></li>
 
-      <li><p>Register the second client and run the SSO-across-clients cookie-jar demonstration exactly as
-      walked through earlier in this chapter (see that section for the full, real output):</p>
+          <li><p>Register the second client and run the SSO-across-clients cookie-jar demonstration exactly as
+          walked through earlier in this chapter (see that section for the full, real output):</p>
 <pre><code>kcadm.sh create clients -r northwind-apps -s clientId=northwind-support-portal \
   -s publicClient=true -s standardFlowEnabled=true \
   -s 'redirectUris=["https://support.northwindapps.internal/*"]' -i</code></pre></li>
 
-      <li><p>Tear the stack down cleanly:</p>
+          <li><p>Tear the stack down cleanly:</p>
 <pre><code>docker compose down -v</code></pre>
 <pre><code> Container docker-keycloak-1 Removed
  Container docker-postgres-1 Removed
@@ -543,117 +573,197 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $ADMI
  Network docker_default Removed</code></pre>
 <pre><code>docker ps -a | grep keycloak      # no output
 docker volume ls | grep keycloak_pg_data   # no output</code></pre></li>
-    </ol>
+        </ol>
+      </section>
 
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see someone treat a <code>204</code> from <code>DELETE sessions/{id}</code> as proof the
-      session is gone, the cause is trusting the mutating call's own response — this chapter's own discipline,
-      and the Meridian Trust case study's point, is that a <code>204</code> only means the server accepted the
-      request; the only real proof is a separate, later <code>GET</code> that comes back empty.</li>
-      <li>If you see a <code>404</code> from <code>DELETE sessions/{id}</code>, the cause is very often passing
-      a user id or a token value where the endpoint expects the session's own <code>id</code> — the same value
-      that appears as the <code>sid</code> claim inside tokens minted under it.</li>
-      <li>If you see someone set <code>Client Session Idle</code> or <code>Client Session Max</code> to
-      <code>0</code> expecting "no limit," the cause is missing the guide's own specific wording: <code>0</code>
-      means "inherit the realm's SSO Session Idle/Max value," not unlimited — confirmed live on a fresh realm
-      in this chapter's lab.</li>
-      <li>If you see a reader conflate <code>Revoke Refresh Token</code> with ending a session, the cause is
-      missing that it only rejects a <em>reused, already-rotated-past</em> refresh token — this chapter's lab
-      showed the underlying session staying alive and fully queryable the whole time that error was returned.</li>
-      <li>If you see a second application unexpectedly show a login prompt inside what should be one SSO
-      session, the cause is almost never "SSO is broken" — check first whether the <code>KEYCLOAK_SESSION</code>
-      cookie is actually being sent (third-party cookie blocking, a different top-level domain, or an
-      iframe/embed context are the usual suspects), since that cookie, not some hidden server state alone, is
-      the thing the silent check in Figure 29.2 actually depends on.</li>
-      <li>If you see someone reach for the realm-wide revocation ("Push") policy to end one specific user's
-      access, the cause is reaching for the biggest hammer available instead of the precise one — that policy
-      invalidates everything realm-wide issued before a timestamp, not one user's sessions; <code>DELETE
-      sessions/{id}</code> or <code>POST users/{id}/logout</code> is the targeted tool for exactly the Meridian
-      Trust scenario this chapter walks through.</li>
-    </ul>
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see someone treat a <code>204</code> from <code>DELETE sessions/{id}</code> as proof the
+          session is gone, the cause is trusting the mutating call's own response — this chapter's own discipline,
+          and the Meridian Trust case study's point, is that a <code>204</code> only means the server accepted the
+          request; the only real proof is a separate, later <code>GET</code> that comes back empty.</li>
+          <li>If you see a <code>404</code> from <code>DELETE sessions/{id}</code>, the cause is very often passing
+          a user id or a token value where the endpoint expects the session's own <code>id</code> — the same value
+          that appears as the <code>sid</code> claim inside tokens minted under it.</li>
+          <li>If you see someone set <code>Client Session Idle</code> or <code>Client Session Max</code> to
+          <code>0</code> expecting "no limit," the cause is missing the guide's own specific wording: <code>0</code>
+          means "inherit the realm's SSO Session Idle/Max value," not unlimited — confirmed live on a fresh realm
+          in this chapter's lab.</li>
+          <li>If you see a reader conflate <code>Revoke Refresh Token</code> with ending a session, the cause is
+          missing that it only rejects a <em>reused, already-rotated-past</em> refresh token — this chapter's lab
+          showed the underlying session staying alive and fully queryable the whole time that error was returned.</li>
+          <li>If you see a second application unexpectedly show a login prompt inside what should be one SSO
+          session, the cause is almost never "SSO is broken" — check first whether the <code>KEYCLOAK_SESSION</code>
+          cookie is actually being sent (third-party cookie blocking, a different top-level domain, or an
+          iframe/embed context are the usual suspects), since that cookie, not some hidden server state alone, is
+          the thing the silent check in Figure 29.2 actually depends on.</li>
+          <li>If you see someone reach for the realm-wide revocation ("Push") policy to end one specific user's
+          access, the cause is reaching for the biggest hammer available instead of the precise one — that policy
+          invalidates everything realm-wide issued before a timestamp, not one user's sessions; <code>DELETE
+          sessions/{id}</code> or <code>POST users/{id}/logout</code> is the targeted tool for exactly the Meridian
+          Trust scenario this chapter walks through.</li>
+        </ul>
+      </section>
 
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
 
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>A Keycloak SSO session is the parent of zero or more client sessions, one per distinct client the
-      browser has authenticated to within that session — confirmed live with a single session object whose
-      <code>clients</code> map listed two different real client UUIDs.</li>
-      <li><code>Client Session Idle</code>/<code>Max</code> defaulting to <code>0</code> means "inherit the SSO
-      session's own value," not "unlimited" — confirmed by reading a real fresh realm's fields, not assumed
-      from the field name.</li>
-      <li>Four real Admin REST API endpoints cover session management: <code>GET users/{id}/sessions</code>
-      (list), <code>DELETE sessions/{id}</code> (revoke one), <code>POST users/{id}/logout</code> (revoke all
-      of one user's sessions), and <code>POST logout-all</code> (revoke every session realm-wide) — all four
-      paths quoted directly from Keycloak's published OpenAPI definition, and the first three exercised live.</li>
-      <li>Never trust a mutating revoke call's own (empty) response as proof of anything — this chapter's lab
-      confirmed every revoke with a separate, independent <code>GET</code> call, the exact discipline a PCI-DSS
-      auditor would ask Meridian Trust to demonstrate.</li>
-      <li>Revoking a session kills every token tied to it — a refresh attempt against a session already ended
-      via the Admin REST API returned a real, captured <code>invalid_grant</code> / "Session not active"
-      error, not a guessed one.</li>
-      <li><code>Revoke Refresh Token</code> is a different mechanism from session revocation: it rotates the
-      refresh token on every use and rejects a replayed, already-spent one ("Maximum allowed refresh token
-      reuse exceeded," RFC 9700 §2.2.2/§4.14) — while the underlying session, confirmed live, stays alive.</li>
-      <li>The SSO mechanism chapter 7 described in the abstract is, concretely, a <code>KEYCLOAK_SESSION</code>
-      cookie set on Keycloak's own domain: this chapter's cookie-jar demonstration got an immediate
-      authorization-code redirect for a second, independent client with zero credentials submitted, and both
-      redirects carried the exact same <code>session_state</code> value.</li>
-      <li>Keycloak documents four distinct OIDC logout mechanisms (Session Management, RP-Initiated Logout,
-      Front-Channel Logout, Back-Channel Logout) with real trade-offs — front-channel depends on iframes and
-      can be blocked by CSP or a closed browser tab; back-channel is server-to-server and the guide's own
-      recommended, more reliable default.</li>
-      <li>A realm-wide, timestamp-based revocation policy exists (Sessions &rarr; Actions &rarr; Revocation,
-      optionally "Push"ed to adapters) as a distinct, blunter tool from the per-session/per-user REST calls —
-      reach for it only in a genuine breach scenario, not routine single-user offboarding.</li>
-    </ul>
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A Keycloak SSO session is the parent of zero or more client sessions, one per distinct client the
+          browser has authenticated to within that session — confirmed live with a single session object whose
+          <code>clients</code> map listed two different real client UUIDs.</li>
+          <li><code>Client Session Idle</code>/<code>Max</code> defaulting to <code>0</code> means "inherit the SSO
+          session's own value," not "unlimited" — confirmed by reading a real fresh realm's fields, not assumed
+          from the field name.</li>
+          <li>Four real Admin REST API endpoints cover session management: <code>GET users/{id}/sessions</code>
+          (list), <code>DELETE sessions/{id}</code> (revoke one), <code>POST users/{id}/logout</code> (revoke all
+          of one user's sessions), and <code>POST logout-all</code> (revoke every session realm-wide) — all four
+          paths quoted directly from Keycloak's published OpenAPI definition, and the first three exercised live.</li>
+          <li>Never trust a mutating revoke call's own (empty) response as proof of anything — this chapter's lab
+          confirmed every revoke with a separate, independent <code>GET</code> call, the exact discipline a PCI-DSS
+          auditor would ask Meridian Trust to demonstrate.</li>
+          <li>Revoking a session kills every token tied to it — a refresh attempt against a session already ended
+          via the Admin REST API returned a real, captured <code>invalid_grant</code> / "Session not active"
+          error, not a guessed one.</li>
+          <li><code>Revoke Refresh Token</code> is a different mechanism from session revocation: it rotates the
+          refresh token on every use and rejects a replayed, already-spent one ("Maximum allowed refresh token
+          reuse exceeded," RFC 9700 §2.2.2/§4.14) — while the underlying session, confirmed live, stays alive.</li>
+          <li>The SSO mechanism chapter 7 described in the abstract is, concretely, a <code>KEYCLOAK_SESSION</code>
+          cookie set on Keycloak's own domain: this chapter's cookie-jar demonstration got an immediate
+          authorization-code redirect for a second, independent client with zero credentials submitted, and both
+          redirects carried the exact same <code>session_state</code> value.</li>
+          <li>Keycloak documents four distinct OIDC logout mechanisms (Session Management, RP-Initiated Logout,
+          Front-Channel Logout, Back-Channel Logout) with real trade-offs — front-channel depends on iframes and
+          can be blocked by CSP or a closed browser tab; back-channel is server-to-server and the guide's own
+          recommended, more reliable default.</li>
+          <li>A realm-wide, timestamp-based revocation policy exists (Sessions &rarr; Actions &rarr; Revocation,
+          optionally "Push"ed to adapters) as a distinct, blunter tool from the per-session/per-user REST calls —
+          reach for it only in a genuine breach scenario, not routine single-user offboarding.</li>
+        </ul>
+      </section>
 
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Walk through, in your own words, exactly why a <code>204</code> response from <code>DELETE
-      sessions/{id}</code> is not, by itself, proof that the session is gone — and what this chapter's lab
-      actually did instead.</li>
-      <li>Explain the real difference this chapter observed between revoking a session outright and Keycloak's
-      refresh-token rotation/reuse-detection under <code>Revoke Refresh Token</code>. What's one scenario where
-      only one of the two would be the correct tool?</li>
-      <li>Describe, mechanically, what actually made the second client's authorization request succeed without
-      a login prompt in this chapter's cookie-jar demonstration. What specific thing would have to be missing
-      or blocked for that same request to fail and show a login form instead?</li>
-      <li>A fresh realm reads <code>clientSessionIdleTimeout: 0</code>. What does that <code>0</code> actually
-      mean, and why would naively assuming "unlimited" lead someone to the wrong operational conclusion?</li>
-      <li>Meridian Trust's teller had two active sessions (two devices) when the laptop theft was reported.
-      Why was <code>POST users/{id}/logout</code> the better tool than calling <code>DELETE sessions/{id}</code>
-      twice, and under what circumstance would the two-call approach actually be the right choice instead?</li>
-    </ol>
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Walk through, in your own words, exactly why a <code>204</code> response from <code>DELETE
+            sessions/{id}</code> is not, by itself, proof that the session is gone — and what this chapter's lab
+            actually did instead.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A <code>204</code>
+            only confirms the server accepted and processed the <code>DELETE</code> request; the response body is
+            empty and carries no confirmation of the resulting state. This chapter's lab never treated that
+            <code>204</code> as proof — after every <code>DELETE sessions/{id}</code> call, it ran a separate,
+            independent <code>GET users/{id}/sessions</code> call and confirmed the array came back empty before
+            treating the session as genuinely gone, exactly the discipline the Meridian Trust case study frames as
+            what a PCI-DSS auditor would demand.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain the real difference this chapter observed between revoking a session outright and
+            Keycloak's refresh-token rotation/reuse-detection under <code>Revoke Refresh Token</code>. What's one
+            scenario where only one of the two would be the correct tool?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Revoking a
+            session (<code>DELETE sessions/{id}</code> or <code>POST users/{id}/logout</code>) ends the SSO session
+            itself — every token tied to it, including its refresh token, immediately fails with "Session not
+            active," confirmed by a follow-up <code>GET</code> returning <code>[]</code>. <code>Revoke Refresh
+            Token</code> is different: it rotates the refresh token on every use and only rejects a token that has
+            already been spent and replayed ("Maximum allowed refresh token reuse exceeded") — the underlying
+            session itself stays alive and queryable the whole time, as this chapter's lab confirmed directly.
+            Scenario: ending a stolen laptop's access (Meridian Trust) needs outright session revocation, since the
+            goal is killing all access immediately — <code>Revoke Refresh Token</code> alone wouldn't touch a
+            still-valid access token or the live session. Conversely, if the only observed problem is a leaked
+            refresh token being replayed while the legitimate client is still using the session normally,
+            <code>Revoke Refresh Token</code>'s rotation/reuse-detection is the correct, narrower tool — revoking
+            the whole session would also log out the legitimate user unnecessarily.</p>
+          </details></li>
+          <li><details>
+            <summary>Describe, mechanically, what actually made the second client's authorization request succeed
+            without a login prompt in this chapter's cookie-jar demonstration. What specific thing would have to be
+            missing or blocked for that same request to fail and show a login form instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The first login
+            set a <code>KEYCLOAK_SESSION</code> cookie on Keycloak's own domain (not either client's domain), tied
+            to the real SSO session <code>vzx2JU48HbGlFh3OkVZSqNes</code>. When the second <code>/auth</code>
+            request for <code>northwind-support-portal</code> reused the same cookie jar, Keycloak checked that
+            cookie, found a live, matching session, and silently reused it — issuing a fresh authorization code
+            with the same <code>session_state</code> instead of rendering a login form. For that same request to
+            fail and show a login form instead, the <code>KEYCLOAK_SESSION</code> cookie would have to be missing or
+            not sent — for example, third-party cookie blocking, the request crossing a different top-level domain
+            than Keycloak's own, an iframe/embedded context stripping cookies, or the underlying session having
+            already idled out or been revoked.</p>
+          </details></li>
+          <li><details>
+            <summary>A fresh realm reads <code>clientSessionIdleTimeout: 0</code>. What does that <code>0</code>
+            actually mean, and why would naively assuming "unlimited" lead someone to the wrong operational
+            conclusion?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Per Keycloak's
+            own Server Administration Guide, <code>0</code> on Client Session Idle/Max means the client session
+            inherits the parent SSO session's own Idle/Max value — it is not a sentinel for "no limit." Assuming
+            "unlimited" would lead someone to conclude a client session could stay alive indefinitely regardless of
+            the realm's SSO Session Idle/Max settings, when in reality it's bound by exactly the same timeout the
+            SSO session itself has — so tightening or loosening SSO Session Idle/Max on a realm with client sessions
+            left at the <code>0</code> default changes client-session behavior too, which an "unlimited" assumption
+            would miss entirely.</p>
+          </details></li>
+          <li><details>
+            <summary>Meridian Trust's teller had two active sessions (two devices) when the laptop theft was
+            reported. Why was <code>POST users/{id}/logout</code> the better tool than calling <code>DELETE
+            sessions/{id}</code> twice, and under what circumstance would the two-call approach actually be the
+            right choice instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>POST
+            users/{id}/logout</code> revokes every session belonging to that user in one call, so a security
+            operator doesn't need to first enumerate every session id and then issue one <code>DELETE</code> per id
+            — faster and less error-prone when the goal is "end all of this person's access, full stop," which is
+            exactly Meridian Trust's stolen-laptop scenario. The two-call <code>DELETE sessions/{id}</code> approach
+            would be the right choice instead if only one specific session needed to end while the user's other
+            session(s) should stay alive and unaffected — for example, ending just the session from a device
+            reported lost while deliberately leaving the teller's still-trusted desktop session active.</p>
+          </details></li>
+        </ol>
+      </section>
 
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
 
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_timeouts">Keycloak docs — Server Administration Guide: Session and token timeouts</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_user_session_limits">Keycloak docs — Server Administration Guide: User session limits</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_oidc-logout">Keycloak docs — Server Administration Guide: OIDC Logout (Session Management, RP-Initiated, Front-Channel, Back-Channel)</a></li>
-      <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak docs — Admin REST API reference</a></li>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc9700">RFC 9700 — OAuth 2.0 Security Best Current Practice (refresh token protection, §2.2.2 and §4.14)</a></li>
-      <li><a href="https://openid.net/specs/openid-connect-session-1_0.html">OpenID Connect Session Management 1.0</a></li>
-      <li><a href="https://openid.net/specs/openid-connect-rpinitiated-1_0.html">OpenID Connect RP-Initiated Logout 1.0</a></li>
-      <li><a href="https://openid.net/specs/openid-connect-backchannel-1_0.html">OpenID Connect Back-Channel Logout 1.0</a></li>
-    </ul>
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_timeouts">Keycloak docs — Server Administration Guide: Session and token timeouts</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_user_session_limits">Keycloak docs — Server Administration Guide: User session limits</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_oidc-logout">Keycloak docs — Server Administration Guide: OIDC Logout (Session Management, RP-Initiated, Front-Channel, Back-Channel)</a></li>
+          <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak docs — Admin REST API reference</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9700">RFC 9700 — OAuth 2.0 Security Best Current Practice (refresh token protection, §2.2.2 and §4.14)</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-session-1_0.html">OpenID Connect Session Management 1.0</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-rpinitiated-1_0.html">OpenID Connect RP-Initiated Logout 1.0</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-backchannel-1_0.html">OpenID Connect Back-Channel Logout 1.0</a></li>
+        </ul>
+      </section>
 
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "sessions-deep-dive", 15);
+    SlideDeck.init({ chapterSlug: "sessions-deep-dive" });
   });
 </script>
 </body>

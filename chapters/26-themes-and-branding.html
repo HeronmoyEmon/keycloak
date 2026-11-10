@@ -5,320 +5,339 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Themes, Branding &amp; Localization — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "themes-and-branding";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part IV — Keycloak Core Administration</span>
-      <span class="badge minutes">~35 min</span>
-      <span class="badge lab">Hands-on lab</span>
-    </div>
-    <h1>26. Themes, Branding &amp; Localization</h1>
-    <p class="lede">This is the last chapter in the <code>northwind-apps</code> realm build arc that began in
-    chapter 20. Settings, users, roles/groups, clients, and auth flows are all in place; the one thing left
-    is what the realm's screens actually look like, and in which languages. This chapter does that honestly:
-    it confirms, for real against a running Keycloak, exactly which built-in themes this image ships and how
-    a realm's theme assignment is stored and read back — and it is explicit about the one thing a text-only
-    session genuinely cannot do, which is look at a rendered page.</p>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
 
-    <h2>Why this matters</h2>
-    <p>A login screen is the first and most frequently seen surface of an entire IAM program, and for a CIAM
-    product like Northwind's, it is also a conversion surface — chapter 12 already flagged "login-page
-    branding/conversion impact" as one of the things that distinguishes CIAM buying decisions from workforce
-    IAM ones. An IAM specialist is routinely asked to make a login page look like the product, support the
-    languages a customer base actually uses, and do both without forking vendor code or breaking on the next
-    upgrade. Keycloak's theme system is the mechanism for that. Getting it wrong usually looks like either a
-    half-styled login page after a botched override, or a theme name typed into a realm setting that quietly
-    does nothing because nothing by that name actually exists on disk — both are cheap mistakes to make and
-    cheap to avoid once you know how the mechanism is actually checked (or isn't).</p>
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IV — Keycloak Core Administration</span>
+          <span class="badge minutes">~35 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>26. Themes, Branding &amp; Localization</h1>
+        <p class="lede">This is the last chapter in the <code>northwind-apps</code> realm build arc that began in
+        chapter 20. Settings, users, roles/groups, clients, and auth flows are all in place; the one thing left
+        is what the realm's screens actually look like, and in which languages. This chapter does that honestly:
+        it confirms, for real against a running Keycloak, exactly which built-in themes this image ships and how
+        a realm's theme assignment is stored and read back — and it is explicit about the one thing a text-only
+        session genuinely cannot do, which is look at a rendered page.</p>
 
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">What concept is this?</div>
-      <p>Chapter 12 named branding/conversion and localization reach as real, buyer-relevant differentiators
-      between CIAM and workforce IAM products — this chapter is where that stops being a market-landscape
-      bullet point and becomes a realm setting you can read back with <code>kcadm.sh</code>. The underlying
-      IAM concept is <strong>extensibility</strong> (chapter 1 defined it generically as customizing a vendor
-      system "via a defined plugin interface rather than forking the product's source code") applied to the
-      presentation layer specifically: a theme is a plugin that swaps what the IdP's screens look like and
-      which languages they speak, without touching Keycloak's own code. Chapter 8's and chapter 2's identity
-      lifecycle also resurfaces here in miniature — a theme and a locale are both just <em>attributes</em> of
-      a realm, read at request time, exactly like a user attribute is read at authentication time.</p>
-    </div>
+        <h2>Why this matters</h2>
+        <p>A login screen is the first and most frequently seen surface of an entire IAM program, and for a CIAM
+        product like Northwind's, it is also a conversion surface — chapter 12 already flagged "login-page
+        branding/conversion impact" as one of the things that distinguishes CIAM buying decisions from workforce
+        IAM ones. An IAM specialist is routinely asked to make a login page look like the product, support the
+        languages a customer base actually uses, and do both without forking vendor code or breaking on the next
+        upgrade. Keycloak's theme system is the mechanism for that. Getting it wrong usually looks like either a
+        half-styled login page after a botched override, or a theme name typed into a realm setting that quietly
+        does nothing because nothing by that name actually exists on disk — both are cheap mistakes to make and
+        cheap to avoid once you know how the mechanism is actually checked (or isn't).</p>
 
-    <h2>Theme types: which screens each one covers</h2>
-    <p>Keycloak's own current <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Server
-    Administration Guide</a> (fetched live for this chapter) names four theme categories a realm configures
-    independently, each on its own tab under <strong>Realm settings &rarr; Themes</strong>:</p>
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 12 named branding/conversion and localization reach as real, buyer-relevant differentiators
+          between CIAM and workforce IAM products — this chapter is where that stops being a market-landscape
+          bullet point and becomes a realm setting you can read back with <code>kcadm.sh</code>. The underlying
+          IAM concept is <strong>extensibility</strong> (chapter 1 defined it generically as customizing a vendor
+          system "via a defined plugin interface rather than forking the product's source code") applied to the
+          presentation layer specifically: a theme is a plugin that swaps what the IdP's screens look like and
+          which languages they speak, without touching Keycloak's own code. Chapter 8's and chapter 2's identity
+          lifecycle also resurfaces here in miniature — a theme and a locale are both just <em>attributes</em> of
+          a realm, read at request time, exactly like a user attribute is read at authentication time.</p>
+        </div>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption>The four realm-level theme settings, per Keycloak's own documentation</caption>
-        <thead><tr><th>Setting</th><th>REST field</th><th>Covers</th></tr></thead>
-        <tbody>
-          <tr><td>Login theme</td><td><code>loginTheme</code></td><td>"Username password entry, OTP entry, new user registration, and other similar screens related to login" — the pages this course's labs have been hitting since chapter 20.</td></tr>
-          <tr><td>Account theme</td><td><code>accountTheme</code></td><td>"The console used by the user to manage his or her account" — self-service password/MFA/session management, chapter 1's "self-service" concept made concrete.</td></tr>
-          <tr><td>Admin console theme</td><td><code>adminTheme</code></td><td>The skin of the Keycloak Admin Console itself — the tool every lab in this course has been described as using.</td></tr>
-          <tr><td>Email theme</td><td><code>emailTheme</code></td><td>Templates for every email Keycloak sends (verification, password reset, OTP codes).</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="theme-types" data-title="The four theme types">
+        <h2>Theme types: which screens each one covers</h2>
+        <p>Keycloak's own current <a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Server
+        Administration Guide</a> (fetched live for this chapter) names four theme categories a realm configures
+        independently, each on its own tab under <strong>Realm settings &rarr; Themes</strong>:</p>
 
-    <p>A fifth type, the <strong>welcome theme</strong>, exists too, but it is configured differently: it is
-    an instance-wide default page (what you see hitting <code>http://localhost:8080/</code> with no realm in
-    the URL at all), set via a server startup option (<code>--spi-theme--welcome-theme=&lt;name&gt;</code>),
-    not a per-realm REST field — this chapter's labs only touch the four realm-level fields above.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>The four realm-level theme settings, per Keycloak's own documentation</caption>
+            <thead><tr><th>Setting</th><th>REST field</th><th>Covers</th></tr></thead>
+            <tbody>
+              <tr><td>Login theme</td><td><code>loginTheme</code></td><td>"Username password entry, OTP entry, new user registration, and other similar screens related to login" — the pages this course's labs have been hitting since chapter 20.</td></tr>
+              <tr><td>Account theme</td><td><code>accountTheme</code></td><td>"The console used by the user to manage his or her account" — self-service password/MFA/session management, chapter 1's "self-service" concept made concrete.</td></tr>
+              <tr><td>Admin console theme</td><td><code>adminTheme</code></td><td>The skin of the Keycloak Admin Console itself — the tool every lab in this course has been described as using.</td></tr>
+              <tr><td>Email theme</td><td><code>emailTheme</code></td><td>Templates for every email Keycloak sends (verification, password reset, OTP codes).</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 290" role="img" aria-labelledby="t1 d1">
-        <title id="t1">The four realm-level theme settings and which screens each one controls</title>
-        <desc id="d1">A 2x2 grid of four boxes radiating from a central "northwind-apps realm" node. Top-left:
-        Login theme, loginTheme field, controls username/password entry, OTP entry, registration. Top-right:
-        Account theme, accountTheme field, controls the self-service Account Console. Bottom-left: Admin
-        console theme, adminTheme field, controls the Admin Console UI administrators use. Bottom-right:
-        Email theme, emailTheme field, controls verification/reset/OTP email templates. A separate note box
-        below states the welcome theme is instance-wide, set by a server startup option, not a per-realm
-        field, and is out of scope for this chapter's realm-level lab.</desc>
-        <circle cx="450" cy="145" r="55" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="450" y="140" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps</text>
-        <text x="450" y="156" text-anchor="middle" class="diagram-label" font-size="11">realm</text>
+        <p>A fifth type, the <strong>welcome theme</strong>, exists too, but it is configured differently: it is
+        an instance-wide default page (what you see hitting <code>http://localhost:8080/</code> with no realm in
+        the URL at all), set via a server startup option (<code>--spi-theme--welcome-theme=&lt;name&gt;</code>),
+        not a per-realm REST field — this chapter's labs only touch the four realm-level fields above.</p>
 
-        <line x1="430" y1="110" x2="260" y2="60" class="diagram-stroke" marker-end="url(#arrowT)"/>
-        <rect x="60" y="20" width="220" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="170" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login theme</text>
-        <text x="170" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">loginTheme</text>
-        <text x="170" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">password/OTP/registration</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 290" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The four realm-level theme settings and which screens each one controls</title>
+            <desc id="d1">A 2x2 grid of four boxes radiating from a central "northwind-apps realm" node. Top-left:
+            Login theme, loginTheme field, controls username/password entry, OTP entry, registration. Top-right:
+            Account theme, accountTheme field, controls the self-service Account Console. Bottom-left: Admin
+            console theme, adminTheme field, controls the Admin Console UI administrators use. Bottom-right:
+            Email theme, emailTheme field, controls verification/reset/OTP email templates. A separate note box
+            below states the welcome theme is instance-wide, set by a server startup option, not a per-realm
+            field, and is out of scope for this chapter's realm-level lab.</desc>
+            <circle cx="450" cy="145" r="55" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="140" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps</text>
+            <text x="450" y="156" text-anchor="middle" class="diagram-label" font-size="11">realm</text>
 
-        <line x1="470" y1="110" x2="640" y2="60" class="diagram-stroke" marker-end="url(#arrowT)"/>
-        <rect x="620" y="20" width="220" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="730" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Account theme</text>
-        <text x="730" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">accountTheme</text>
-        <text x="730" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">self-service Account Console</text>
+            <line x1="430" y1="110" x2="260" y2="60" class="diagram-stroke" marker-end="url(#arrowT)"/>
+            <rect x="60" y="20" width="220" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="170" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login theme</text>
+            <text x="170" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">loginTheme</text>
+            <text x="170" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">password/OTP/registration</text>
 
-        <line x1="430" y1="180" x2="260" y2="230" class="diagram-stroke" marker-end="url(#arrowT)"/>
-        <rect x="60" y="210" width="220" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="170" y="232" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Admin console theme</text>
-        <text x="170" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">adminTheme</text>
-        <text x="170" y="266" text-anchor="middle" class="diagram-label-muted" font-size="10">the Admin Console UI</text>
+            <line x1="470" y1="110" x2="640" y2="60" class="diagram-stroke" marker-end="url(#arrowT)"/>
+            <rect x="620" y="20" width="220" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="730" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Account theme</text>
+            <text x="730" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">accountTheme</text>
+            <text x="730" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">self-service Account Console</text>
 
-        <line x1="470" y1="180" x2="640" y2="230" class="diagram-stroke" marker-end="url(#arrowT)"/>
-        <rect x="620" y="210" width="220" height="80" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="730" y="232" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Email theme</text>
-        <text x="730" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">emailTheme</text>
-        <text x="730" y="266" text-anchor="middle" class="diagram-label-muted" font-size="10">verification/reset/OTP emails</text>
+            <line x1="430" y1="180" x2="260" y2="230" class="diagram-stroke" marker-end="url(#arrowT)"/>
+            <rect x="60" y="210" width="220" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="170" y="232" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Admin console theme</text>
+            <text x="170" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">adminTheme</text>
+            <text x="170" y="266" text-anchor="middle" class="diagram-label-muted" font-size="10">the Admin Console UI</text>
 
-        <defs>
-          <marker id="arrowT" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 26.1 &mdash; Four independent per-realm theme fields; a fifth, the welcome theme, is
-      an instance-wide server option, not shown here.</figcaption>
-    </figure>
+            <line x1="470" y1="180" x2="640" y2="230" class="diagram-stroke" marker-end="url(#arrowT)"/>
+            <rect x="620" y="210" width="220" height="80" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="730" y="232" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Email theme</text>
+            <text x="730" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">emailTheme</text>
+            <text x="730" y="266" text-anchor="middle" class="diagram-label-muted" font-size="10">verification/reset/OTP emails</text>
 
-    <h2>Assigning a theme at the realm level, confirmed live</h2>
-    <p>Before setting anything, this chapter's lab asked what themes actually exist on this Keycloak 26.8.2
-    image, rather than assuming names from memory or from an older Keycloak version's docs. Keycloak 26.x
-    does not ship themes as a plain directory tree you can <code>ls</code> directly &mdash; the built-in
-    themes are bundled inside JARs, and <code>/opt/keycloak/themes/</code> only contains a <code>README.md</code>
-    pointing you at them:</p>
+            <defs>
+              <marker id="arrowT" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 26.1 &mdash; Four independent per-realm theme fields; a fifth, the welcome theme, is
+          an instance-wide server option, not shown here.</figcaption>
+        </figure>
+      </section>
 
-    <ol class="lab-steps">
-      <li><p>Listing <code>/opt/keycloak/themes/</code> inside the running container confirms this directly:</p>
+      <section class="slide" data-slide="assigning-theme" data-title="Assigning a theme, confirmed live">
+        <h2>Assigning a theme at the realm level, confirmed live</h2>
+        <p>Before setting anything, this chapter's lab asked what themes actually exist on this Keycloak 26.8.2
+        image, rather than assuming names from memory or from an older Keycloak version's docs. Keycloak 26.x
+        does not ship themes as a plain directory tree you can <code>ls</code> directly &mdash; the built-in
+        themes are bundled inside JARs, and <code>/opt/keycloak/themes/</code> only contains a <code>README.md</code>
+        pointing you at them:</p>
+
+        <ol class="lab-steps">
+          <li><p>Listing <code>/opt/keycloak/themes/</code> inside the running container confirms this directly:</p>
 <pre><code>docker compose exec keycloak ls /opt/keycloak/themes/</code></pre>
 <pre><code>README.md</code></pre>
-      <p>The README itself says exactly why: <em>"Built-in templates ... can be found within the theme
-      directory of <code>../lib/lib/main/org.keycloak.keycloak-themes-26.8.2.jar</code>, which can be opened
-      using any standard ZIP archive tool,"</em> and explicitly warns <em>"Built-in themes should not be
-      modified directly, instead a custom theme should be created."</em></p></li>
+          <p>The README itself says exactly why: <em>"Built-in templates ... can be found within the theme
+          directory of <code>../lib/lib/main/org.keycloak.keycloak-themes-26.8.2.jar</code>, which can be opened
+          using any standard ZIP archive tool,"</em> and explicitly warns <em>"Built-in themes should not be
+          modified directly, instead a custom theme should be created."</em></p></li>
 
-      <li><p>The container has no <code>unzip</code> binary, so this chapter copied the jar out to the host
-      with <code>docker compose cp</code> and inspected it with Python's standard-library <code>zipfile</code>
-      module instead of guessing. The real, confirmed top-level theme names in this exact image are:</p>
+          <li><p>The container has no <code>unzip</code> binary, so this chapter copied the jar out to the host
+          with <code>docker compose cp</code> and inspected it with Python's standard-library <code>zipfile</code>
+          module instead of guessing. The real, confirmed top-level theme names in this exact image are:</p>
 <pre><code>Top-level theme names: ['base', 'keycloak', 'keycloak.v2']
 base        -&gt; ['account', 'admin', 'email', 'login']
 keycloak    -&gt; ['common', 'email', 'login', 'welcome']
 keycloak.v2 -&gt; ['login']</code></pre>
-      <p>Three real names, not an invented fourth: <code>base</code> (the shared foundation every other theme
-      extends &mdash; its own <code>login/theme.properties</code> sets <code>abstract=true</code>, meaning
-      Keycloak's realm Themes <em>dropdown</em> hides it from direct selection, a courtesy the REST API does
-      not enforce, as the pitfall below shows), <code>keycloak</code> (the older PatternFly v3/v4 "classic"
-      theme &mdash; still fully present, with login, email, and welcome types), and <code>keycloak.v2</code>
-      (the newer PatternFly v5 theme, with <code>darkMode=true</code> in its properties, but only a
-      <code>login</code> type &mdash; see the pitfall on Account/Admin Console theming below for why).</p></li>
+          <p>Three real names, not an invented fourth: <code>base</code> (the shared foundation every other theme
+          extends &mdash; its own <code>login/theme.properties</code> sets <code>abstract=true</code>, meaning
+          Keycloak's realm Themes <em>dropdown</em> hides it from direct selection, a courtesy the REST API does
+          not enforce, as the pitfall below shows), <code>keycloak</code> (the older PatternFly v3/v4 "classic"
+          theme &mdash; still fully present, with login, email, and welcome types), and <code>keycloak.v2</code>
+          (the newer PatternFly v5 theme, with <code>darkMode=true</code> in its properties, but only a
+          <code>login</code> type &mdash; see the pitfall on Account/Admin Console theming below for why).</p></li>
 
-      <li><p>With a real theme name confirmed to exist, set it on <code>northwind-apps</code>:</p>
+          <li><p>With a real theme name confirmed to exist, set it on <code>northwind-apps</code>:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps -s loginTheme=keycloak</code></pre>
-      <p>Then confirm it actually persisted, independently of the update command's own silence (no output on
-      success is itself something worth confirming, not assuming):</p>
+          <p>Then confirm it actually persisted, independently of the update command's own silence (no output on
+          success is itself something worth confirming, not assuming):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields loginTheme</code></pre>
 <pre><code>{
   "loginTheme" : "keycloak"
 }</code></pre>
-      <p>Before this command ran, the same <code>get</code> call against <code>loginTheme</code> returned
-      nothing for that field at all &mdash; <code>kcadm.sh</code>'s <code>--fields</code> output simply omits
-      a field that is unset, which is itself a useful thing to know when reading these responses: an absent
-      key means null, not an empty string.</p></li>
-    </ol>
+          <p>Before this command ran, the same <code>get</code> call against <code>loginTheme</code> returned
+          nothing for that field at all &mdash; <code>kcadm.sh</code>'s <code>--fields</code> output simply omits
+          a field that is unset, which is itself a useful thing to know when reading these responses: an absent
+          key means null, not an empty string.</p></li>
+        </ol>
 
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall &mdash; the REST API does not validate that a theme name is sane</div>
-      <p>This chapter also set <code>accountTheme=base</code> and <code>adminTheme=base</code> on
-      <code>northwind-apps</code> via <code>kcadm.sh</code>, specifically to test a question the docs don't
-      answer directly: does the Admin REST API check that the name you give it is a real, renderable theme
-      for that type? It does not. Both writes succeeded and both read back exactly as set:</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall &mdash; the REST API does not validate that a theme name is sane</div>
+          <p>This chapter also set <code>accountTheme=base</code> and <code>adminTheme=base</code> on
+          <code>northwind-apps</code> via <code>kcadm.sh</code>, specifically to test a question the docs don't
+          answer directly: does the Admin REST API check that the name you give it is a real, renderable theme
+          for that type? It does not. Both writes succeeded and both read back exactly as set:</p>
 <pre><code>{
   "loginTheme" : "keycloak",
   "accountTheme" : "base",
   "adminTheme" : "base",
   "emailTheme" : "keycloak"
 }</code></pre>
-      <p><code>base</code> is marked <code>abstract=true</code> specifically so the Admin Console's own
-      Themes-tab dropdown won't offer it as a selectable option &mdash; but that is a UI-level courtesy, not
-      a server-side constraint, and <code>kcadm.sh</code>/the REST API go around it entirely. If you see a
-      realm with a theme field set to a name that doesn't resolve to anything sensible at render time, the
-      cause is very often exactly this: someone (or some automation) wrote the field directly through the
-      REST API or <code>kcadm.sh</code> rather than through the Console's dropdown, and nothing on the write
-      path caught the mistake. This also means a typo in an Infrastructure-as-Code theme name (Terraform,
-      Ansible, a CI script) will silently "succeed" and only surface the next time someone actually looks at
-      the rendered page.</p>
-    </div>
+          <p><code>base</code> is marked <code>abstract=true</code> specifically so the Admin Console's own
+          Themes-tab dropdown won't offer it as a selectable option &mdash; but that is a UI-level courtesy, not
+          a server-side constraint, and <code>kcadm.sh</code>/the REST API go around it entirely. If you see a
+          realm with a theme field set to a name that doesn't resolve to anything sensible at render time, the
+          cause is very often exactly this: someone (or some automation) wrote the field directly through the
+          REST API or <code>kcadm.sh</code> rather than through the Console's dropdown, and nothing on the write
+          path caught the mistake. This also means a typo in an Infrastructure-as-Code theme name (Terraform,
+          Ansible, a CI script) will silently "succeed" and only surface the next time someone actually looks at
+          the rendered page.</p>
+        </div>
+      </section>
 
-    <h2>How a real custom theme is actually built</h2>
-    <p>Nothing above created a new theme &mdash; it assigned one of the three that already ship with this
-    image. Building Northwind's own branded theme is a different, larger task this chapter did not attempt
-    to fabricate: it requires creating a real <code>themes/&lt;name&gt;/&lt;type&gt;/</code> directory
-    structure with override files, and this course has no way to render the result without a browser to
-    confirm it actually looks right. What follows is the real mechanism, confirmed by inspecting the shipped
-    themes' own files directly (not guessed), plus Keycloak's official <a
-    href="https://www.keycloak.org/ui-customization/themes">UI Customization Guide &mdash; Working with
-    themes</a> (fetched live for this chapter) for the complete how-to.</p>
+      <section class="slide" data-slide="custom-theme" data-title="How a custom theme is built">
+        <h2>How a real custom theme is actually built</h2>
+        <p>Nothing above created a new theme &mdash; it assigned one of the three that already ship with this
+        image. Building Northwind's own branded theme is a different, larger task this chapter did not attempt
+        to fabricate: it requires creating a real <code>themes/&lt;name&gt;/&lt;type&gt;/</code> directory
+        structure with override files, and this course has no way to render the result without a browser to
+        confirm it actually looks right. What follows is the real mechanism, confirmed by inspecting the shipped
+        themes' own files directly (not guessed), plus Keycloak's official <a
+        href="https://www.keycloak.org/ui-customization/themes">UI Customization Guide &mdash; Working with
+        themes</a> (fetched live for this chapter) for the complete how-to.</p>
 
-    <p>Reading <code>keycloak/login/theme.properties</code> and <code>keycloak.v2/login/theme.properties</code>
-    directly out of the jar shows the real inheritance mechanism in practice, not paraphrased:</p>
+        <p>Reading <code>keycloak/login/theme.properties</code> and <code>keycloak.v2/login/theme.properties</code>
+        directly out of the jar shows the real inheritance mechanism in practice, not paraphrased:</p>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Real <code>theme.properties</code> contents read directly from this image's built-in themes jar</caption>
-        <thead><tr><th>Theme</th><th>Key lines</th></tr></thead>
-        <tbody>
-          <tr><td><code>base/login</code></td><td><code>locales=ar,az,ca,...,zh-TW</code> (the full supported-locale list)<br><code>abstract=true</code></td></tr>
-          <tr><td><code>keycloak/login</code></td><td><code>parent=base</code><br><code>import=common/keycloak</code><br><code>styles=css/login.css</code> (PatternFly v3/v4)</td></tr>
-          <tr><td><code>keycloak.v2/login</code></td><td><code>parent=base</code><br><code>import=common/keycloak</code><br><code>darkMode=true</code> (PatternFly v5)</td></tr>
-        </tbody>
-      </table>
-    </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Real <code>theme.properties</code> contents read directly from this image's built-in themes jar</caption>
+            <thead><tr><th>Theme</th><th>Key lines</th></tr></thead>
+            <tbody>
+              <tr><td><code>base/login</code></td><td><code>locales=ar,az,ca,...,zh-TW</code> (the full supported-locale list)<br><code>abstract=true</code></td></tr>
+              <tr><td><code>keycloak/login</code></td><td><code>parent=base</code><br><code>import=common/keycloak</code><br><code>styles=css/login.css</code> (PatternFly v3/v4)</td></tr>
+              <tr><td><code>keycloak.v2/login</code></td><td><code>parent=base</code><br><code>import=common/keycloak</code><br><code>darkMode=true</code> (PatternFly v5)</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <p>A custom theme follows the identical pattern: a new directory (say, <code>themes/northwind/login/</code>)
-    with its own <code>theme.properties</code> declaring <code>parent=keycloak</code> or <code>parent=base</code>
-    to inherit everything it doesn't explicitly override, a <code>resources/</code> folder (<code>css/</code>,
-    <code>js/</code>, <code>img/</code>) for Northwind's logo and stylesheet, a <code>messages/</code> folder
-    of <code>messages_&lt;locale&gt;.properties</code> files for translated text, and, only where the default
-    markup itself needs to change (not just its styling), an FTL template override such as
-    <code>login/login.ftl</code> placed at that exact path to shadow the parent theme's own template of the
-    same name. The official guide's own development workflow is to start Keycloak with theme/template caching
-    explicitly disabled (<code>--spi-theme--cache-themes=false --spi-theme--cache-templates=false</code>, or
-    rely on <code>start-dev</code>'s equivalent built-in behavior) so edits show up on refresh, then re-enable
-    caching for production since disabling it "will significantly impact performance" per the guide's own
-    words.</p>
+        <p>A custom theme follows the identical pattern: a new directory (say, <code>themes/northwind/login/</code>)
+        with its own <code>theme.properties</code> declaring <code>parent=keycloak</code> or <code>parent=base</code>
+        to inherit everything it doesn't explicitly override, a <code>resources/</code> folder (<code>css/</code>,
+        <code>js/</code>, <code>img/</code>) for Northwind's logo and stylesheet, a <code>messages/</code> folder
+        of <code>messages_&lt;locale&gt;.properties</code> files for translated text, and, only where the default
+        markup itself needs to change (not just its styling), an FTL template override such as
+        <code>login/login.ftl</code> placed at that exact path to shadow the parent theme's own template of the
+        same name. The official guide's own development workflow is to start Keycloak with theme/template caching
+        explicitly disabled (<code>--spi-theme--cache-themes=false --spi-theme--cache-templates=false</code>, or
+        rely on <code>start-dev</code>'s equivalent built-in behavior) so edits show up on refresh, then re-enable
+        caching for production since disabling it "will significantly impact performance" per the guide's own
+        words.</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 300" role="img" aria-labelledby="t2 d2">
-        <title id="t2">Theme inheritance: base is the abstract foundation; a custom theme extends a real theme</title>
-        <desc id="d2">A tree diagram. At the top, a box labeled "base (abstract=true)" containing the full
-        locales list and shared structure, marked as hidden from the realm Themes dropdown. Two boxes branch
-        down from it: "keycloak" (parent=base, PatternFly v3/v4, the classic theme) and "keycloak.v2"
-        (parent=base, PatternFly v5, darkMode=true, the modern default theme, login type only in this image).
-        A third box, dashed to show it does not exist yet in this course's lab, branches from "keycloak" and
-        is labeled "northwind (hypothetical) — parent=keycloak, overrides resources/css/login.css,
-        resources/img/logo.svg, and messages/messages_en.properties; only overrides login.ftl itself if the
-        markup, not just the styling, needs to change." A caption notes this course verified the mechanism
-        (parent=, import=, abstract=) by reading real theme.properties files, but did not create or visually
-        verify a "northwind" theme.</desc>
-        <rect x="350" y="20" width="200" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">base</text>
-        <text x="450" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">abstract=true</text>
-        <text x="450" y="78" text-anchor="middle" class="diagram-label-muted" font-size="10">hidden from Themes dropdown</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Theme inheritance: base is the abstract foundation; a custom theme extends a real theme</title>
+            <desc id="d2">A tree diagram. At the top, a box labeled "base (abstract=true)" containing the full
+            locales list and shared structure, marked as hidden from the realm Themes dropdown. Two boxes branch
+            down from it: "keycloak" (parent=base, PatternFly v3/v4, the classic theme) and "keycloak.v2"
+            (parent=base, PatternFly v5, darkMode=true, the modern default theme, login type only in this image).
+            A third box, dashed to show it does not exist yet in this course's lab, branches from "keycloak" and
+            is labeled "northwind (hypothetical) — parent=keycloak, overrides resources/css/login.css,
+            resources/img/logo.svg, and messages/messages_en.properties; only overrides login.ftl itself if the
+            markup, not just the styling, needs to change." A caption notes this course verified the mechanism
+            (parent=, import=, abstract=) by reading real theme.properties files, but did not create or visually
+            verify a "northwind" theme.</desc>
+            <rect x="350" y="20" width="200" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">base</text>
+            <text x="450" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">abstract=true</text>
+            <text x="450" y="78" text-anchor="middle" class="diagram-label-muted" font-size="10">hidden from Themes dropdown</text>
 
-        <line x1="420" y1="90" x2="260" y2="140" class="diagram-stroke" marker-end="url(#arrowU)"/>
-        <rect x="150" y="140" width="220" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="260" y="163" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">keycloak</text>
-        <text x="260" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">parent=base, PatternFly v3/v4</text>
-        <text x="260" y="195" text-anchor="middle" class="diagram-label-muted" font-size="10">login, email, welcome, common</text>
+            <line x1="420" y1="90" x2="260" y2="140" class="diagram-stroke" marker-end="url(#arrowU)"/>
+            <rect x="150" y="140" width="220" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="260" y="163" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">keycloak</text>
+            <text x="260" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">parent=base, PatternFly v3/v4</text>
+            <text x="260" y="195" text-anchor="middle" class="diagram-label-muted" font-size="10">login, email, welcome, common</text>
 
-        <line x1="480" y1="90" x2="640" y2="140" class="diagram-stroke" marker-end="url(#arrowU)"/>
-        <rect x="530" y="140" width="220" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="640" y="163" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">keycloak.v2</text>
-        <text x="640" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">parent=base, PatternFly v5, darkMode=true</text>
-        <text x="640" y="195" text-anchor="middle" class="diagram-label-muted" font-size="10">login type only in this image</text>
+            <line x1="480" y1="90" x2="640" y2="140" class="diagram-stroke" marker-end="url(#arrowU)"/>
+            <rect x="530" y="140" width="220" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="640" y="163" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">keycloak.v2</text>
+            <text x="640" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">parent=base, PatternFly v5, darkMode=true</text>
+            <text x="640" y="195" text-anchor="middle" class="diagram-label-muted" font-size="10">login type only in this image</text>
 
-        <line x1="260" y1="210" x2="260" y2="250" class="diagram-stroke" stroke-dasharray="4 4" marker-end="url(#arrowU)"/>
-        <rect x="140" y="250" width="240" height="40" rx="8" class="diagram-fill-warning diagram-stroke" stroke-dasharray="4 4"/>
-        <text x="260" y="267" text-anchor="middle" class="diagram-label" font-size="11">northwind (hypothetical)</text>
-        <text x="260" y="281" text-anchor="middle" class="diagram-label" font-size="11">not built this chapter</text>
+            <line x1="260" y1="210" x2="260" y2="250" class="diagram-stroke" stroke-dasharray="4 4" marker-end="url(#arrowU)"/>
+            <rect x="140" y="250" width="240" height="40" rx="8" class="diagram-fill-warning diagram-stroke" stroke-dasharray="4 4"/>
+            <text x="260" y="267" text-anchor="middle" class="diagram-label" font-size="11">northwind (hypothetical)</text>
+            <text x="260" y="281" text-anchor="middle" class="diagram-label" font-size="11">not built this chapter</text>
 
-        <text x="20" y="280" class="diagram-label-muted" font-size="10">Mechanism (parent=/import=/abstract=) verified by reading real files. No "northwind" theme was created or visually checked.</text>
+            <text x="20" y="280" class="diagram-label-muted" font-size="10">Mechanism (parent=/import=/abstract=) verified by reading real files. No "northwind" theme was created or visually checked.</text>
 
-        <defs>
-          <marker id="arrowU" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 26.2 &mdash; The real inheritance chain this chapter read directly from the image,
-      with where a genuinely custom Northwind theme would attach (not built here).</figcaption>
-    </figure>
+            <defs>
+              <marker id="arrowU" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 26.2 &mdash; The real inheritance chain this chapter read directly from the image,
+          with where a genuinely custom Northwind theme would attach (not built here).</figcaption>
+        </figure>
 
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea &mdash; what this chapter can and cannot claim</div>
-      <p>This chapter can honestly claim: the three bundled theme names are real (confirmed by inspecting the
-      actual jar, not recalled from memory); setting <code>loginTheme</code>/<code>accountTheme</code>/
-      <code>adminTheme</code>/<code>emailTheme</code> on <code>northwind-apps</code> genuinely persists
-      (confirmed by an independent read-back, the same discipline chapter 20 used for realm creation); the
-      <code>parent=</code>/<code>import=</code>/<code>abstract=</code> mechanism is real (confirmed by
-      reading the shipped themes' own property files). It cannot claim: that <code>northwind-apps</code>'s
-      login page now visually looks like Keycloak's classic theme, or any particular rendered appearance at
-      all &mdash; no browser tool exists in this environment, and claiming a visual result without one would
-      break this course's own "no invented facts" rule as surely as inventing an RFC number would.</p>
-    </div>
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea &mdash; what this chapter can and cannot claim</div>
+          <p>This chapter can honestly claim: the three bundled theme names are real (confirmed by inspecting the
+          actual jar, not recalled from memory); setting <code>loginTheme</code>/<code>accountTheme</code>/
+          <code>adminTheme</code>/<code>emailTheme</code> on <code>northwind-apps</code> genuinely persists
+          (confirmed by an independent read-back, the same discipline chapter 20 used for realm creation); the
+          <code>parent=</code>/<code>import=</code>/<code>abstract=</code> mechanism is real (confirmed by
+          reading the shipped themes' own property files). It cannot claim: that <code>northwind-apps</code>'s
+          login page now visually looks like Keycloak's classic theme, or any particular rendered appearance at
+          all &mdash; no browser tool exists in this environment, and claiming a visual result without one would
+          break this course's own "no invented facts" rule as surely as inventing an RFC number would.</p>
+        </div>
+      </section>
 
-    <h2>Internationalization, confirmed live</h2>
-    <p>Separately from which theme a realm uses, a realm also controls which <em>languages</em> its theme
-    renders in. Per the Server Administration Guide: <strong>Realm Settings &rarr; Localization</strong> is
-    where an administrator enables internationalization and picks supported languages, and &mdash; already
-    true before this chapter touched anything &mdash; "every UI screen is internationalized in Keycloak,"
-    with English as the default.</p>
+      <section class="slide" data-slide="i18n" data-title="Internationalization, confirmed live">
+        <h2>Internationalization, confirmed live</h2>
+        <p>Separately from which theme a realm uses, a realm also controls which <em>languages</em> its theme
+        renders in. Per the Server Administration Guide: <strong>Realm Settings &rarr; Localization</strong> is
+        where an administrator enables internationalization and picks supported languages, and &mdash; already
+        true before this chapter touched anything &mdash; "every UI screen is internationalized in Keycloak,"
+        with English as the default.</p>
 
-    <ol class="lab-steps">
-      <li><p>Before any change, <code>internationalizationEnabled</code> on a fresh realm defaults to
-      <code>false</code> (confirmed, not assumed):</p>
+        <ol class="lab-steps">
+          <li><p>Before any change, <code>internationalizationEnabled</code> on a fresh realm defaults to
+          <code>false</code> (confirmed, not assumed):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps \
   --fields loginTheme,accountTheme,adminTheme,emailTheme,internationalizationEnabled,supportedLocales,defaultLocale</code></pre>
 <pre><code>{
   "internationalizationEnabled" : false
 }</code></pre>
-      <p>Every other field in that call is simply absent from the response, confirming none of them are set
-      yet either.</p></li>
+          <p>Every other field in that call is simply absent from the response, confirming none of them are set
+          yet either.</p></li>
 
-      <li><p>Enable it and declare supported locales and a default, all in one <code>kcadm.sh</code> call:</p>
+          <li><p>Enable it and declare supported locales and a default, all in one <code>kcadm.sh</code> call:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
   -s internationalizationEnabled=true \
   -s 'supportedLocales=["en","de","fr","es"]' \
   -s defaultLocale=en</code></pre>
-      <p>Confirmed with an independent read:</p>
+          <p>Confirmed with an independent read:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps \
   --fields internationalizationEnabled,supportedLocales,defaultLocale</code></pre>
 <pre><code>{
@@ -326,266 +345,320 @@ keycloak.v2 -&gt; ['login']</code></pre>
   "supportedLocales" : [ "de", "en", "fr", "es" ],
   "defaultLocale" : "en"
 }</code></pre>
-      <p>Note the order in the response (<code>de, en, fr, es</code>) does not match the order submitted
-      (<code>en, de, fr, es</code>) &mdash; <code>supportedLocales</code> is stored as an unordered set
-      server-side, not a sequence, so nothing about ordering is load-bearing for which locales are actually
-      supported.</p></li>
-    </ol>
+          <p>Note the order in the response (<code>de, en, fr, es</code>) does not match the order submitted
+          (<code>en, de, fr, es</code>) &mdash; <code>supportedLocales</code> is stored as an unordered set
+          server-side, not a sequence, so nothing about ordering is load-bearing for which locales are actually
+          supported.</p></li>
+        </ol>
 
-    <p>Each supported locale still needs an actual translation to render correctly &mdash; the
-    <code>base</code> theme's own <code>theme.properties</code> lists dozens of locale codes it ships message
-    bundles for out of the box (<code>ar,az,ca,cs,da,de,el,en,es,...,zh-TW</code>, confirmed by reading that
-    exact file, rather than assumed from a features list), so <code>de</code>, <code>fr</code>, and
-    <code>es</code> above all have real built-in translations already. A genuinely new language not already
-    in that list would need its own <code>messages_&lt;locale&gt;.properties</code> file added to a custom
-    theme &mdash; declaring a locale as "supported" on the realm and actually having strings for it are two
-    different things, and only the REST API enforces neither against the other, same as the theme-name
-    pitfall above.</p>
+        <p>Each supported locale still needs an actual translation to render correctly &mdash; the
+        <code>base</code> theme's own <code>theme.properties</code> lists dozens of locale codes it ships message
+        bundles for out of the box (<code>ar,az,ca,cs,da,de,el,en,es,...,zh-TW</code>, confirmed by reading that
+        exact file, rather than assumed from a features list), so <code>de</code>, <code>fr</code>, and
+        <code>es</code> above all have real built-in translations already. A genuinely new language not already
+        in that list would need its own <code>messages_&lt;locale&gt;.properties</code> file added to a custom
+        theme &mdash; declaring a locale as "supported" on the realm and actually having strings for it are two
+        different things, and only the REST API enforces neither against the other, same as the theme-name
+        pitfall above.</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 220" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Locale resolution order, per Keycloak's own documentation</title>
-        <desc id="d3">A left-to-right priority chain of seven boxes, each checked in order until one produces
-        a value: 1. the language the user explicitly selected on the login page. 2. a locale stored on the
-        user's own profile. 3. a client-requested locale, for example via the OIDC ui_locales parameter. 4. a
-        locale cookie from a previous visit. 5. the browser's Accept-Language header. 6. the realm's own
-        defaultLocale setting. 7. English, as the final fallback if nothing else resolved. A note states a
-        custom LocaleSelectorProvider SPI can override this entire order.</desc>
-        <rect x="10" y="60" width="110" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
-        <text x="65" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">1. User-selected</text>
-        <text x="65" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">on login page</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 220" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Locale resolution order, per Keycloak's own documentation</title>
+            <desc id="d3">A left-to-right priority chain of seven boxes, each checked in order until one produces
+            a value: 1. the language the user explicitly selected on the login page. 2. a locale stored on the
+            user's own profile. 3. a client-requested locale, for example via the OIDC ui_locales parameter. 4. a
+            locale cookie from a previous visit. 5. the browser's Accept-Language header. 6. the realm's own
+            defaultLocale setting. 7. English, as the final fallback if nothing else resolved. A note states a
+            custom LocaleSelectorProvider SPI can override this entire order.</desc>
+            <rect x="10" y="60" width="110" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="65" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">1. User-selected</text>
+            <text x="65" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">on login page</text>
 
-        <line x1="120" y1="95" x2="135" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="135" y="60" width="110" height="70" rx="6" class="diagram-fill-info diagram-stroke"/>
-        <text x="190" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">2. User profile</text>
-        <text x="190" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">stored locale</text>
+            <line x1="120" y1="95" x2="135" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="135" y="60" width="110" height="70" rx="6" class="diagram-fill-info diagram-stroke"/>
+            <text x="190" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">2. User profile</text>
+            <text x="190" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">stored locale</text>
 
-        <line x1="245" y1="95" x2="260" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="260" y="60" width="110" height="70" rx="6" class="diagram-fill-success diagram-stroke"/>
-        <text x="315" y="80" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">3. Client-requested</text>
-        <text x="315" y="96" text-anchor="middle" class="diagram-label-muted" font-size="9">ui_locales</text>
-        <text x="315" y="110" text-anchor="middle" class="diagram-label-muted" font-size="9">(OIDC param)</text>
+            <line x1="245" y1="95" x2="260" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="260" y="60" width="110" height="70" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="315" y="80" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">3. Client-requested</text>
+            <text x="315" y="96" text-anchor="middle" class="diagram-label-muted" font-size="9">ui_locales</text>
+            <text x="315" y="110" text-anchor="middle" class="diagram-label-muted" font-size="9">(OIDC param)</text>
 
-        <line x1="370" y1="95" x2="385" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="385" y="60" width="90" height="70" rx="6" class="diagram-fill-warning diagram-stroke"/>
-        <text x="430" y="90" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">4. Cookie</text>
+            <line x1="370" y1="95" x2="385" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="385" y="60" width="90" height="70" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="430" y="90" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">4. Cookie</text>
 
-        <line x1="475" y1="95" x2="490" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="490" y="60" width="130" height="70" rx="6" class="diagram-fill-danger diagram-stroke"/>
-        <text x="555" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">5. Accept-Language</text>
-        <text x="555" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">browser header</text>
+            <line x1="475" y1="95" x2="490" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="490" y="60" width="130" height="70" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="555" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">5. Accept-Language</text>
+            <text x="555" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">browser header</text>
 
-        <line x1="620" y1="95" x2="635" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="635" y="60" width="120" height="70" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="695" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">6. Realm default</text>
-        <text x="695" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">defaultLocale</text>
+            <line x1="620" y1="95" x2="635" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="635" y="60" width="120" height="70" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="695" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">6. Realm default</text>
+            <text x="695" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">defaultLocale</text>
 
-        <line x1="755" y1="95" x2="770" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
-        <rect x="770" y="60" width="110" height="70" rx="6" class="diagram-fill-info diagram-stroke"/>
-        <text x="825" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">7. English</text>
-        <text x="825" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">final fallback</text>
+            <line x1="755" y1="95" x2="770" y2="95" class="diagram-stroke" marker-end="url(#arrowL)"/>
+            <rect x="770" y="60" width="110" height="70" rx="6" class="diagram-fill-info diagram-stroke"/>
+            <text x="825" y="85" text-anchor="middle" class="diagram-label" font-size="10" font-weight="700">7. English</text>
+            <text x="825" y="102" text-anchor="middle" class="diagram-label-muted" font-size="9">final fallback</text>
 
-        <text x="10" y="165" class="diagram-label-muted" font-size="11">Each step is checked only if the previous one produced no value. A custom LocaleSelectorProvider SPI can replace this whole order.</text>
-        <defs>
-          <marker id="arrowL" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-            <path d="M0,0 L7,3.5 L0,7 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 26.3 &mdash; The seven-step locale resolution order, from Keycloak's own
-      documentation, not personally observed in a browser.</figcaption>
-    </figure>
+            <text x="10" y="165" class="diagram-label-muted" font-size="11">Each step is checked only if the previous one produced no value. A custom LocaleSelectorProvider SPI can replace this whole order.</text>
+            <defs>
+              <marker id="arrowL" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                <path d="M0,0 L7,3.5 L0,7 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 26.3 &mdash; The seven-step locale resolution order, from Keycloak's own
+          documentation, not personally observed in a browser.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Lab: the full sequence, end to end</h2>
-    <p>Run fresh from this chapter's own <code>docker compose up -d</code>, exactly as every chapter since 20
-    has:</p>
+      <section class="slide" data-slide="lab-sequence" data-title="The full lab sequence">
+        <h2>Lab: the full sequence, end to end</h2>
+        <p>Run fresh from this chapter's own <code>docker compose up -d</code>, exactly as every chapter since 20
+        has:</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t4 d4">
-        <title id="t4">This chapter's full lab sequence, as actually executed</title>
-        <desc id="d4">A six-step vertical sequence. 1. docker compose up -d, then poll the discovery endpoint
-        until it returns 200. 2. List /opt/keycloak/themes/ inside the container — only a README.md appears;
-        copy the real themes jar out with docker compose cp and inspect it with Python's zipfile module to
-        get the real theme names: base, keycloak, keycloak.v2. 3. kcadm.sh config credentials against the
-        master realm with the bootstrap admin. 4. kcadm.sh update realms/northwind-apps -s loginTheme=keycloak
-        (plus accountTheme/adminTheme=base, emailTheme=keycloak), then kcadm.sh get to confirm each field
-        persisted via an independent read. 5. kcadm.sh update realms/northwind-apps with
-        internationalizationEnabled=true, supportedLocales, and defaultLocale, then kcadm.sh get to confirm.
-        6. docker compose down -v, confirmed clean via docker ps -a and docker volume ls showing no leftover
-        containers or volume for this stack.</desc>
-        <rect x="40" y="10" width="820" height="35" rx="6" class="diagram-fill-accent diagram-stroke"/>
-        <text x="450" y="32" text-anchor="middle" class="diagram-label" font-size="11">1. docker compose up -d &rarr; poll discovery endpoint until 200 (took 7 of 25 attempts in this run)</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t4 d4">
+            <title id="t4">This chapter's full lab sequence, as actually executed</title>
+            <desc id="d4">A six-step vertical sequence. 1. docker compose up -d, then poll the discovery endpoint
+            until it returns 200. 2. List /opt/keycloak/themes/ inside the container — only a README.md appears;
+            copy the real themes jar out with docker compose cp and inspect it with Python's zipfile module to
+            get the real theme names: base, keycloak, keycloak.v2. 3. kcadm.sh config credentials against the
+            master realm with the bootstrap admin. 4. kcadm.sh update realms/northwind-apps -s loginTheme=keycloak
+            (plus accountTheme/adminTheme=base, emailTheme=keycloak), then kcadm.sh get to confirm each field
+            persisted via an independent read. 5. kcadm.sh update realms/northwind-apps with
+            internationalizationEnabled=true, supportedLocales, and defaultLocale, then kcadm.sh get to confirm.
+            6. docker compose down -v, confirmed clean via docker ps -a and docker volume ls showing no leftover
+            containers or volume for this stack.</desc>
+            <rect x="40" y="10" width="820" height="35" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="450" y="32" text-anchor="middle" class="diagram-label" font-size="11">1. docker compose up -d &rarr; poll discovery endpoint until 200 (took 7 of 25 attempts in this run)</text>
 
-        <rect x="40" y="55" width="820" height="35" rx="6" class="diagram-fill-info diagram-stroke"/>
-        <text x="450" y="77" text-anchor="middle" class="diagram-label" font-size="11">2. ls /opt/keycloak/themes/ (only README.md) &rarr; docker cp the real jar out &rarr; python3 zipfile &rarr; base, keycloak, keycloak.v2</text>
+            <rect x="40" y="55" width="820" height="35" rx="6" class="diagram-fill-info diagram-stroke"/>
+            <text x="450" y="77" text-anchor="middle" class="diagram-label" font-size="11">2. ls /opt/keycloak/themes/ (only README.md) &rarr; docker cp the real jar out &rarr; python3 zipfile &rarr; base, keycloak, keycloak.v2</text>
 
-        <rect x="40" y="100" width="820" height="35" rx="6" class="diagram-fill-success diagram-stroke"/>
-        <text x="450" y="122" text-anchor="middle" class="diagram-label" font-size="11">3. kcadm.sh config credentials --realm master --user admin (bootstrap admin)</text>
+            <rect x="40" y="100" width="820" height="35" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="450" y="122" text-anchor="middle" class="diagram-label" font-size="11">3. kcadm.sh config credentials --realm master --user admin (bootstrap admin)</text>
 
-        <rect x="40" y="145" width="820" height="35" rx="6" class="diagram-fill-warning diagram-stroke"/>
-        <text x="450" y="167" text-anchor="middle" class="diagram-label" font-size="11">4. kcadm.sh update realms/northwind-apps -s loginTheme=keycloak &rarr; kcadm.sh get confirms it persisted</text>
+            <rect x="40" y="145" width="820" height="35" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="450" y="167" text-anchor="middle" class="diagram-label" font-size="11">4. kcadm.sh update realms/northwind-apps -s loginTheme=keycloak &rarr; kcadm.sh get confirms it persisted</text>
 
-        <rect x="40" y="190" width="820" height="35" rx="6" class="diagram-fill-danger diagram-stroke"/>
-        <text x="450" y="212" text-anchor="middle" class="diagram-label" font-size="11">5. kcadm.sh update -s internationalizationEnabled=true -s supportedLocales=[...] &rarr; kcadm.sh get confirms it persisted</text>
+            <rect x="40" y="190" width="820" height="35" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="450" y="212" text-anchor="middle" class="diagram-label" font-size="11">5. kcadm.sh update -s internationalizationEnabled=true -s supportedLocales=[...] &rarr; kcadm.sh get confirms it persisted</text>
 
-        <rect x="40" y="235" width="820" height="20" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="450" y="250" text-anchor="middle" class="diagram-label" font-size="10">6. docker compose down -v &rarr; confirmed no stray containers/volume for this stack</text>
-      </svg>
-      <figcaption>Figure 26.4 &mdash; The six real steps this chapter's agent executed, in order, for this
-      page.</figcaption>
-    </figure>
+            <rect x="40" y="235" width="820" height="20" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="250" text-anchor="middle" class="diagram-label" font-size="10">6. docker compose down -v &rarr; confirmed no stray containers/volume for this stack</text>
+          </svg>
+          <figcaption>Figure 26.4 &mdash; The six real steps this chapter's agent executed, in order, for this
+          page.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Case study: Northwind Apps' branding decision</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study &mdash; Northwind Apps</div>
-      <p><span class="org-chip northwind">Northwind Apps</span> sells to other businesses, but its actual
-      end users &mdash; the people typing a password into <code>northwind-apps</code>'s login screen &mdash;
-      are often each customer company's own employees, not Northwind's. Chapter 12 named exactly this tension
-      as a CIAM-adjacent concern even inside a B2B product: login-page branding affects trust and conversion,
-      and a customer's IT security reviewer is unlikely to be reassured by a login page that visibly still
-      says "keycloak" at the bottom. A real Northwind theming project would create its own
-      <code>themes/northwind-login/login/</code> override (parent <code>keycloak.v2</code>, Northwind's logo
-      and color palette in <code>resources/</code>, no FTL changes needed unless the form layout itself must
-      change) and set <code>loginTheme=northwind-login</code> &mdash; the exact mechanism this chapter
-      verified using the stock <code>keycloak</code> name instead, because building and visually checking
-      that real asset is outside what a no-browser session can honestly claim to have done. The
-      internationalization piece is not hypothetical, though: Northwind's own customer base plausibly spans
-      English, German, French, and Spanish-speaking companies, which is exactly the locale set this chapter
-      actually enabled on the realm.</p>
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps">
+        <h2>Case study: Northwind Apps' branding decision</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study &mdash; Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> sells to other businesses, but its actual
+          end users &mdash; the people typing a password into <code>northwind-apps</code>'s login screen &mdash;
+          are often each customer company's own employees, not Northwind's. Chapter 12 named exactly this tension
+          as a CIAM-adjacent concern even inside a B2B product: login-page branding affects trust and conversion,
+          and a customer's IT security reviewer is unlikely to be reassured by a login page that visibly still
+          says "keycloak" at the bottom. A real Northwind theming project would create its own
+          <code>themes/northwind-login/login/</code> override (parent <code>keycloak.v2</code>, Northwind's logo
+          and color palette in <code>resources/</code>, no FTL changes needed unless the form layout itself must
+          change) and set <code>loginTheme=northwind-login</code> &mdash; the exact mechanism this chapter
+          verified using the stock <code>keycloak</code> name instead, because building and visually checking
+          that real asset is outside what a no-browser session can honestly claim to have done. The
+          internationalization piece is not hypothetical, though: Northwind's own customer base plausibly spans
+          English, German, French, and Spanish-speaking companies, which is exactly the locale set this chapter
+          actually enabled on the realm.</p>
+        </div>
+
+        <p>The same decision looks different for the other two case-study orgs, which is worth noticing even
+        though neither ran a lab here. <span class="org-chip riverside">Riverside Health</span>'s patient portal
+        would weigh an account theme at least as heavily as the login theme — a confused patient mid-password-reset
+        on an unfamiliar-looking account console is a support-call risk in a way a B2B admin never quite is — and
+        its locale set would be driven by the patient population it actually serves, not a sales map. <span
+        class="org-chip meridian">Meridian Trust</span>, as a regulated bank, would treat an email theme as a
+        compliance-adjacent surface too: a password-reset email is exactly the kind of message a phishing
+        simulation (and a real phisher) would try to imitate, so a visibly branded, consistent template is a
+        small but real defense, not just a cosmetic nicety.</p>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see someone try to <code>ls</code> a Keycloak 26.x container's <code>/opt/keycloak/themes/</code>
+          expecting to browse the built-in themes directly, the cause is assuming an older Keycloak layout &mdash;
+          in this version only a <code>README.md</code> lives there, and the real built-in theme files are inside
+          a JAR that has to be opened with a zip tool, not <code>ls</code>.</li>
+          <li>If you see a realm's theme field set to a name that doesn't actually render anything sensible, the
+          cause is very often a direct REST/<code>kcadm.sh</code> write that skipped the Admin Console's dropdown
+          &mdash; the REST API does not validate that the name resolves to a real theme directory for that type.</li>
+          <li>If you see someone set <code>adminTheme</code> or <code>accountTheme</code> to <code>base</code>
+          expecting a visible result, the cause is forgetting <code>base</code> is marked <code>abstract=true</code>
+          specifically because it is meant only to be inherited from, not used directly &mdash; the write succeeds
+          but is not a sane configuration.</li>
+          <li>If you see a reader declare a locale in <code>supportedLocales</code> and assume it's now fully
+          translated, the cause is conflating "listed as supported" with "has a <code>messages_&lt;locale&gt;.properties</code>
+          file" &mdash; the realm setting and the actual translation coverage are two independent things, and
+          nothing on the write path checks one against the other.</li>
+          <li>If you see a custom theme's CSS silently stop applying after it's set as a realm's <code>loginTheme</code>
+          in production, a common cause is theme/template caching (disabled under <code>start-dev</code>, enabled
+          by default under production <code>start</code>) serving a stale cached copy &mdash; the fix per the
+          official guide is either a server restart, disabling caching during active development with the
+          documented SPI options, or clearing <code>data/tmp/kc-gzip-cache</code>.</li>
+          <li>If you see someone look for a <code>welcomeTheme</code> field on the realm's REST representation
+          next to <code>loginTheme</code>/<code>accountTheme</code>/<code>adminTheme</code>/<code>emailTheme</code>,
+          the cause is assuming all five theme types are configured the same way &mdash; the welcome theme is an
+          instance-wide server startup option, not a per-realm field at all.</li>
+        </ul>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">Concept recall &mdash; the whole Northwind Apps realm, chapters 20&ndash;26</div>
+          <p>Chapter 20 created an empty <code>northwind-apps</code> realm and nothing else. Six chapters later,
+          that realm has a complete, if deliberately minimal, identity-system shape: realm-level settings and
+          token/session lifetimes from chapter 21; real users <code>jane.doe</code> and <code>priya.patel</code>
+          with credentials and a configured required action from chapter 22; realm roles
+          (<code>tenant-admin</code>, <code>support-agent</code>, <code>platform-engineer</code>) and groups
+          (<code>Engineering</code>, <code>Support</code>) from chapter 23, including Priya's mover-event
+          role/group reassignment &mdash; chapter 10's governance scenario, finally made real; the
+          <code>northwind-dashboard</code> client with a custom protocol mapper adding a <code>department</code>
+          claim from chapter 24, the concrete payoff of chapter 15's OIDC claims forward-reference; a cloned
+          browser flow with a conditional OTP step from chapter 25, chapter 5's MFA theory finally configured for
+          real; and now, this chapter, a confirmed login/account/admin/email theme assignment and an
+          internationalization configuration. Nothing here was narrated &mdash; every piece across all seven
+          chapters was created, and then independently re-confirmed with a second command, against a real running
+          Keycloak. Part V picks this realm up again from the operations side (REST API automation, events and
+          auditing, session behavior, password/brute-force policy) rather than extending its shape further.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Keycloak 26.x ships its built-in themes inside a JAR
+          (<code>org.keycloak.keycloak-themes-26.8.2.jar</code>), not as a browsable directory tree &mdash;
+          <code>/opt/keycloak/themes/</code> only contains a <code>README.md</code> explaining this.</li>
+          <li>The three real bundled theme names confirmed by inspecting that jar directly are <code>base</code>
+          (abstract, inherited-from only), <code>keycloak</code> (the classic PatternFly v3/v4 theme, with login,
+          email, and welcome types), and <code>keycloak.v2</code> (the modern PatternFly v5 theme with
+          <code>darkMode=true</code>, login type only in this image).</li>
+          <li>A realm's four theme fields &mdash; <code>loginTheme</code>, <code>accountTheme</code>,
+          <code>adminTheme</code>, <code>emailTheme</code> &mdash; were each set on <code>northwind-apps</code>
+          via <code>kcadm.sh update</code> and confirmed with an independent <code>kcadm.sh get</code> call, the
+          same two-command discipline chapter 20 used for realm creation.</li>
+          <li>The Admin REST API does not validate that a theme name resolves to anything real or sane for its
+          type &mdash; setting <code>adminTheme=base</code> (an abstract, inherit-only theme) succeeded and
+          persisted exactly like setting it to a genuinely usable name would.</li>
+          <li>A real custom theme is built as <code>themes/&lt;name&gt;/&lt;type&gt;/</code> with its own
+          <code>theme.properties</code> (declaring <code>parent=</code> and optionally <code>import=</code>), a
+          <code>resources/</code> folder, a <code>messages/</code> folder of locale-specific
+          <code>.properties</code> files, and FTL template overrides only where markup, not just styling, needs
+          to change &mdash; confirmed by reading the real <code>theme.properties</code> files of the shipped
+          themes, not paraphrased from memory.</li>
+          <li>This chapter did not build or visually verify a custom "Northwind" theme &mdash; no browser tool
+          exists in this environment, so the lab instead verified the real, checkable part of the mechanism
+          (listing real bundled names, assigning one, confirming persistence) using a genuine built-in theme name.</li>
+          <li><code>internationalizationEnabled</code> defaults to <code>false</code> on a fresh realm; enabling
+          it plus setting <code>supportedLocales</code> and <code>defaultLocale</code> was confirmed live, the
+          same way the theme fields were.</li>
+          <li>Keycloak's documented locale resolution order checks, in sequence: user-selected, user-profile
+          locale, a client-requested locale (e.g. OIDC's <code>ui_locales</code>), a cookie, the browser's
+          <code>Accept-Language</code> header, the realm's <code>defaultLocale</code>, and finally English &mdash;
+          a custom <code>LocaleSelectorProvider</code> SPI can replace this order entirely.</li>
+          <li>Declaring a locale as supported on a realm and that locale actually having translated message
+          bundles are two independent facts; nothing on the write path checks one against the other, exactly like
+          the theme-name validation gap above.</li>
+          <li>This chapter closes the <code>northwind-apps</code> realm build arc begun in chapter 20: settings,
+          users, roles/groups, clients with a custom claim mapper, a conditional-OTP auth flow, and now theming
+          and localization, every one of them created and independently re-confirmed against a real running
+          Keycloak rather than narrated.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Why couldn't this chapter simply run <code>ls</code> on Keycloak's theme directory the way earlier
+            chapters listed realms or users, and what did the lab do instead to find the real bundled theme names?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Keycloak 26.x bundles its built-in theme files inside a JAR (<code>org.keycloak.keycloak-themes-26.8.2.jar</code>) rather than extracting them onto disk, so <code>/opt/keycloak/themes/</code> only holds a <code>README.md</code> pointing at that jar — there's nothing for <code>ls</code> to show. The lab instead copied the real jar out of the container to the host with <code>docker compose cp</code> and inspected it with Python's standard-library <code>zipfile</code> module (since the container itself has no <code>unzip</code> binary), which is how it confirmed the three real top-level names: <code>base</code>, <code>keycloak</code>, and <code>keycloak.v2</code>.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, concretely, what it means that the Admin REST API accepted <code>adminTheme=base</code>
+            even though <code>base</code> is marked <code>abstract=true</code>. What class of production mistake
+            does this expose, beyond this one field?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It means <code>abstract=true</code> is enforced only by the Admin Console's own Themes-tab dropdown UI, which hides <code>base</code> from the list of selectable themes — it is not a server-side constraint the REST API checks at write time. <code>kcadm.sh update ... -s adminTheme=base</code> succeeded and persisted exactly as written. The broader class of mistake this exposes is that the Admin REST API performs essentially no semantic validation on theme-name fields at all: any string can be written to <code>loginTheme</code>/<code>accountTheme</code>/<code>adminTheme</code>/<code>emailTheme</code>, whether it's a real, sane, directly-usable theme or not, which means typos or inherited/abstract names written through automation (Terraform, Ansible, a CI script) will "succeed" silently and only surface when someone actually looks at the rendered page.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through the full locale resolution order Keycloak documents, in sequence, and give one
+            realistic scenario where the <code>Accept-Language</code> header step would never be reached.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The order is: (1) a language the user explicitly selected on the login page, (2) a locale stored on the user's own profile, (3) a client-requested locale such as OIDC's <code>ui_locales</code> parameter, (4) a locale cookie from a previous visit, (5) the browser's <code>Accept-Language</code> header, (6) the realm's <code>defaultLocale</code>, and (7) English as the final fallback — each step is only checked if every earlier one produced no value. A realistic scenario where step 5 is never reached: a returning user who previously picked "French" on the login page gets a locale cookie set (step 4) on that earlier visit; on their next visit, that cookie resolves before the browser header is ever consulted, even if their browser's actual <code>Accept-Language</code> header says something else entirely (e.g. they're using a borrowed English-language browser).</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's "Key idea" callout draws a specific line between what it can and cannot claim about
+            a custom theme. Restate that line in your own words &mdash; what was verified, and what was explicitly
+            not?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Verified, by direct inspection or an independent read-back: the three bundled theme names are real (read out of the actual jar); setting any of the four realm theme fields on <code>northwind-apps</code> genuinely persists (confirmed with a separate <code>kcadm.sh get</code> after each write); and the <code>parent=</code>/<code>import=</code>/<code>abstract=</code> inheritance mechanism is real (read directly out of the shipped themes' own <code>theme.properties</code> files). Not verified, and explicitly not claimed: that any realm's login page now visually looks a particular way. No browser tool exists in this environment, so claiming a rendered visual result would be exactly the kind of invented fact this course's "no invented facts" rule forbids — on the same footing as fabricating an RFC number.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does declaring <code>supportedLocales=["en","de","fr","es"]</code> on a realm not, by itself,
+            guarantee all four languages actually render correctly? What's the missing piece?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Declaring a locale in <code>supportedLocales</code> only tells Keycloak that locale is an option to resolve to — it says nothing about whether translated text actually exists for it. The missing piece is a matching <code>messages_&lt;locale&gt;.properties</code> file (built into the <code>base</code> theme for many locales already, or supplied by a custom theme for anything not already covered) containing the actual translated strings. The realm setting and the translation coverage are two independent facts, and — exactly like the theme-name validation gap — nothing on the write path checks one against the other, so a locale can be "supported" and still render with missing or fallback-English text.</p>
+          </details></li>
+          <li><details>
+            <summary>Looking back across chapters 20&ndash;26 as a whole, pick one later chapter's feature (roles/groups,
+            clients, or auth flows) and explain how this chapter's theme/locale work is independent of it &mdash;
+            i.e. why theming didn't need to wait for, or depend on, any of those earlier pieces existing first.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Take chapter 25's authentication flows. Which flow a browser login walks through, and what requirement-level steps (like a conditional OTP for <code>tenant-admin</code>s) it hits along the way, is an entirely separate concern from which <code>loginTheme</code> renders each screen in that flow. A realm with no custom roles, no groups, and the completely default browser flow could still have <code>loginTheme</code>, <code>accountTheme</code>, <code>adminTheme</code>, and <code>emailTheme</code> set, and <code>internationalizationEnabled</code> turned on, with zero dependency on anything chapters 23-25 built — theming answers "what does the screen look like and in what language," while roles/groups/flows answer "what happens and to whom," and Keycloak reads the theme fields purely at render time, independently of flow logic or role assignments.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/ui-customization/themes">Keycloak docs &mdash; UI Customization Guide: Working with themes</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak docs &mdash; Server Administration Guide (Themes and Localization sections)</a></li>
+          <li><a href="https://www.keycloak.org/server/configuration">Keycloak docs &mdash; Configuring Keycloak (theme/template caching, start vs. start-dev)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html">Keycloak docs &mdash; Server Developer Guide (theme-resources, message bundle merging, <code>${msg()}</code>/<code>${properties}</code> syntax)</a></li>
+        </ul>
+      </section>
+
     </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see someone try to <code>ls</code> a Keycloak 26.x container's <code>/opt/keycloak/themes/</code>
-      expecting to browse the built-in themes directly, the cause is assuming an older Keycloak layout &mdash;
-      in this version only a <code>README.md</code> lives there, and the real built-in theme files are inside
-      a JAR that has to be opened with a zip tool, not <code>ls</code>.</li>
-      <li>If you see a realm's theme field set to a name that doesn't actually render anything sensible, the
-      cause is very often a direct REST/<code>kcadm.sh</code> write that skipped the Admin Console's dropdown
-      &mdash; the REST API does not validate that the name resolves to a real theme directory for that type.</li>
-      <li>If you see someone set <code>adminTheme</code> or <code>accountTheme</code> to <code>base</code>
-      expecting a visible result, the cause is forgetting <code>base</code> is marked <code>abstract=true</code>
-      specifically because it is meant only to be inherited from, not used directly &mdash; the write succeeds
-      but is not a sane configuration.</li>
-      <li>If you see a reader declare a locale in <code>supportedLocales</code> and assume it's now fully
-      translated, the cause is conflating "listed as supported" with "has a <code>messages_&lt;locale&gt;.properties</code>
-      file" &mdash; the realm setting and the actual translation coverage are two independent things, and
-      nothing on the write path checks one against the other.</li>
-      <li>If you see a custom theme's CSS silently stop applying after it's set as a realm's <code>loginTheme</code>
-      in production, a common cause is theme/template caching (disabled under <code>start-dev</code>, enabled
-      by default under production <code>start</code>) serving a stale cached copy &mdash; the fix per the
-      official guide is either a server restart, disabling caching during active development with the
-      documented SPI options, or clearing <code>data/tmp/kc-gzip-cache</code>.</li>
-      <li>If you see someone look for a <code>welcomeTheme</code> field on the realm's REST representation
-      next to <code>loginTheme</code>/<code>accountTheme</code>/<code>adminTheme</code>/<code>emailTheme</code>,
-      the cause is assuming all five theme types are configured the same way &mdash; the welcome theme is an
-      instance-wide server startup option, not a per-realm field at all.</li>
-    </ul>
-
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">Concept recall &mdash; the whole Northwind Apps realm, chapters 20&ndash;26</div>
-      <p>Chapter 20 created an empty <code>northwind-apps</code> realm and nothing else. Six chapters later,
-      that realm has a complete, if deliberately minimal, identity-system shape: realm-level settings and
-      token/session lifetimes from chapter 21; real users <code>jane.doe</code> and <code>priya.patel</code>
-      with credentials and a configured required action from chapter 22; realm roles
-      (<code>tenant-admin</code>, <code>support-agent</code>, <code>platform-engineer</code>) and groups
-      (<code>Engineering</code>, <code>Support</code>) from chapter 23, including Priya's mover-event
-      role/group reassignment &mdash; chapter 10's governance scenario, finally made real; the
-      <code>northwind-dashboard</code> client with a custom protocol mapper adding a <code>department</code>
-      claim from chapter 24, the concrete payoff of chapter 15's OIDC claims forward-reference; a cloned
-      browser flow with a conditional OTP step from chapter 25, chapter 5's MFA theory finally configured for
-      real; and now, this chapter, a confirmed login/account/admin/email theme assignment and an
-      internationalization configuration. Nothing here was narrated &mdash; every piece across all seven
-      chapters was created, and then independently re-confirmed with a second command, against a real running
-      Keycloak. Part V picks this realm up again from the operations side (REST API automation, events and
-      auditing, session behavior, password/brute-force policy) rather than extending its shape further.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>Keycloak 26.x ships its built-in themes inside a JAR
-      (<code>org.keycloak.keycloak-themes-26.8.2.jar</code>), not as a browsable directory tree &mdash;
-      <code>/opt/keycloak/themes/</code> only contains a <code>README.md</code> explaining this.</li>
-      <li>The three real bundled theme names confirmed by inspecting that jar directly are <code>base</code>
-      (abstract, inherited-from only), <code>keycloak</code> (the classic PatternFly v3/v4 theme, with login,
-      email, and welcome types), and <code>keycloak.v2</code> (the modern PatternFly v5 theme with
-      <code>darkMode=true</code>, login type only in this image).</li>
-      <li>A realm's four theme fields &mdash; <code>loginTheme</code>, <code>accountTheme</code>,
-      <code>adminTheme</code>, <code>emailTheme</code> &mdash; were each set on <code>northwind-apps</code>
-      via <code>kcadm.sh update</code> and confirmed with an independent <code>kcadm.sh get</code> call, the
-      same two-command discipline chapter 20 used for realm creation.</li>
-      <li>The Admin REST API does not validate that a theme name resolves to anything real or sane for its
-      type &mdash; setting <code>adminTheme=base</code> (an abstract, inherit-only theme) succeeded and
-      persisted exactly like setting it to a genuinely usable name would.</li>
-      <li>A real custom theme is built as <code>themes/&lt;name&gt;/&lt;type&gt;/</code> with its own
-      <code>theme.properties</code> (declaring <code>parent=</code> and optionally <code>import=</code>), a
-      <code>resources/</code> folder, a <code>messages/</code> folder of locale-specific
-      <code>.properties</code> files, and FTL template overrides only where markup, not just styling, needs
-      to change &mdash; confirmed by reading the real <code>theme.properties</code> files of the shipped
-      themes, not paraphrased from memory.</li>
-      <li>This chapter did not build or visually verify a custom "Northwind" theme &mdash; no browser tool
-      exists in this environment, so the lab instead verified the real, checkable part of the mechanism
-      (listing real bundled names, assigning one, confirming persistence) using a genuine built-in theme name.</li>
-      <li><code>internationalizationEnabled</code> defaults to <code>false</code> on a fresh realm; enabling
-      it plus setting <code>supportedLocales</code> and <code>defaultLocale</code> was confirmed live, the
-      same way the theme fields were.</li>
-      <li>Keycloak's documented locale resolution order checks, in sequence: user-selected, user-profile
-      locale, a client-requested locale (e.g. OIDC's <code>ui_locales</code>), a cookie, the browser's
-      <code>Accept-Language</code> header, the realm's <code>defaultLocale</code>, and finally English &mdash;
-      a custom <code>LocaleSelectorProvider</code> SPI can replace this order entirely.</li>
-      <li>Declaring a locale as supported on a realm and that locale actually having translated message
-      bundles are two independent facts; nothing on the write path checks one against the other, exactly like
-      the theme-name validation gap above.</li>
-      <li>This chapter closes the <code>northwind-apps</code> realm build arc begun in chapter 20: settings,
-      users, roles/groups, clients with a custom claim mapper, a conditional-OTP auth flow, and now theming
-      and localization, every one of them created and independently re-confirmed against a real running
-      Keycloak rather than narrated.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Why couldn't this chapter simply run <code>ls</code> on Keycloak's theme directory the way earlier
-      chapters listed realms or users, and what did the lab do instead to find the real bundled theme names?</li>
-      <li>Explain, concretely, what it means that the Admin REST API accepted <code>adminTheme=base</code>
-      even though <code>base</code> is marked <code>abstract=true</code>. What class of production mistake
-      does this expose, beyond this one field?</li>
-      <li>Walk through the full locale resolution order Keycloak documents, in sequence, and give one
-      realistic scenario where the <code>Accept-Language</code> header step would never be reached.</li>
-      <li>This chapter's "Key idea" callout draws a specific line between what it can and cannot claim about
-      a custom theme. Restate that line in your own words &mdash; what was verified, and what was explicitly
-      not?</li>
-      <li>Why does declaring <code>supportedLocales=["en","de","fr","es"]</code> on a realm not, by itself,
-      guarantee all four languages actually render correctly? What's the missing piece?</li>
-      <li>Looking back across chapters 20&ndash;26 as a whole, pick one later chapter's feature (roles/groups,
-      clients, or auth flows) and explain how this chapter's theme/locale work is independent of it &mdash;
-      i.e. why theming didn't need to wait for, or depend on, any of those earlier pieces existing first.</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/ui-customization/themes">Keycloak docs &mdash; UI Customization Guide: Working with themes</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html">Keycloak docs &mdash; Server Administration Guide (Themes and Localization sections)</a></li>
-      <li><a href="https://www.keycloak.org/server/configuration">Keycloak docs &mdash; Configuring Keycloak (theme/template caching, start vs. start-dev)</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html">Keycloak docs &mdash; Server Developer Guide (theme-resources, message bundle merging, <code>${msg()}</code>/<code>${properties}</code> syntax)</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "themes-and-branding", 15);
+    SlideDeck.init({ chapterSlug: "themes-and-branding" });
   });
 </script>
 </body>

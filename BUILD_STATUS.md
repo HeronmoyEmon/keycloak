@@ -31,17 +31,15 @@ shared compose file (added port 9000 and `KC_METRICS_ENABLED`), personally re-ve
 (`/health`→200, `/metrics`→200 on 9000; `/health`→404 on 8080, confirming the port split), and
 documented in `labs/docker/README.md`.
 
-**Redesign approved 2026-11-10 ("looks good") — now rolling out to chapters 02-30, ahead of Part VI.**
-The slide-deck + roadmap redesign (see the Done-section design note below for full detail: slide
-chunking, `#mark-all-btn`, click-to-reveal self-check answers, `table-compare` icons, the diagram
-bug classes to check for, and the "prefer more visuals/examples" standing rule) is no longer a pending
-proposal — CLAUDE.md §4 has been rewritten to describe it as the official template. Converting the 29
-already-built chapters (02-30) to match chapter 1 is now the active unit, worked through Part by Part
-via the usual parallel-subagent-then-merge pattern, before Part VI's new content resumes. Each
-conversion agent also re-verifies/fixes diagram geometry and adds a model answer to every self-check
-question while it's in there, per the new template. **Progress**: Part I (chapters 02-09), Part II
-(chapters 10-12), Part III (chapters 13-18), and the first 6 chapters of Part IV (19-24) all done
-2026-11-10 — see Done below. Part IV's remaining chapters 25-26, then Part V (chapters 27-30), are next.
+**Redesign rollout — COMPLETE as of 2026-11-10.** The slide-deck + roadmap redesign (see the Done-
+section design note below for full detail: slide chunking, `#mark-all-btn`, click-to-reveal self-check
+answers, `table-compare` icons, the diagram bug classes to check for, and the "prefer more
+visuals/examples" standing rule) is no longer a pending proposal — CLAUDE.md §4 has been rewritten to
+describe it as the official template, and all 29 already-built chapters (02-30) now match chapter 1's
+structure. Converted via the usual parallel-subagent-then-merge pattern, Part by Part: Part I (chapters
+02-09), Part II (10-12), Part III (13-18), and all of Part IV (19-26) and Part V (27-30) are done — see
+Done below for each round's detail (slide/self-check counts, real bugs found+fixed, table-compare
+judgment calls). **Part VI's new content (chapters 31-36) is next per the Queue.**
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -101,9 +99,9 @@ visuals/examples where it helps, not just re-chunk existing prose.
 10a. ~~Part I (chapters 02-09, 8 chapters)~~ — done 2026-11-10, see Done below.
 10b. ~~Part II (chapters 10-12, 3 chapters)~~ — done 2026-11-10, see Done below.
 10c. ~~Part III (chapters 13-18, 6 chapters)~~ — done 2026-11-10, see Done below.
-10d. Part IV (chapters 19-26, 8 chapters) — chapters 19-24 done 2026-11-10 (see Done below); **25-26
-     next**.
-10e. Part V (chapters 27-30, 4 chapters).
+10d. ~~Part IV (chapters 19-26, 8 chapters)~~ — done 2026-11-10, see Done below.
+10e. ~~Part V (chapters 27-30, 4 chapters)~~ — done 2026-11-10, see Done below. **Redesign rollout
+     complete — Part VI (chapters 31-36) is next.**
 
 ### Part VI (federation & integration) — queued after the redesign rollout
 11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
@@ -758,6 +756,49 @@ project) remain.
   - Part III (chapters 13-18) is now fully converted, completing queue item 10c. Part IV (chapters
     19-26) is 6/8 converted (19-24 done); **chapters 25-26, then Part V (27-30), are next** per the
     Queue.
+
+### Redesign rollout — Part IV finished (chapters 25-26) and Part V converted (chapters 27-30)
+- 2026-11-10 chapters 25-30 (6 chapters: Part IV's last 2 — Authentication flows, Themes & branding —
+  plus all of Part V — Keycloak Operations) converted from the old book format to the chapter-1
+  slide-deck template in one 6-way parallel round (one subagent per chapter, no shared-file writes),
+  then independently re-verified by the coordinator:
+  - Structural: all 6 files re-parsed cleanly (Python `html.parser`, zero errors), `<section
+    class="slide">`/`<svg>`/`<details>`/`<summary>` tag counts balanced per file, all 10 required
+    mount-point ids present exactly once each, `CURRENT_CHAPTER`/`chapterSlug` confirmed matching on
+    every page. Re-served locally and `curl`-confirmed `200` for all 6 chapter pages. `git status
+    --short` confirmed only the 6 chapter files were modified; separately confirmed via `git diff
+    --stat` that the shared `labs/docker/docker-compose.yml` (flagged off-limits in ch28's brief) was
+    left untouched.
+  - Final slide counts: ch25 15, ch26 13, ch27 20, ch28 18, ch29 15, ch30 15.
+  - Self-check: every existing self-check question across all 6 chapters (35 total) got a real,
+    chapter-grounded model answer; none left unanswered.
+  - Lab-step counter-reset pattern (first used in ch24): four chapters split a numbered `.lab-steps`
+    list across slide boundaries this round (ch25, ch27, ch29, ch30) and each correctly added
+    `style="counter-reset: lab-step N"` on the continuation `<ol>` so visible step numbers stayed
+    sequential instead of silently resetting to 1 — all four independently verified the pattern against
+    ch24 before applying it rather than reinventing it.
+  - New diagrams/examples added: ch25 +1 (Figure 25.5, a 3-stage flow-execution/required-actions/
+    session-issued timeline, visualizing a timing distinction the chapter's prose already called out
+    but hadn't diagrammed); ch26 extended its case-study paragraph to cover Riverside Health and
+    Meridian Trust (previously only Northwind). Chapters 27, 28, 29, 30 added none, each judging their
+    existing diagram/case-study density already sufficient — all four are real-lab chapters where every
+    agent explicitly weighed "don't risk inventing content that might be inaccurate" against padding.
+  - **Real diagram bugs found and fixed, 2 total**: ch29 Figure 29.2 (SSO sequence diagram) had a label
+    ~29% over its lane-gap width, visually overlapping both lifelines — split into two lines. Ch30
+    Figure 30.3 (OTP timeline) had a label ~21% over its box width — split into two stacked lines. No
+    connector-through-box bugs were found in this round; several borderline text-overflow cases in the
+    1%-14% range were evaluated and correctly left alone per the threshold rule. No hardcoded
+    `fill="#fff"`/`fill="white"` text colors were found in any of the 6 chapters (all already used the
+    theme-token classes correctly going in).
+  - **Table-compare classes**: none applied this round — every table across all 6 chapters (built-in
+    flow/requirement-level references, theme-settings/theme.properties references, REST-vs-CLI/export-
+    mechanism references, event/health/metrics references, session-object/REST-endpoint/logout-mechanism
+    references, password-policy/brute-force/OTP-field references) was judged a neutral multi-column
+    reference table, not a pro/con or problem/solution pair, with each agent stating its reasoning.
+  - **This completes the full slide-deck/roadmap redesign rollout — all 29 pre-existing chapters
+    (02-30) now match chapter 1's template**, closing queue items 10a-10e in full. Part VI's new content
+    (chapters 31-36, plus the `labs/spring-boot-resource-server/`/`labs/react-spa/` scaffolding) is next
+    per the Queue.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is

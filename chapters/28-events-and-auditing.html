@@ -5,195 +5,212 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Events, Auditing &amp; Monitoring — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "events-and-auditing";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part V — Keycloak Operations</span>
-      <span class="badge minutes">~40 min</span>
-      <span class="badge lab">Hands-on lab</span>
-    </div>
-    <h1>28. Events, Auditing &amp; Monitoring</h1>
-    <p class="lede">Chapter 27 formalized how to <em>act</em> on <code>northwind-apps</code> through the Admin
-    REST API and <code>kcadm.sh</code>. This chapter asks the opposite question: once an action has already
-    happened — a login, a role change, a realm setting flipped — how does anyone, including the person who
-    didn't do it, find out it happened at all? Keycloak's answer is its events subsystem: two independently
-    switched streams (login/user events and admin events) plus a separate, unrelated pair of operational
-    endpoints (<code>/health</code> and <code>/metrics</code>) that exist to tell a <em>monitoring</em> system
-    whether the server itself is alive and busy — a different question entirely from "who did what." This
-    chapter enables both event streams for real on the shared <code>northwind-apps</code> realm, generates one
-    real admin event and one real login event, fetches both back through the REST API, and shows exactly what
-    Keycloak does and does not expose toward an external SIEM.</p>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
 
-    <h2>Why this matters</h2>
-    <p>An IAM specialist is the person an auditor, an incident responder, or a compliance officer comes to
-    with "prove that only these three people could have made this change" or "tell me everything this account
-    did in the last 90 days." If the IAM system wasn't configured to record that in the first place, there is
-    no amount of after-the-fact log archaeology that recovers it — the record either exists because someone
-    turned it on before the event happened, or it doesn't exist at all. Chapter 27 taught how to automate
-    changes against Keycloak; this chapter teaches how to make those changes (and every login) reconstructable
-    after the fact, which is the actual deliverable most compliance frameworks are buying when they say
-    "audit trail."</p>
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part V — Keycloak Operations</span>
+          <span class="badge minutes">~40 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>28. Events, Auditing &amp; Monitoring</h1>
+        <p class="lede">Chapter 27 formalized how to <em>act</em> on <code>northwind-apps</code> through the Admin
+        REST API and <code>kcadm.sh</code>. This chapter asks the opposite question: once an action has already
+        happened — a login, a role change, a realm setting flipped — how does anyone, including the person who
+        didn't do it, find out it happened at all? Keycloak's answer is its events subsystem: two independently
+        switched streams (login/user events and admin events) plus a separate, unrelated pair of operational
+        endpoints (<code>/health</code> and <code>/metrics</code>) that exist to tell a <em>monitoring</em> system
+        whether the server itself is alive and busy — a different question entirely from "who did what." This
+        chapter enables both event streams for real on the shared <code>northwind-apps</code> realm, generates one
+        real admin event and one real login event, fetches both back through the REST API, and shows exactly what
+        Keycloak does and does not expose toward an external SIEM.</p>
 
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">What concept is this?</div>
-      <p>Chapter 3 named <strong>Accounting</strong> as the third formal part of AAA — the continuous,
-      structured recording of identity and access events, distinct from <em>audit</em>, the later activity of
-      reviewing what accounting produced. This chapter is where that distinction stops being abstract: Keycloak
-      implements accounting as its realm <strong>Events</strong> subsystem, and the <code>kcadm.sh get
-      events</code>/<code>get admin-events</code> calls later in this chapter are, literally, an audit —
-      someone reviewing what the accounting subsystem already recorded. Chapter 9's threat-landscape material
-      adds the other half of the motivation: you cannot detect credential stuffing, an anomalous spike of
-      failed logins, or an admin account doing something it's never done before if the system never recorded
-      the individual events in the first place. Detection is a query over a record that has to already exist;
-      this chapter is about making sure it does.</p>
-    </div>
+        <h2>Why this matters</h2>
+        <p>An IAM specialist is the person an auditor, an incident responder, or a compliance officer comes to
+        with "prove that only these three people could have made this change" or "tell me everything this account
+        did in the last 90 days." If the IAM system wasn't configured to record that in the first place, there is
+        no amount of after-the-fact log archaeology that recovers it — the record either exists because someone
+        turned it on before the event happened, or it doesn't exist at all. Chapter 27 taught how to automate
+        changes against Keycloak; this chapter teaches how to make those changes (and every login) reconstructable
+        after the fact, which is the actual deliverable most compliance frameworks are buying when they say
+        "audit trail."</p>
 
-    <h2>Two independent streams, four switches</h2>
-    <p>Keycloak does not have one "turn on logging" switch. Per the REST API's own
-    <code>RealmEventsConfigRepresentation</code> schema (confirmed by reading the official <a
-    href="https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmEventsConfigRepresentation">REST
-    API reference</a> directly, not assumed from the Admin Console's layout), a realm's event configuration is
-    six independent fields, and the two streams — login/user events and admin events — are each controlled by
-    their own boolean, with no shared master switch:</p>
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 3 named <strong>Accounting</strong> as the third formal part of AAA — the continuous,
+          structured recording of identity and access events, distinct from <em>audit</em>, the later activity of
+          reviewing what accounting produced. This chapter is where that distinction stops being abstract: Keycloak
+          implements accounting as its realm <strong>Events</strong> subsystem, and the <code>kcadm.sh get
+          events</code>/<code>get admin-events</code> calls later in this chapter are, literally, an audit —
+          someone reviewing what the accounting subsystem already recorded. Chapter 9's threat-landscape material
+          adds the other half of the motivation: you cannot detect credential stuffing, an anomalous spike of
+          failed logins, or an admin account doing something it's never done before if the system never recorded
+          the individual events in the first place. Detection is a query over a record that has to already exist;
+          this chapter is about making sure it does.</p>
+        </div>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption><code>RealmEventsConfigRepresentation</code> fields, per the official REST API reference</caption>
-        <thead><tr><th>Field</th><th>Type</th><th>Controls</th></tr></thead>
-        <tbody>
-          <tr><td><code>eventsEnabled</code></td><td>Boolean</td><td>Whether login/user events (the left-hand
-          stream below) are recorded at all.</td></tr>
-          <tr><td><code>eventsExpiration</code></td><td>Long (seconds)</td><td>How long a recorded login/user
-          event is retained before it ages out.</td></tr>
-          <tr><td><code>eventsListeners</code></td><td>List of string</td><td>Which Event Listener SPI
-          provider(s) receive every event as it occurs — <code>jboss-logging</code> is the built-in default on
-          every realm, enabled or not.</td></tr>
-          <tr><td><code>enabledEventTypes</code></td><td>List of string</td><td>Which specific login/user event
-          <em>types</em> actually get saved — the realm default (confirmed live below) already lists every
-          type Keycloak knows about.</td></tr>
-          <tr><td><code>adminEventsEnabled</code></td><td>Boolean</td><td>Whether admin events (the right-hand
-          stream below) are recorded at all — independent of <code>eventsEnabled</code>.</td></tr>
-          <tr><td><code>adminEventsDetailsEnabled</code></td><td>Boolean</td><td>Whether a recorded admin event
-          also carries the full JSON <code>representation</code> of what was created/updated/deleted —
-          independent again, a second switch layered on top of the first.</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="event-streams" data-title="Two independent streams">
+        <h2>Two independent streams, four switches</h2>
+        <p>Keycloak does not have one "turn on logging" switch. Per the REST API's own
+        <code>RealmEventsConfigRepresentation</code> schema (confirmed by reading the official <a
+        href="https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmEventsConfigRepresentation">REST
+        API reference</a> directly, not assumed from the Admin Console's layout), a realm's event configuration is
+        six independent fields, and the two streams — login/user events and admin events — are each controlled by
+        their own boolean, with no shared master switch:</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 300" role="img" aria-labelledby="t1 d1">
-        <title id="t1">Two independent event streams, each gated by its own pair of switches</title>
-        <desc id="d1">A central box labeled "northwind-apps realm" with a Events-config node holding six
-        fields: eventsEnabled, eventsExpiration, eventsListeners, enabledEventTypes, adminEventsEnabled,
-        adminEventsDetailsEnabled. Two arrows lead out to two independent streams. Left stream, gated by
-        eventsEnabled: "Login / user events" — triggered by authentication-adjacent actions such as a
-        password check, a token exchange, a logout; each saved event is an EventRepresentation with fields
-        id, time, type, realmId, clientId, userId, sessionId, ipAddress, error, details. Right stream, gated
-        by adminEventsEnabled (and, for the extra representation field, adminEventsDetailsEnabled too): "Admin
-        events" — triggered by Admin Console or Admin REST API calls that create, update, or delete a
-        resource; each saved event is an AdminEventRepresentation with fields id, time, realmId, authDetails,
-        operationType, resourceType, resourcePath, representation, error, details. A caption notes both
-        streams also always pass through the eventsListeners list (jboss-logging by default) regardless of
-        whether they are saved to the database.</desc>
-        <rect x="330" y="10" width="240" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="450" y="35" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps realm</text>
-        <text x="450" y="52" text-anchor="middle" class="diagram-label" font-size="10">events/config: 6 fields</text>
+        <div class="table-wrap">
+          <table>
+            <caption><code>RealmEventsConfigRepresentation</code> fields, per the official REST API reference</caption>
+            <thead><tr><th>Field</th><th>Type</th><th>Controls</th></tr></thead>
+            <tbody>
+              <tr><td><code>eventsEnabled</code></td><td>Boolean</td><td>Whether login/user events (the left-hand
+              stream below) are recorded at all.</td></tr>
+              <tr><td><code>eventsExpiration</code></td><td>Long (seconds)</td><td>How long a recorded login/user
+              event is retained before it ages out.</td></tr>
+              <tr><td><code>eventsListeners</code></td><td>List of string</td><td>Which Event Listener SPI
+              provider(s) receive every event as it occurs — <code>jboss-logging</code> is the built-in default on
+              every realm, enabled or not.</td></tr>
+              <tr><td><code>enabledEventTypes</code></td><td>List of string</td><td>Which specific login/user event
+              <em>types</em> actually get saved — the realm default (confirmed live below) already lists every
+              type Keycloak knows about.</td></tr>
+              <tr><td><code>adminEventsEnabled</code></td><td>Boolean</td><td>Whether admin events (the right-hand
+              stream below) are recorded at all — independent of <code>eventsEnabled</code>.</td></tr>
+              <tr><td><code>adminEventsDetailsEnabled</code></td><td>Boolean</td><td>Whether a recorded admin event
+              also carries the full JSON <code>representation</code> of what was created/updated/deleted —
+              independent again, a second switch layered on top of the first.</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-        <line x1="380" y1="70" x2="200" y2="110" class="diagram-stroke" marker-end="url(#arrowE1)"/>
-        <rect x="40" y="110" width="320" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="200" y="132" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login / user events</text>
-        <text x="200" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">gated by eventsEnabled</text>
-        <text x="200" y="166" text-anchor="middle" class="diagram-label-muted" font-size="10">triggered by LOGIN, LOGIN_ERROR,</text>
-        <text x="200" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">CODE_TO_TOKEN, LOGOUT, etc.</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Two independent event streams, each gated by its own pair of switches</title>
+            <desc id="d1">A central box labeled "northwind-apps realm" with a Events-config node holding six
+            fields: eventsEnabled, eventsExpiration, eventsListeners, enabledEventTypes, adminEventsEnabled,
+            adminEventsDetailsEnabled. Two arrows lead out to two independent streams. Left stream, gated by
+            eventsEnabled: "Login / user events" — triggered by authentication-adjacent actions such as a
+            password check, a token exchange, a logout; each saved event is an EventRepresentation with fields
+            id, time, type, realmId, clientId, userId, sessionId, ipAddress, error, details. Right stream, gated
+            by adminEventsEnabled (and, for the extra representation field, adminEventsDetailsEnabled too): "Admin
+            events" — triggered by Admin Console or Admin REST API calls that create, update, or delete a
+            resource; each saved event is an AdminEventRepresentation with fields id, time, realmId, authDetails,
+            operationType, resourceType, resourcePath, representation, error, details. A caption notes both
+            streams also always pass through the eventsListeners list (jboss-logging by default) regardless of
+            whether they are saved to the database.</desc>
+            <rect x="330" y="10" width="240" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="35" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps realm</text>
+            <text x="450" y="52" text-anchor="middle" class="diagram-label" font-size="10">events/config: 6 fields</text>
 
-        <line x1="520" y1="70" x2="700" y2="110" class="diagram-stroke" marker-end="url(#arrowE1)"/>
-        <rect x="540" y="110" width="320" height="90" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="700" y="132" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Admin events</text>
-        <text x="700" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">gated by adminEventsEnabled</text>
-        <text x="700" y="166" text-anchor="middle" class="diagram-label-muted" font-size="10">triggered by any REST write: CREATE/</text>
-        <text x="700" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">UPDATE/DELETE on a resourceType</text>
+            <line x1="380" y1="70" x2="200" y2="110" class="diagram-stroke" marker-end="url(#arrowE1)"/>
+            <rect x="40" y="110" width="320" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="200" y="132" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login / user events</text>
+            <text x="200" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">gated by eventsEnabled</text>
+            <text x="200" y="166" text-anchor="middle" class="diagram-label-muted" font-size="10">triggered by LOGIN, LOGIN_ERROR,</text>
+            <text x="200" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">CODE_TO_TOKEN, LOGOUT, etc.</text>
 
-        <rect x="40" y="215" width="320" height="56" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="3 3"/>
-        <text x="200" y="235" text-anchor="middle" class="diagram-label-muted" font-size="10">EventRepresentation: id, time, type,</text>
-        <text x="200" y="250" text-anchor="middle" class="diagram-label-muted" font-size="10">realmId, clientId, userId, sessionId,</text>
-        <text x="200" y="263" text-anchor="middle" class="diagram-label-muted" font-size="10">ipAddress, error, details</text>
+            <line x1="520" y1="70" x2="700" y2="110" class="diagram-stroke" marker-end="url(#arrowE1)"/>
+            <rect x="540" y="110" width="320" height="90" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="700" y="132" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Admin events</text>
+            <text x="700" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">gated by adminEventsEnabled</text>
+            <text x="700" y="166" text-anchor="middle" class="diagram-label-muted" font-size="10">triggered by any REST write: CREATE/</text>
+            <text x="700" y="182" text-anchor="middle" class="diagram-label-muted" font-size="10">UPDATE/DELETE on a resourceType</text>
 
-        <rect x="540" y="215" width="320" height="56" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="3 3"/>
-        <text x="700" y="232" text-anchor="middle" class="diagram-label-muted" font-size="10">AdminEventRepresentation: id, time, realmId,</text>
-        <text x="700" y="247" text-anchor="middle" class="diagram-label-muted" font-size="10">authDetails, operationType, resourceType,</text>
-        <text x="700" y="260" text-anchor="middle" class="diagram-label-muted" font-size="10">resourcePath, representation*, error, details</text>
+            <rect x="40" y="215" width="320" height="56" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="3 3"/>
+            <text x="200" y="235" text-anchor="middle" class="diagram-label-muted" font-size="10">EventRepresentation: id, time, type,</text>
+            <text x="200" y="250" text-anchor="middle" class="diagram-label-muted" font-size="10">realmId, clientId, userId, sessionId,</text>
+            <text x="200" y="263" text-anchor="middle" class="diagram-label-muted" font-size="10">ipAddress, error, details</text>
 
-        <text x="450" y="292" text-anchor="middle" class="diagram-label-muted" font-size="10">* representation only populated when adminEventsDetailsEnabled is also true</text>
-        <defs>
-          <marker id="arrowE1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 28.1 — Login/user events and admin events are gated by separate booleans and carry
-      different fields; <code>adminEventsDetailsEnabled</code> is a third, independent switch layered on top
-      of <code>adminEventsEnabled</code> alone.</figcaption>
-    </figure>
+            <rect x="540" y="215" width="320" height="56" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="3 3"/>
+            <text x="700" y="232" text-anchor="middle" class="diagram-label-muted" font-size="10">AdminEventRepresentation: id, time, realmId,</text>
+            <text x="700" y="247" text-anchor="middle" class="diagram-label-muted" font-size="10">authDetails, operationType, resourceType,</text>
+            <text x="700" y="260" text-anchor="middle" class="diagram-label-muted" font-size="10">resourcePath, representation*, error, details</text>
 
-    <h2>Event types: what actually gets recorded</h2>
-    <p>Per Keycloak's own <a
-    href="https://www.keycloak.org/docs/26.8.2/server_admin/index.html#configuring-auditing-to-track-events">Server
-    Administration Guide</a> (fetched live for this chapter, version matching the lab's 26.8.2), login/user
-    event types fall into a handful of documented groups. The guide's own descriptions, quoted directly:</p>
+            <text x="450" y="292" text-anchor="middle" class="diagram-label-muted" font-size="10">* representation only populated when adminEventsDetailsEnabled is also true</text>
+            <defs>
+              <marker id="arrowE1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 28.1 — Login/user events and admin events are gated by separate booleans and carry
+          different fields; <code>adminEventsDetailsEnabled</code> is a third, independent switch layered on top
+          of <code>adminEventsEnabled</code> alone.</figcaption>
+        </figure>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption>A sample of documented login-event types, quoted from the official Server Administration Guide</caption>
-        <thead><tr><th>Event</th><th>Official description</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Login</strong></td><td>"A user logs in."</td></tr>
-          <tr><td><strong>Register</strong></td><td>"A user registers."</td></tr>
-          <tr><td><strong>Logout</strong></td><td>"A user logs out."</td></tr>
-          <tr><td><strong>Code to Token</strong></td><td>"An application, or client, exchanges a code for a token."</td></tr>
-          <tr><td><strong>Refresh Token</strong></td><td>"An application, or client, refreshes a token."</td></tr>
-          <tr><td><strong>User disabled by permanent/temporary lockout</strong></td><td>"Brute force protection
-          disabled the user account permanently/temporarily due to too many login failures."</td></tr>
-          <tr><td><strong>Update Credential</strong></td><td>"The password or (time-based) one-time Password
-          (OTP/TOTP) settings for an account changes."</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="event-types" data-title="Event types">
+        <h2>Event types: what actually gets recorded</h2>
+        <p>Per Keycloak's own <a
+        href="https://www.keycloak.org/docs/26.8.2/server_admin/index.html#configuring-auditing-to-track-events">Server
+        Administration Guide</a> (fetched live for this chapter, version matching the lab's 26.8.2), login/user
+        event types fall into a handful of documented groups. The guide's own descriptions, quoted directly:</p>
 
-    <p>The guide lists these as human-readable groups (login events, brute-force events, identity-brokering
-    events, OAuth events, account events), but the REST API's actual <code>enabledEventTypes</code> field is a
-    flat list of specific type constants — and the realm default is not a short list. Reading it back live
-    (captured in the lab below) shows the out-of-the-box default already contains <strong>102</strong> distinct
-    type constants (counted directly from the captured array, not estimated), covering everything from
-    <code>LOGIN</code>/<code>LOGIN_ERROR</code> to niche ones like
-    <code>VERIFIABLE_CREDENTIAL_PRE_AUTHORIZED_GRANT_ERROR</code>. "Each event has a corresponding error event"
-    per the guide — that pattern (a success type and an <code>_ERROR</code> twin) holds for essentially every
-    entry in that list, which is also why the list is roughly double the size of the human-readable groups the
-    guide names.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>A sample of documented login-event types, quoted from the official Server Administration Guide</caption>
+            <thead><tr><th>Event</th><th>Official description</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Login</strong></td><td>"A user logs in."</td></tr>
+              <tr><td><strong>Register</strong></td><td>"A user registers."</td></tr>
+              <tr><td><strong>Logout</strong></td><td>"A user logs out."</td></tr>
+              <tr><td><strong>Code to Token</strong></td><td>"An application, or client, exchanges a code for a token."</td></tr>
+              <tr><td><strong>Refresh Token</strong></td><td>"An application, or client, refreshes a token."</td></tr>
+              <tr><td><strong>User disabled by permanent/temporary lockout</strong></td><td>"Brute force protection
+              disabled the user account permanently/temporarily due to too many login failures."</td></tr>
+              <tr><td><strong>Update Credential</strong></td><td>"The password or (time-based) one-time Password
+              (OTP/TOTP) settings for an account changes."</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <h2>Lab: turning both streams on, for real</h2>
-    <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-    <code>labs/docker/docker-compose.yml</code>, the same lab environment chapters 20-27 used — not narrated.
-    Each read is a separate, independent <code>kcadm.sh get</code> or <code>curl</code> call, never trusted
-    from an update command's own silent success.</p>
+        <p>The guide lists these as human-readable groups (login events, brute-force events, identity-brokering
+        events, OAuth events, account events), but the REST API's actual <code>enabledEventTypes</code> field is a
+        flat list of specific type constants — and the realm default is not a short list. Reading it back live
+        (captured in the lab below) shows the out-of-the-box default already contains <strong>102</strong> distinct
+        type constants (counted directly from the captured array, not estimated), covering everything from
+        <code>LOGIN</code>/<code>LOGIN_ERROR</code> to niche ones like
+        <code>VERIFIABLE_CREDENTIAL_PRE_AUTHORIZED_GRANT_ERROR</code>. "Each event has a corresponding error event"
+        per the guide — that pattern (a success type and an <code>_ERROR</code> twin) holds for essentially every
+        entry in that list, which is also why the list is roughly double the size of the human-readable groups the
+        guide names.</p>
+      </section>
 
-    <ol class="lab-steps">
-      <li><p>Bring the stack up and poll until ready, then authenticate and recreate
-      <code>northwind-apps</code> with its roles, groups, and the two users this course has used since chapter
-      22 (each chapter's lab starts from a fresh stack, per this course's convention):</p>
+      <section class="slide" data-slide="lab-enable" data-title="Lab: turning both streams on">
+        <h2>Lab: turning both streams on, for real</h2>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
+        <code>labs/docker/docker-compose.yml</code>, the same lab environment chapters 20-27 used — not narrated.
+        Each read is a separate, independent <code>kcadm.sh get</code> or <code>curl</code> call, never trusted
+        from an update command's own silent success.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll until ready, then authenticate and recreate
+          <code>northwind-apps</code> with its roles, groups, and the two users this course has used since chapter
+          22 (each chapter's lab starts from a fresh stack, per this course's convention):</p>
 <pre><code>cd labs/docker
 docker compose up -d
 for i in $(seq 1 30); do
@@ -213,8 +230,8 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
 <pre><code>Logging into http://localhost:8080 as user admin of realm master
 Created new realm with id 'northwind-apps'</code></pre></li>
 
-      <li><p>Read the real baseline before touching anything — this is the "nothing is recorded yet" state
-      every organization starts from:</p>
+          <li><p>Read the real baseline before touching anything — this is the "nothing is recorded yet" state
+          every organization starts from:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get events/config -r northwind-apps</code></pre>
 <pre><code>{
   "eventsEnabled" : false,
@@ -223,13 +240,13 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "adminEventsEnabled" : false,
   "adminEventsDetailsEnabled" : false
 }</code></pre>
-      <p>Note what's already true even on a freshly created, never-configured realm: the
-      <code>jboss-logging</code> listener and the full 102-entry <code>enabledEventTypes</code> list are
-      already populated. Only the two booleans — <code>eventsEnabled</code> and <code>adminEventsEnabled</code>
-      — are off. Nothing is thrown away by default; nothing is recorded by default either.</p></li>
+          <p>Note what's already true even on a freshly created, never-configured realm: the
+          <code>jboss-logging</code> listener and the full 102-entry <code>enabledEventTypes</code> list are
+          already populated. Only the two booleans — <code>eventsEnabled</code> and <code>adminEventsEnabled</code>
+          — are off. Nothing is thrown away by default; nothing is recorded by default either.</p></li>
 
-      <li><p>Turn both streams on, with representation detail and a 30-day retention window
-      (<code>2592000</code> seconds), in one call:</p>
+          <li><p>Turn both streams on, with representation detail and a 30-day retention window
+          (<code>2592000</code> seconds), in one call:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update events/config -r northwind-apps \
   -s eventsEnabled=true \
   -s adminEventsEnabled=true \
@@ -244,15 +261,17 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "adminEventsEnabled" : true,
   "adminEventsDetailsEnabled" : true
 }</code></pre></li>
-    </ol>
+        </ol>
+      </section>
 
-    <h2>Lab: generating one real admin event and one real login event</h2>
-    <p>With recording on, this lab reproduced chapter 23's Priya mover-event scenario exactly — moving
-    <code>priya.patel</code> from <code>support-agent</code> to <code>platform-engineer</code> — specifically
-    because it produces two distinct admin events (a role removed, a role added), not a hypothetical one.</p>
+      <section class="slide" data-slide="lab-generate-admin" data-title="Lab: generating a real admin event">
+        <h2>Lab: generating one real admin event and one real login event</h2>
+        <p>With recording on, this lab reproduced chapter 23's Priya mover-event scenario exactly — moving
+        <code>priya.patel</code> from <code>support-agent</code> to <code>platform-engineer</code> — specifically
+        because it produces two distinct admin events (a role removed, a role added), not a hypothetical one.</p>
 
-    <ol class="lab-steps">
-      <li><p>Confirm her starting role, then make the real change:</p>
+        <ol class="lab-steps">
+          <li><p>Confirm her starting role, then make the real change:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get-roles -r northwind-apps \
   --uusername priya.patel --fields name</code></pre>
 <pre><code>[ {
@@ -264,14 +283,18 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   --uusername priya.patel --rolename support-agent
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername priya.patel --rolename platform-engineer</code></pre>
-      <p>Both commands succeed silently — exactly the pattern chapter 23 already warned about. This chapter's
-      own events section below is, in effect, the fix for that silence: instead of trusting the exit code,
-      everything that happened is independently visible as two real admin events a moment later.</p></li>
+          <p>Both commands succeed silently — exactly the pattern chapter 23 already warned about. This chapter's
+          own events section below is, in effect, the fix for that silence: instead of trusting the exit code,
+          everything that happened is independently visible as two real admin events a moment later.</p></li>
+        </ol>
+      </section>
 
-      <li><p>For the login event, no browser exists in this environment, so this lab used a real
-      resource-owner-password-credentials grant against the realm's built-in <code>admin-cli</code> public
-      client (direct access grants enabled on it by default) with <code>priya.patel</code>'s own password —
-      a genuine credential check against the realm, not a simulated one:</p>
+      <section class="slide" data-slide="lab-generate-login" data-title="Lab: generating a real login event">
+        <ol class="lab-steps" style="counter-reset: lab-step 1;">
+          <li><p>For the login event, no browser exists in this environment, so this lab used a real
+          resource-owner-password-credentials grant against the realm's built-in <code>admin-cli</code> public
+          client (direct access grants enabled on it by default) with <code>priya.patel</code>'s own password —
+          a genuine credential check against the realm, not a simulated one:</p>
 <pre><code>curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli \
   -d username=priya.patel -d password='Lab-Pass-2026!'</code></pre>
@@ -279,10 +302,10 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-a
   "error" : "invalid_grant",
   "error_description" : "Account is not fully set up"
 }</code></pre>
-      <p>This was a genuine, unplanned failure this session's own run hit — not a scripted example of a
-      mistake. The fix and the real root cause are both in the pitfalls section below; the short version is
-      that <code>priya.patel</code> was created without a first/last name, and the realm's declarative user
-      profile requires them. Setting those two fields and retrying succeeded for real:</p>
+          <p>This was a genuine, unplanned failure this session's own run hit — not a scripted example of a
+          mistake. The fix and the real root cause are both in the pitfalls section below; the short version is
+          that <code>priya.patel</code> was created without a first/last name, and the realm's declarative user
+          profile requires them. Setting those two fields and retrying succeeded for real:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update users/&lt;priya's-id&gt; -r northwind-apps \
   -s firstName=Priya -s lastName=Patel
 curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
@@ -298,8 +321,8 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
   "session_state" : "-IpI94MC2T4Htq4cPmbIJaHW",
   "scope" : "email kc-admin-api profile"
 }</code></pre>
-      <p>Then, for completeness, one deliberately wrong password to capture a real
-      <code>LOGIN_ERROR</code> alongside the real <code>LOGIN</code>:</p>
+          <p>Then, for completeness, one deliberately wrong password to capture a real
+          <code>LOGIN_ERROR</code> alongside the real <code>LOGIN</code>:</p>
 <pre><code>curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli \
   -d username=priya.patel -d password='wrong-password-on-purpose'</code></pre>
@@ -307,12 +330,14 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
   "error" : "invalid_grant",
   "error_description" : "Invalid user credentials"
 }</code></pre></li>
-    </ol>
+        </ol>
+      </section>
 
-    <h2>Lab: fetching both streams back through the Admin REST API</h2>
-    <ol class="lab-steps">
-      <li><p>Login/user events, via <code>kcadm.sh</code> (a thin wrapper over
-      <code>GET /admin/realms/{realm}/events</code>):</p>
+      <section class="slide" data-slide="lab-fetch-events" data-title="Lab: fetching login events back">
+        <h2>Lab: fetching both streams back through the Admin REST API</h2>
+        <ol class="lab-steps">
+          <li><p>Login/user events, via <code>kcadm.sh</code> (a thin wrapper over
+          <code>GET /admin/realms/{realm}/events</code>):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get events -r northwind-apps</code></pre>
 <pre><code>[ {
   "id" : "5f25a386-3746-437b-a6e6-44bc67bee859",
@@ -361,12 +386,16 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
     "username" : "priya.patel"
   }
 } ]</code></pre>
-      <p>That third record is the actual root cause of the earlier failed grant, captured by the events system
-      itself: <code>error: "resolve_required_actions"</code>, <code>reason: "Account is not fully set up"</code>
-      — this is real diagnostic value the events stream gave this session, not a hypothetical benefit.</p></li>
+          <p>That third record is the actual root cause of the earlier failed grant, captured by the events system
+          itself: <code>error: "resolve_required_actions"</code>, <code>reason: "Account is not fully set up"</code>
+          — this is real diagnostic value the events stream gave this session, not a hypothetical benefit.</p></li>
+        </ol>
+      </section>
 
-      <li><p>Admin events, via <code>kcadm.sh</code> (wrapping <code>GET
-      /admin/realms/{realm}/admin-events</code>), showing the mover-event role change in full:</p>
+      <section class="slide" data-slide="lab-fetch-admin" data-title="Lab: fetching admin events back">
+        <ol class="lab-steps" style="counter-reset: lab-step 1;">
+          <li><p>Admin events, via <code>kcadm.sh</code> (wrapping <code>GET
+          /admin/realms/{realm}/admin-events</code>), showing the mover-event role change in full:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get admin-events -r northwind-apps \
   -q resourceTypes=REALM_ROLE_MAPPING --fields operationType,resourceType,resourcePath,time</code></pre>
 <pre><code>[ {
@@ -380,12 +409,12 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
   "resourceType" : "REALM_ROLE_MAPPING",
   "resourcePath" : "users/aa775ccf-030d-471b-b917-c561c897082b/role-mappings/realm"
 } ]</code></pre>
-      <p>Filtering on <code>resourceTypes</code> (a real query parameter on the REST endpoint, not a
-      client-side filter) is exactly how a specific question — "show me every role-mapping change" — gets
-      answered without scrolling through every admin event the realm has ever recorded.</p></li>
+          <p>Filtering on <code>resourceTypes</code> (a real query parameter on the REST endpoint, not a
+          client-side filter) is exactly how a specific question — "show me every role-mapping change" — gets
+          answered without scrolling through every admin event the realm has ever recorded.</p></li>
 
-      <li><p>The same admin events, unfiltered, show what <code>adminEventsDetailsEnabled=true</code> actually
-      buys: the full <code>representation</code> field, the raw JSON body of what was sent:</p>
+          <li><p>The same admin events, unfiltered, show what <code>adminEventsDetailsEnabled=true</code> actually
+          buys: the full <code>representation</code> field, the raw JSON body of what was sent:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get admin-events -r northwind-apps</code></pre>
 <pre><code>[ {
   "id" : "d592cdc7-9fbc-40aa-bd89-adb4ee65e437",
@@ -409,93 +438,95 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
   "resourcePath" : "users/aa775ccf-030d-471b-b917-c561c897082b/role-mappings/realm",
   "representation" : "[{\"id\":\"0678a4f7-70fa-4462-8b62-6dc4b7a89275\",\"name\":\"support-agent\",\"composite\":false,\"clientRole\":false,\"containerId\":\"22c53172-ae97-4119-86d8-9de0260d2d11\"}]"
 } ]</code></pre>
-      <p><code>authDetails</code> is its own nested object — who made the change (<code>userId</code>, here the
-      admin's own id), from where (<code>ipAddress</code>), and through which client. Combined with
-      <code>operationType</code>/<code>resourceType</code>/<code>resourcePath</code>/<code>representation</code>,
-      this one record alone answers "who changed what, from where, to exactly which value, and when" — the
-      literal shape of a HIPAA-style access/change audit, covered concretely below.</p></li>
-    </ol>
+          <p><code>authDetails</code> is its own nested object — who made the change (<code>userId</code>, here the
+          admin's own id), from where (<code>ipAddress</code>), and through which client. Combined with
+          <code>operationType</code>/<code>resourceType</code>/<code>resourcePath</code>/<code>representation</code>,
+          this one record alone answers "who changed what, from where, to exactly which value, and when" — the
+          literal shape of a HIPAA-style access/change audit, covered concretely below.</p></li>
+        </ol>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 230" role="img" aria-labelledby="t2 d2">
-        <title id="t2">This lab's actual event timeline, oldest to newest</title>
-        <desc id="d2">A horizontal timeline with five real, timestamped events in the order they actually
-        occurred. 1. Admin event: DELETE REALM_ROLE_MAPPING, support-agent removed from priya.patel. 2. Admin
-        event: CREATE REALM_ROLE_MAPPING, platform-engineer added to priya.patel. 3. Admin event: UPDATE USER,
-        firstName/lastName added to priya.patel (the fix for the required-action failure). 4. Login event:
-        LOGIN_ERROR, resolve_required_actions, "Account is not fully set up" — the failed grant attempted
-        before the fix. 5. Login event: LOGIN, priya.patel's real password grant succeeding, followed
-        immediately by a sixth, LOGIN_ERROR with invalid_user_credentials from a deliberately wrong password.
-        A caption notes every timestamp and id shown is from the real captured REST responses in this
-        chapter, not invented for illustration.</desc>
-        <line x1="40" y1="120" x2="860" y2="120" class="diagram-stroke"/>
-        <circle cx="90" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
-        <text x="90" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">DELETE role-mapping</text>
-        <text x="90" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">support-agent removed</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 230" role="img" aria-labelledby="t2 d2">
+            <title id="t2">This lab's actual event timeline, oldest to newest</title>
+            <desc id="d2">A horizontal timeline with five real, timestamped events in the order they actually
+            occurred. 1. Admin event: DELETE REALM_ROLE_MAPPING, support-agent removed from priya.patel. 2. Admin
+            event: CREATE REALM_ROLE_MAPPING, platform-engineer added to priya.patel. 3. Admin event: UPDATE USER,
+            firstName/lastName added to priya.patel (the fix for the required-action failure). 4. Login event:
+            LOGIN_ERROR, resolve_required_actions, "Account is not fully set up" — the failed grant attempted
+            before the fix. 5. Login event: LOGIN, priya.patel's real password grant succeeding, followed
+            immediately by a sixth, LOGIN_ERROR with invalid_user_credentials from a deliberately wrong password.
+            A caption notes every timestamp and id shown is from the real captured REST responses in this
+            chapter, not invented for illustration.</desc>
+            <line x1="40" y1="120" x2="860" y2="120" class="diagram-stroke"/>
+            <circle cx="90" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="90" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">DELETE role-mapping</text>
+            <text x="90" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">support-agent removed</text>
 
-        <circle cx="230" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
-        <text x="230" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">CREATE role-mapping</text>
-        <text x="230" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">platform-engineer added</text>
+            <circle cx="230" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="230" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">CREATE role-mapping</text>
+            <text x="230" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">platform-engineer added</text>
 
-        <circle cx="370" cy="120" r="6" class="diagram-fill-info" />
-        <text x="370" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN_ERROR</text>
-        <text x="370" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">resolve_required_actions</text>
+            <circle cx="370" cy="120" r="6" class="diagram-fill-info" />
+            <text x="370" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN_ERROR</text>
+            <text x="370" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">resolve_required_actions</text>
 
-        <circle cx="510" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
-        <text x="510" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">UPDATE user</text>
-        <text x="510" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">firstName/lastName set</text>
+            <circle cx="510" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="510" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">UPDATE user</text>
+            <text x="510" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">firstName/lastName set</text>
 
-        <circle cx="660" cy="120" r="6" class="diagram-fill-success diagram-stroke"/>
-        <text x="660" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN</text>
-        <text x="660" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">real password grant succeeds</text>
+            <circle cx="660" cy="120" r="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="660" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN</text>
+            <text x="660" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">real password grant succeeds</text>
 
-        <circle cx="800" cy="120" r="6" class="diagram-fill-danger diagram-stroke"/>
-        <text x="800" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN_ERROR</text>
-        <text x="800" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">invalid_user_credentials</text>
+            <circle cx="800" cy="120" r="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="800" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN_ERROR</text>
+            <text x="800" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">invalid_user_credentials</text>
 
-        <text x="450" y="195" text-anchor="middle" class="diagram-label-muted" font-size="11">Admin events (warning-colored) and login events (info/success/danger-colored) interleave on the same realm's real timeline.</text>
-      </svg>
-      <figcaption>Figure 28.2 — The real sequence this chapter's lab produced: two admin events, a login
-      failure this session didn't expect, the fix, and both outcomes of the login attempt that followed.</figcaption>
-    </figure>
+            <text x="450" y="195" text-anchor="middle" class="diagram-label-muted" font-size="11">Admin events (warning-colored) and login events (info/success/danger-colored) interleave on the same realm's real timeline.</text>
+          </svg>
+          <figcaption>Figure 28.2 — The real sequence this chapter's lab produced: two admin events, a login
+          failure this session didn't expect, the fix, and both outcomes of the login attempt that followed.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Health and metrics: a different question, a different port</h2>
-    <p><code>/health</code> and <code>/metrics</code> do not answer "who did what" at all — they answer "is
-    the server itself okay right now," which is a monitoring concern, not an audit one, and this course keeps
-    the two separate on purpose. Per Keycloak's own <a
-    href="https://www.keycloak.org/observability/health">Health checks guide</a> (fetched live for this
-    chapter) and confirmed live in the lab below, both are served on a separate
-    <strong>management interface</strong>, port <code>9000</code> by default — not the main port 8080 that
-    serves the Admin Console, Admin REST API, and every event endpoint this chapter has used so far.</p>
+      <section class="slide" data-slide="health-checks" data-title="Health checks">
+        <h2>Health and metrics: a different question, a different port</h2>
+        <p><code>/health</code> and <code>/metrics</code> do not answer "who did what" at all — they answer "is
+        the server itself okay right now," which is a monitoring concern, not an audit one, and this course keeps
+        the two separate on purpose. Per Keycloak's own <a
+        href="https://www.keycloak.org/observability/health">Health checks guide</a> (fetched live for this
+        chapter) and confirmed live in the lab below, both are served on a separate
+        <strong>management interface</strong>, port <code>9000</code> by default — not the main port 8080 that
+        serves the Admin Console, Admin REST API, and every event endpoint this chapter has used so far.</p>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Health endpoints, per the official guide, confirmed live against this chapter's lab stack</caption>
-        <thead><tr><th>Path</th><th>Official description</th><th>Confirmed live</th></tr></thead>
-        <tbody>
-          <tr><td><code>/health/started</code></td><td>A startup probe for initial startup, before the
-          liveness probe takes over.</td><td>Not exercised separately this chapter.</td></tr>
-          <tr><td><code>/health/live</code></td><td>"Checks whether Keycloak is running. If this fails the
-          application should be discarded."</td><td><code>{"status":"UP","checks":[]}</code></td></tr>
-          <tr><td><code>/health/ready</code></td><td>Checks whether Keycloak can process requests.</td>
-          <td><code>{"status":"UP","checks":[...3 checks, all UP...]}</code></td></tr>
-          <tr><td><code>/health</code></td><td>Combines all health check procedures.</td><td>Same 3-check UP
-          response as <code>/health/ready</code> in this run.</td></tr>
-        </tbody>
-      </table>
-    </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Health endpoints, per the official guide, confirmed live against this chapter's lab stack</caption>
+            <thead><tr><th>Path</th><th>Official description</th><th>Confirmed live</th></tr></thead>
+            <tbody>
+              <tr><td><code>/health/started</code></td><td>A startup probe for initial startup, before the
+              liveness probe takes over.</td><td>Not exercised separately this chapter.</td></tr>
+              <tr><td><code>/health/live</code></td><td>"Checks whether Keycloak is running. If this fails the
+              application should be discarded."</td><td><code>{"status":"UP","checks":[]}</code></td></tr>
+              <tr><td><code>/health/ready</code></td><td>Checks whether Keycloak can process requests.</td>
+              <td><code>{"status":"UP","checks":[...3 checks, all UP...]}</code></td></tr>
+              <tr><td><code>/health</code></td><td>Combines all health check procedures.</td><td>Same 3-check UP
+              response as <code>/health/ready</code> in this run.</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <p>The lab's own compose file already sets <code>KC_HEALTH_ENABLED=true</code> (chapter 20 explained why —
-    the build-time <code>health-enabled</code> option defaults to <code>false</code>), but the base compose
-    file never publishes port 9000 to the host, only 8080. To reach <code>/health</code> from outside the
-    container at all, this chapter's lab added one line to its own copy of the compose file's
-    <code>keycloak</code> service:</p>
+        <p>The lab's own compose file already sets <code>KC_HEALTH_ENABLED=true</code> (chapter 20 explained why —
+        the build-time <code>health-enabled</code> option defaults to <code>false</code>), but the base compose
+        file never publishes port 9000 to the host, only 8080. To reach <code>/health</code> from outside the
+        container at all, this chapter's lab added one line to its own copy of the compose file's
+        <code>keycloak</code> service:</p>
 
 <pre><code>    ports:
       - "8080:8080"
       - "9000:9000"</code></pre>
 
-    <p>With that in place and the stack restarted, the real responses:</p>
+        <p>With that in place and the stack restarted, the real responses:</p>
 <pre><code>curl -s http://localhost:9000/health/ready</code></pre>
 <pre><code>{
   "status" : "UP",
@@ -507,239 +538,275 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 }</code></pre>
 <pre><code>curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/health</code></pre>
 <pre><code>404</code></pre>
-    <p>That last line is the real, confirmed answer to "why doesn't <code>/health</code> work on the port every
-    other chapter has used" — it genuinely isn't served there in this version.</p>
+        <p>That last line is the real, confirmed answer to "why doesn't <code>/health</code> work on the port every
+        other chapter has used" — it genuinely isn't served there in this version.</p>
+      </section>
 
-    <p><code>/metrics</code> works the same way but needs its own separate opt-in,
-    <code>KC_METRICS_ENABLED=true</code> (the build-time <code>metrics-enabled</code> option, confirmed via
-    <a href="https://www.keycloak.org/server/all-config">Keycloak's own configuration reference</a> to default
-    to <code>false</code> just like <code>health-enabled</code> — this chapter's compose file adds it
-    alongside the existing <code>KC_HEALTH_ENABLED</code> line). With it set, <code>/metrics</code> on the
-    same management port returns real Prometheus-format output — this chapter captured 1,314 lines of it in
-    its own run, not a sample fabricated for illustration:</p>
+      <section class="slide" data-slide="metrics" data-title="Metrics">
+        <p><code>/metrics</code> works the same way but needs its own separate opt-in,
+        <code>KC_METRICS_ENABLED=true</code> (the build-time <code>metrics-enabled</code> option, confirmed via
+        <a href="https://www.keycloak.org/server/all-config">Keycloak's own configuration reference</a> to default
+        to <code>false</code> just like <code>health-enabled</code> — this chapter's compose file adds it
+        alongside the existing <code>KC_HEALTH_ENABLED</code> line). With it set, <code>/metrics</code> on the
+        same management port returns real Prometheus-format output — this chapter captured 1,314 lines of it in
+        its own run, not a sample fabricated for illustration:</p>
 <pre><code>curl -s http://localhost:9000/metrics | grep keycloak_credentials_password_hashing_validations</code></pre>
 <pre><code># TYPE keycloak_credentials_password_hashing_validations counter
 # HELP keycloak_credentials_password_hashing_validations Password validations
 keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="valid",realm="northwind-apps"} 2.0
 keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="valid",realm="master"} 1.0
 keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="invalid",realm="northwind-apps"} 1.0</code></pre>
-    <p>That one metric is a genuinely useful aggregate signal — invalid-password counts per realm, visible to
-    a monitoring system without ever reading a single event record — but notice what it cannot do: it cannot
-    say <em>which</em> user failed, from <em>which</em> IP address, at <em>which</em> exact time. That
-    granularity only exists in the events stream above. Metrics and events answer different questions and
-    this course does not blur them.</p>
+        <p>That one metric is a genuinely useful aggregate signal — invalid-password counts per realm, visible to
+        a monitoring system without ever reading a single event record — but notice what it cannot do: it cannot
+        say <em>which</em> user failed, from <em>which</em> IP address, at <em>which</em> exact time. That
+        granularity only exists in the events stream above. Metrics and events answer different questions and
+        this course does not blur them.</p>
+      </section>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 280" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Two ports, two audiences: the Admin REST API versus the management interface</title>
-        <desc id="d3">A Keycloak container box with two labeled ports branching out. Port 8080 (main):
-        serves the Admin Console, the Admin REST API, every realm/user-facing endpoint, and this chapter's
-        events/admin-events endpoints — intended to be reachable by administrators and applications. Port
-        9000 (management interface, separate from 8080): serves /health, /health/ready, /health/live,
-        /health/started, and /metrics — intended to be reachable only by internal infrastructure such as a
-        container orchestrator's liveness probe or a Prometheus scraper, not end users. Two downstream
-        consumer boxes are shown: an "external SIEM / log pipeline" box fed by the events REST API and the
-        jboss-logging listener's own log output (a real integration requires a log shipper or a custom Event
-        Listener SPI provider — Keycloak ships no built-in SIEM connector), and a "monitoring / orchestrator"
-        box fed by the management interface's health and metrics endpoints. A caption states the lab's shared
-        compose file must have a ports line added for 9000 to reach the management interface from the host at
-        all, since only 8080 is published by default.</desc>
-        <rect x="350" y="10" width="200" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="450" y="40" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Keycloak container</text>
+      <section class="slide" data-slide="ports-siem" data-title="Two ports, two audiences">
+        <figure class="diagram">
+          <svg viewBox="0 0 900 280" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Two ports, two audiences: the Admin REST API versus the management interface</title>
+            <desc id="d3">A Keycloak container box with two labeled ports branching out. Port 8080 (main):
+            serves the Admin Console, the Admin REST API, every realm/user-facing endpoint, and this chapter's
+            events/admin-events endpoints — intended to be reachable by administrators and applications. Port
+            9000 (management interface, separate from 8080): serves /health, /health/ready, /health/live,
+            /health/started, and /metrics — intended to be reachable only by internal infrastructure such as a
+            container orchestrator's liveness probe or a Prometheus scraper, not end users. Two downstream
+            consumer boxes are shown: an "external SIEM / log pipeline" box fed by the events REST API and the
+            jboss-logging listener's own log output (a real integration requires a log shipper or a custom Event
+            Listener SPI provider — Keycloak ships no built-in SIEM connector), and a "monitoring / orchestrator"
+            box fed by the management interface's health and metrics endpoints. A caption states the lab's shared
+            compose file must have a ports line added for 9000 to reach the management interface from the host at
+            all, since only 8080 is published by default.</desc>
+            <rect x="350" y="10" width="200" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="40" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Keycloak container</text>
 
-        <line x1="400" y1="60" x2="220" y2="100" class="diagram-stroke" marker-end="url(#arrowE2)"/>
-        <rect x="60" y="100" width="320" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="220" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Port 8080 (main)</text>
-        <text x="220" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">Admin Console, Admin REST API,</text>
-        <text x="220" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">events / admin-events endpoints</text>
+            <line x1="400" y1="60" x2="220" y2="100" class="diagram-stroke" marker-end="url(#arrowE2)"/>
+            <rect x="60" y="100" width="320" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="220" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Port 8080 (main)</text>
+            <text x="220" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">Admin Console, Admin REST API,</text>
+            <text x="220" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">events / admin-events endpoints</text>
 
-        <line x1="500" y1="60" x2="680" y2="100" class="diagram-stroke" marker-end="url(#arrowE2)"/>
-        <rect x="520" y="100" width="320" height="70" rx="8" class="diagram-fill-danger diagram-stroke"/>
-        <text x="680" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Port 9000 (management)</text>
-        <text x="680" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">/health, /health/ready, /health/live,</text>
-        <text x="680" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">/health/started, /metrics</text>
+            <line x1="500" y1="60" x2="680" y2="100" class="diagram-stroke" marker-end="url(#arrowE2)"/>
+            <rect x="520" y="100" width="320" height="70" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="680" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Port 9000 (management)</text>
+            <text x="680" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">/health, /health/ready, /health/live,</text>
+            <text x="680" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">/health/started, /metrics</text>
 
-        <line x1="220" y1="170" x2="220" y2="205" class="diagram-stroke" marker-end="url(#arrowE2)"/>
-        <rect x="60" y="205" width="320" height="55" rx="8" class="diagram-fill-surface diagram-stroke" stroke-dasharray="4 4"/>
-        <text x="220" y="227" text-anchor="middle" class="diagram-label-muted" font-size="10">External SIEM / log pipeline</text>
-        <text x="220" y="243" text-anchor="middle" class="diagram-label-muted" font-size="10">(needs a log shipper or custom listener — not built-in)</text>
+            <line x1="220" y1="170" x2="220" y2="205" class="diagram-stroke" marker-end="url(#arrowE2)"/>
+            <rect x="60" y="205" width="320" height="55" rx="8" class="diagram-fill-surface diagram-stroke" stroke-dasharray="4 4"/>
+            <text x="220" y="227" text-anchor="middle" class="diagram-label-muted" font-size="10">External SIEM / log pipeline</text>
+            <text x="220" y="243" text-anchor="middle" class="diagram-label-muted" font-size="10">(needs a log shipper or custom listener — not built-in)</text>
 
-        <line x1="680" y1="170" x2="680" y2="205" class="diagram-stroke" marker-end="url(#arrowE2)"/>
-        <rect x="520" y="205" width="320" height="55" rx="8" class="diagram-fill-surface diagram-stroke" stroke-dasharray="4 4"/>
-        <text x="680" y="227" text-anchor="middle" class="diagram-label-muted" font-size="10">Monitoring / orchestrator</text>
-        <text x="680" y="243" text-anchor="middle" class="diagram-label-muted" font-size="10">(liveness probe, Prometheus scraper)</text>
+            <line x1="680" y1="170" x2="680" y2="205" class="diagram-stroke" marker-end="url(#arrowE2)"/>
+            <rect x="520" y="205" width="320" height="55" rx="8" class="diagram-fill-surface diagram-stroke" stroke-dasharray="4 4"/>
+            <text x="680" y="227" text-anchor="middle" class="diagram-label-muted" font-size="10">Monitoring / orchestrator</text>
+            <text x="680" y="243" text-anchor="middle" class="diagram-label-muted" font-size="10">(liveness probe, Prometheus scraper)</text>
 
-        <defs>
-          <marker id="arrowE2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 28.3 — The Admin REST API (events included) and the management interface
-      (health/metrics) are different ports serving different audiences; neither one is a built-in SIEM
-      connector by itself.</figcaption>
-    </figure>
+            <defs>
+              <marker id="arrowE2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 28.3 — The Admin REST API (events included) and the management interface
+          (health/metrics) are different ports serving different audiences; neither one is a built-in SIEM
+          connector by itself.</figcaption>
+        </figure>
 
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea — Keycloak has no built-in SIEM connector</div>
-      <p>Nothing this chapter ran sends events anywhere external on its own. "SIEM-style export" in practice
-      means one of three real mechanisms, all confirmed to exist but none of them a one-click integration:
-      (1) poll <code>GET /admin/realms/{realm}/events</code> and <code>/admin-events</code> on a schedule and
-      forward the results, exactly like this chapter's own <code>kcadm.sh get events</code> calls, just
-      automated; (2) point a log shipper (Filebeat, Fluentd, a sidecar) at the <code>org.keycloak.events</code>
-      log category the built-in <code>jboss-logging</code> listener already writes to, which chapter 26's
-      caching material and this chapter's own log line both confirm is a real, standard Java logging category,
-      not a database table; or (3) write a custom Event Listener SPI provider (chapter 39's subject) that
-      pushes each event to a message queue or SIEM API directly as it happens, instead of waiting to be
-      polled. This chapter deliberately did not build any of the three end-to-end — doing so honestly would
-      require a real external SIEM target, which is out of this chapter's scope — but every mechanism named
-      above is real and REST-confirmed, not invented.</p>
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea — Keycloak has no built-in SIEM connector</div>
+          <p>Nothing this chapter ran sends events anywhere external on its own. "SIEM-style export" in practice
+          means one of three real mechanisms, all confirmed to exist but none of them a one-click integration:
+          (1) poll <code>GET /admin/realms/{realm}/events</code> and <code>/admin-events</code> on a schedule and
+          forward the results, exactly like this chapter's own <code>kcadm.sh get events</code> calls, just
+          automated; (2) point a log shipper (Filebeat, Fluentd, a sidecar) at the <code>org.keycloak.events</code>
+          log category the built-in <code>jboss-logging</code> listener already writes to, which chapter 26's
+          caching material and this chapter's own log line both confirm is a real, standard Java logging category,
+          not a database table; or (3) write a custom Event Listener SPI provider (chapter 39's subject) that
+          pushes each event to a message queue or SIEM API directly as it happens, instead of waiting to be
+          polled. This chapter deliberately did not build any of the three end-to-end — doing so honestly would
+          require a real external SIEM target, which is out of this chapter's scope — but every mechanism named
+          above is real and REST-confirmed, not invented.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study-riverside" data-title="Case study: Riverside Health">
+        <h2>Case study: Riverside Health's audit-controls requirement</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p><span class="org-chip riverside">Riverside Health</span> runs under the HIPAA Security Rule, and
+          chapter 11 already pinned down the exact citation this chapter's mechanism answers: <strong>Audit
+          controls (45 CFR §164.312(b))</strong>, which chapter 11 described as "accounting/audit trail by another
+          name — hardware, software, and procedural mechanisms that record and examine ePHI system activity." That
+          is not an abstract requirement once admin events with <code>adminEventsDetailsEnabled=true</code> are
+          switched on: it is, concretely, the exact JSON this chapter's lab captured for
+          <code>priya.patel</code>'s role change — a timestamped record with <code>authDetails.userId</code>
+          naming who made the change, <code>operationType</code>/<code>resourceType</code>/<code>resourcePath</code>
+          naming what was touched, and <code>representation</code> showing the exact before/after value.</p>
+          <p>Picture the same mechanism on Riverside's own realm instead: a clinician's access is elevated from
+          "scheduling only" to "full chart access" for a shift, then revoked at shift's end. With admin events
+          enabled exactly as configured in this lab, Riverside's compliance team can answer an auditor's "who had
+          full chart access, when, and who approved it" with the same two-record pattern this chapter just
+          produced for Northwind — a <code>CREATE</code> on a role-mapping resource followed by a later
+          <code>DELETE</code>, each one independently timestamped and attributed to a specific admin user id. The
+          one deliberate choice Riverside's team would need to make that Northwind's didn't: whether
+          <code>adminEventsDetailsEnabled</code>'s full <code>representation</code> field is itself safe to store
+          for a PHI-adjacent resource, since that field can capture more of the underlying record's contents than
+          a HIPAA minimum-necessary review might want sitting in a database long after the change happened — the
+          pitfall below covers this concretely.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see admin events recorded but login events never showing up (or the reverse), the cause is
+          almost always forgetting that <code>eventsEnabled</code> and <code>adminEventsEnabled</code> are two
+          completely independent booleans on the same config object — there is no single "turn events on" switch,
+          and flipping one does nothing to the other.</li>
+          <li>If you see an admin event's <code>representation</code> field missing even though admin events are
+          clearly being recorded, the cause is almost always that <code>adminEventsDetailsEnabled</code> was left
+          at its default <code>false</code> — <code>adminEventsEnabled</code> controls whether the event exists at
+          all, <code>adminEventsDetailsEnabled</code> controls whether it carries the JSON body, and they are a
+          third/fourth independent pair layered on the eventsEnabled/adminEventsEnabled pair above.</li>
+          <li>If you see a resource-owner-password-credentials grant fail with <code>"error_description": "Account
+          is not fully set up"</code> even though the user's <code>requiredActions</code> array is empty, the cause
+          — confirmed directly in this chapter's own run — can be a declarative user-profile field (here,
+          <code>firstName</code>/<code>lastName</code>) the realm marks required that the user record simply never
+          had set; the events stream's own <code>error: "resolve_required_actions"</code> record is the fastest way
+          to confirm this rather than guessing from the generic OAuth error alone.</li>
+          <li>If you see a realm's <code>representation</code> fields on admin events carrying more of a user's
+          underlying attributes than a compliance review is comfortable with, the cause is that
+          <code>adminEventsDetailsEnabled</code> captures the full submitted JSON verbatim with no field-level
+          filtering — a HIPAA- or PCI-scoped realm should decide this is acceptable deliberately, not discover it
+          after the fact in an audit.</li>
+          <li>If you see <code>curl http://localhost:8080/health</code> (or <code>/metrics</code>) return 404 on a
+          Keycloak 26.x instance even with <code>KC_HEALTH_ENABLED=true</code> set, the cause is that both
+          endpoints live on the separate management interface (port 9000 by default), not the main HTTP port —
+          confirmed live in this chapter's own run (200 on 9000, 404 on 8080 for the identical path).</li>
+          <li>If you see <code>/metrics</code> return 404 even though <code>/health</code> already works, the
+          cause is that <code>KC_METRICS_ENABLED</code> is a separate opt-in from <code>KC_HEALTH_ENABLED</code> —
+          enabling one does not enable the other, the same independent-switches pattern this whole chapter keeps
+          running into.</li>
+          <li>If you see someone describe Keycloak as "exporting to our SIEM" with no further detail, the cause is
+          usually treating the events REST API's mere existence as the integration — in reality someone still has
+          to build the polling script, the log-shipper pipeline, or the custom Event Listener SPI provider; none
+          of the three assembles itself.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Keycloak's events subsystem is Keycloak's concrete implementation of chapter 3's "Accounting" — the
+          continuous recording that a later "audit" (a human or a tool reviewing the record) depends on; without
+          it, there is nothing to detect chapter 9's threats against or to show a chapter 11 auditor.</li>
+          <li>Login/user events and admin events are two fully independent streams, each gated by its own boolean
+          (<code>eventsEnabled</code> / <code>adminEventsEnabled</code>) on the same
+          <code>RealmEventsConfigRepresentation</code> — there is no single master "enable events" switch.</li>
+          <li><code>adminEventsDetailsEnabled</code> is a third, independent switch layered on top of
+          <code>adminEventsEnabled</code>: it controls whether the recorded event also carries the full JSON
+          <code>representation</code> of what was created, updated, or deleted.</li>
+          <li>A freshly created realm already has <code>jboss-logging</code> as its event listener and a
+          102-entry <code>enabledEventTypes</code> default list — only the two main booleans are off by default;
+          nothing about "what to record" needs configuring before "whether to record" does.</li>
+          <li>This chapter's own lab run hit a real, unplanned bug — a resource-owner-password-credentials grant
+          failing with "Account is not fully set up" due to missing required profile fields — and the events
+          stream's own <code>resolve_required_actions</code> record was the fastest real diagnostic path to the
+          cause, which is itself a demonstration of why this chapter's subject matters operationally, not just for
+          compliance paperwork.</li>
+          <li>Admin events answer "who changed what, from where, to what exact value, and when" via
+          <code>authDetails</code>, <code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>,
+          and <code>representation</code> together — the literal shape HIPAA's Audit controls provision (45 CFR
+          §164.312(b)) asks for, as chapter 11 already named.</li>
+          <li><code>/health</code> and <code>/metrics</code> answer a different question than events do — whether
+          the server itself is alive and busy, not who did what — and in Keycloak 26.x both live on a separate
+          management interface (port 9000 by default), confirmed live to 404 on the main port.</li>
+          <li><code>KC_METRICS_ENABLED</code> and <code>KC_HEALTH_ENABLED</code> are separate opt-ins with the same
+          default-off pattern; enabling one does not enable the other.</li>
+          <li>Keycloak ships no built-in SIEM connector. A real external integration still requires one of: polling
+          the events REST API on a schedule, shipping the <code>org.keycloak.events</code> log category to an
+          external pipeline, or writing a custom Event Listener SPI provider (chapter 39) — this chapter confirmed
+          each mechanism exists without building one end-to-end.</li>
+          <li>Every JSON example in this chapter's lab sections is real, captured output from an actual run against
+          a real Keycloak container — including the one genuine failure this session hit and fixed live.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain why <code>eventsEnabled</code> and <code>adminEventsEnabled</code> are independent booleans rather than one switch. Give a concrete scenario where an organization would deliberately want one on without the other.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Login/user events and admin events answer two different questions — who authenticated versus who changed configuration — and organizations have independent reasons to care about each at different volumes and risk levels. Keycloak's own <code>RealmEventsConfigRepresentation</code> models them as two separate booleans precisely so a deployment can tune each one against its own cost and risk profile instead of being forced into all-or-nothing. Concretely: a realm under active, frequent reconfiguration during a migration project might turn <code>adminEventsEnabled</code> off temporarily to avoid drowning in expected admin noise, while keeping <code>eventsEnabled</code> on because real user logins still need monitoring the whole time; a mostly-static production realm with rare admin changes but heavy daily login traffic might do the reverse, prioritizing the ability to trace every configuration change over storing high-volume login events it doesn't yet have a use for.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through exactly what <code>adminEventsDetailsEnabled</code> adds to an admin event record, and explain why a HIPAA- or PCI-regulated organization should weigh turning it on deliberately rather than reflexively enabling every flag "for compliance."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>adminEventsDetailsEnabled</code> adds the full <code>representation</code> field — the raw JSON body of what was created, updated, or deleted — on top of the base fields (<code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>, <code>authDetails</code>) that <code>adminEventsEnabled</code> alone already provides. Without it, an auditor can see that something changed and who changed it, but not the actual before/after value. A HIPAA- or PCI-regulated organization should weigh it deliberately because, as this chapter's pitfall notes, <code>representation</code> captures the submitted JSON verbatim with no field-level filtering — meaning it can store more of a user's or patient's underlying attributes in the events database, for the whole retention window, than a "minimum necessary" review would want. The right approach is a documented decision per resource type, not a reflex "turn everything on for compliance."</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's own lab hit "Account is not fully set up" on a password grant. What was the real cause, and why did checking the user's <code>requiredActions</code> array alone fail to reveal it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The real cause was that <code>priya.patel</code>'s user record was missing mandatory declarative user-profile fields (<code>firstName</code>/<code>lastName</code>) that the realm's user profile configuration requires — not a pending required action on the account. Checking <code>requiredActions</code> alone fails to reveal this because that array only lists explicitly assigned actions like "update password" or "verify email"; it has nothing to do with the user-profile validation layer, which is a separate mechanism that rejects the login before required actions even come into play. The only place the real cause actually surfaced was the login event's own <code>error: "resolve_required_actions"</code> record with <code>reason: "Account is not fully set up"</code>.</p>
+          </details></li>
+          <li><details>
+            <summary>Why do <code>/health</code> and <code>/metrics</code> live on a different port than the events endpoints in Keycloak 26.x, and what operational purpose does keeping them separate actually serve?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>/health</code> and <code>/metrics</code> live on Keycloak's separate management interface (port 9000 by default) rather than the main port (8080, which serves the Admin Console, Admin REST API, and the events endpoints) because they serve a fundamentally different audience: automated infrastructure (a container orchestrator's liveness probe, a Prometheus scraper) that polls constantly, rather than human administrators or applications. Keeping them on a separate port lets an operator firewall the management interface off from the public internet entirely — since nothing outside the infrastructure layer needs it — while still exposing the Admin REST API on 8080 to the administrators and applications that legitimately need it, without either traffic pattern interfering with or being exposed alongside the other.</p>
+          </details></li>
+          <li><details>
+            <summary>Using the real admin-event JSON this chapter captured for Priya's role change, explain concretely how an auditor would use <code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>, and <code>representation</code> together to answer "who changed what, when" for a HIPAA audit.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>For the <code>CREATE</code> event, <code>operationType: "CREATE"</code> and <code>resourceType: "REALM_ROLE_MAPPING"</code> tell the auditor what kind of action happened (a role was granted, not revoked); <code>resourcePath</code> (<code>users/aa775ccf.../role-mappings/realm</code>) identifies exactly which user's role mapping was touched; <code>representation</code> shows the exact role granted (<code>platform-engineer</code>, by id and name); and <code>authDetails.userId</code>/<code>ipAddress</code> identifies which admin account made the change and from where, with the record's own <code>time</code> field giving the timestamp. Read alongside the paired <code>DELETE</code> event (<code>support-agent</code> removed one second earlier, same <code>resourcePath</code>), the auditor can reconstruct the complete before/after state change — attributable to a specific admin, at a specific time, from a specific location — which is exactly the "who changed what, when" shape 45 CFR §164.312(b) asks for.</p>
+          </details></li>
+          <li><details>
+            <summary>Keycloak's built-in <code>jboss-logging</code> listener, by default, only writes <em>error</em> events to the server log. What would a real external SIEM integration need beyond what this listener already provides, based on what this chapter actually confirmed?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A <code>jboss-logging</code>-only setup gives error-level login events in the server's text log, but a real SIEM integration needs one of the three mechanisms this chapter confirmed actually exist: a scheduled poller hitting <code>GET /admin/realms/{realm}/events</code> and <code>/admin-events</code> and forwarding the results — the same calls this chapter ran manually, just automated; a log shipper (Filebeat, Fluentd, a sidecar) pointed at the <code>org.keycloak.events</code> log category to capture more than just error-level entries and ship them off-box; or a custom Event Listener SPI provider (chapter 39) that pushes every event to a message queue or SIEM API as it happens, instead of waiting to be polled. None of these exist out of the box — Keycloak ships no built-in SIEM connector, so one of the three has to actually be built.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/server_admin/index.html#configuring-auditing-to-track-events">Keycloak docs — Server Administration Guide: Configuring auditing to track events</a></li>
+          <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmEventsConfigRepresentation">Keycloak docs — Admin REST API reference: RealmEventsConfigRepresentation, EventRepresentation, AdminEventRepresentation</a></li>
+          <li><a href="https://www.keycloak.org/observability/health">Keycloak docs — Health checks guide</a></li>
+          <li><a href="https://www.keycloak.org/server/all-config">Keycloak docs — All configuration options (KC_HEALTH_ENABLED, KC_METRICS_ENABLED, management interface)</a></li>
+          <li><a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus — exposition formats (the text format Keycloak's <code>/metrics</code> endpoint emits)</a></li>
+          <li><a href="https://csrc.nist.gov/pubs/sp/800/92/final">NIST SP 800-92 — Guide to Computer Security Log Management</a></li>
+        </ul>
+      </section>
+
     </div>
-
-    <h2>Case study: Riverside Health's audit-controls requirement</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Riverside Health</div>
-      <p><span class="org-chip riverside">Riverside Health</span> runs under the HIPAA Security Rule, and
-      chapter 11 already pinned down the exact citation this chapter's mechanism answers: <strong>Audit
-      controls (45 CFR §164.312(b))</strong>, which chapter 11 described as "accounting/audit trail by another
-      name — hardware, software, and procedural mechanisms that record and examine ePHI system activity." That
-      is not an abstract requirement once admin events with <code>adminEventsDetailsEnabled=true</code> are
-      switched on: it is, concretely, the exact JSON this chapter's lab captured for
-      <code>priya.patel</code>'s role change — a timestamped record with <code>authDetails.userId</code>
-      naming who made the change, <code>operationType</code>/<code>resourceType</code>/<code>resourcePath</code>
-      naming what was touched, and <code>representation</code> showing the exact before/after value.</p>
-      <p>Picture the same mechanism on Riverside's own realm instead: a clinician's access is elevated from
-      "scheduling only" to "full chart access" for a shift, then revoked at shift's end. With admin events
-      enabled exactly as configured in this lab, Riverside's compliance team can answer an auditor's "who had
-      full chart access, when, and who approved it" with the same two-record pattern this chapter just
-      produced for Northwind — a <code>CREATE</code> on a role-mapping resource followed by a later
-      <code>DELETE</code>, each one independently timestamped and attributed to a specific admin user id. The
-      one deliberate choice Riverside's team would need to make that Northwind's didn't: whether
-      <code>adminEventsDetailsEnabled</code>'s full <code>representation</code> field is itself safe to store
-      for a PHI-adjacent resource, since that field can capture more of the underlying record's contents than
-      a HIPAA minimum-necessary review might want sitting in a database long after the change happened — the
-      pitfall below covers this concretely.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see admin events recorded but login events never showing up (or the reverse), the cause is
-      almost always forgetting that <code>eventsEnabled</code> and <code>adminEventsEnabled</code> are two
-      completely independent booleans on the same config object — there is no single "turn events on" switch,
-      and flipping one does nothing to the other.</li>
-      <li>If you see an admin event's <code>representation</code> field missing even though admin events are
-      clearly being recorded, the cause is almost always that <code>adminEventsDetailsEnabled</code> was left
-      at its default <code>false</code> — <code>adminEventsEnabled</code> controls whether the event exists at
-      all, <code>adminEventsDetailsEnabled</code> controls whether it carries the JSON body, and they are a
-      third/fourth independent pair layered on the eventsEnabled/adminEventsEnabled pair above.</li>
-      <li>If you see a resource-owner-password-credentials grant fail with <code>"error_description": "Account
-      is not fully set up"</code> even though the user's <code>requiredActions</code> array is empty, the cause
-      — confirmed directly in this chapter's own run — can be a declarative user-profile field (here,
-      <code>firstName</code>/<code>lastName</code>) the realm marks required that the user record simply never
-      had set; the events stream's own <code>error: "resolve_required_actions"</code> record is the fastest way
-      to confirm this rather than guessing from the generic OAuth error alone.</li>
-      <li>If you see a realm's <code>representation</code> fields on admin events carrying more of a user's
-      underlying attributes than a compliance review is comfortable with, the cause is that
-      <code>adminEventsDetailsEnabled</code> captures the full submitted JSON verbatim with no field-level
-      filtering — a HIPAA- or PCI-scoped realm should decide this is acceptable deliberately, not discover it
-      after the fact in an audit.</li>
-      <li>If you see <code>curl http://localhost:8080/health</code> (or <code>/metrics</code>) return 404 on a
-      Keycloak 26.x instance even with <code>KC_HEALTH_ENABLED=true</code> set, the cause is that both
-      endpoints live on the separate management interface (port 9000 by default), not the main HTTP port —
-      confirmed live in this chapter's own run (200 on 9000, 404 on 8080 for the identical path).</li>
-      <li>If you see <code>/metrics</code> return 404 even though <code>/health</code> already works, the
-      cause is that <code>KC_METRICS_ENABLED</code> is a separate opt-in from <code>KC_HEALTH_ENABLED</code> —
-      enabling one does not enable the other, the same independent-switches pattern this whole chapter keeps
-      running into.</li>
-      <li>If you see someone describe Keycloak as "exporting to our SIEM" with no further detail, the cause is
-      usually treating the events REST API's mere existence as the integration — in reality someone still has
-      to build the polling script, the log-shipper pipeline, or the custom Event Listener SPI provider; none
-      of the three assembles itself.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>Keycloak's events subsystem is Keycloak's concrete implementation of chapter 3's "Accounting" — the
-      continuous recording that a later "audit" (a human or a tool reviewing the record) depends on; without
-      it, there is nothing to detect chapter 9's threats against or to show a chapter 11 auditor.</li>
-      <li>Login/user events and admin events are two fully independent streams, each gated by its own boolean
-      (<code>eventsEnabled</code> / <code>adminEventsEnabled</code>) on the same
-      <code>RealmEventsConfigRepresentation</code> — there is no single master "enable events" switch.</li>
-      <li><code>adminEventsDetailsEnabled</code> is a third, independent switch layered on top of
-      <code>adminEventsEnabled</code>: it controls whether the recorded event also carries the full JSON
-      <code>representation</code> of what was created, updated, or deleted.</li>
-      <li>A freshly created realm already has <code>jboss-logging</code> as its event listener and a
-      102-entry <code>enabledEventTypes</code> default list — only the two main booleans are off by default;
-      nothing about "what to record" needs configuring before "whether to record" does.</li>
-      <li>This chapter's own lab run hit a real, unplanned bug — a resource-owner-password-credentials grant
-      failing with "Account is not fully set up" due to missing required profile fields — and the events
-      stream's own <code>resolve_required_actions</code> record was the fastest real diagnostic path to the
-      cause, which is itself a demonstration of why this chapter's subject matters operationally, not just for
-      compliance paperwork.</li>
-      <li>Admin events answer "who changed what, from where, to what exact value, and when" via
-      <code>authDetails</code>, <code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>,
-      and <code>representation</code> together — the literal shape HIPAA's Audit controls provision (45 CFR
-      §164.312(b)) asks for, as chapter 11 already named.</li>
-      <li><code>/health</code> and <code>/metrics</code> answer a different question than events do — whether
-      the server itself is alive and busy, not who did what — and in Keycloak 26.x both live on a separate
-      management interface (port 9000 by default), confirmed live to 404 on the main port.</li>
-      <li><code>KC_METRICS_ENABLED</code> and <code>KC_HEALTH_ENABLED</code> are separate opt-ins with the same
-      default-off pattern; enabling one does not enable the other.</li>
-      <li>Keycloak ships no built-in SIEM connector. A real external integration still requires one of: polling
-      the events REST API on a schedule, shipping the <code>org.keycloak.events</code> log category to an
-      external pipeline, or writing a custom Event Listener SPI provider (chapter 39) — this chapter confirmed
-      each mechanism exists without building one end-to-end.</li>
-      <li>Every JSON example in this chapter's lab sections is real, captured output from an actual run against
-      a real Keycloak container — including the one genuine failure this session hit and fixed live.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Explain why <code>eventsEnabled</code> and <code>adminEventsEnabled</code> are independent booleans
-      rather than one switch. Give a concrete scenario where an organization would deliberately want one on
-      without the other.</li>
-      <li>Walk through exactly what <code>adminEventsDetailsEnabled</code> adds to an admin event record, and
-      explain why a HIPAA- or PCI-regulated organization should weigh turning it on deliberately rather than
-      reflexively enabling every flag "for compliance."</li>
-      <li>This chapter's own lab hit "Account is not fully set up" on a password grant. What was the real
-      cause, and why did checking the user's <code>requiredActions</code> array alone fail to reveal it?</li>
-      <li>Why do <code>/health</code> and <code>/metrics</code> live on a different port than the events
-      endpoints in Keycloak 26.x, and what operational purpose does keeping them separate actually serve?</li>
-      <li>Using the real admin-event JSON this chapter captured for Priya's role change, explain concretely how
-      an auditor would use <code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>,
-      and <code>representation</code> together to answer "who changed what, when" for a HIPAA audit.</li>
-      <li>Keycloak's built-in <code>jboss-logging</code> listener, by default, only writes <em>error</em>
-      events to the server log. What would a real external SIEM integration need beyond what this listener
-      already provides, based on what this chapter actually confirmed?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/docs/26.8.2/server_admin/index.html#configuring-auditing-to-track-events">Keycloak docs — Server Administration Guide: Configuring auditing to track events</a></li>
-      <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmEventsConfigRepresentation">Keycloak docs — Admin REST API reference: RealmEventsConfigRepresentation, EventRepresentation, AdminEventRepresentation</a></li>
-      <li><a href="https://www.keycloak.org/observability/health">Keycloak docs — Health checks guide</a></li>
-      <li><a href="https://www.keycloak.org/server/all-config">Keycloak docs — All configuration options (KC_HEALTH_ENABLED, KC_METRICS_ENABLED, management interface)</a></li>
-      <li><a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus — exposition formats (the text format Keycloak's <code>/metrics</code> endpoint emits)</a></li>
-      <li><a href="https://csrc.nist.gov/pubs/sp/800/92/final">NIST SP 800-92 — Guide to Computer Security Log Management</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "events-and-auditing", 15);
+    SlideDeck.init({ chapterSlug: "events-and-auditing" });
   });
 </script>
 </body>
