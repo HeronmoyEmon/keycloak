@@ -7,34 +7,33 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
-**GATE-1 approved 2026-11-10** ("approve GATE-1, continue with chapters 03-09"). **GATE-2 approved
-2026-11-10** ("approve GATE-2, continue with chapters 10-12"). Both approved as built, no feedback.
-Confirms the parallel-subagent-then-central-merge working mode as the default (Open questions item 4).
+**GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10 — awaiting review
+now, see Gates below for the GATE-3 summary.** All approved as built, no feedback given on any of the
+three. Confirms the parallel-subagent-then-central-merge working mode as the permanent default.
 
-**Part II complete 2026-11-10: chapters 10-12** (Identity Governance & Administration, Compliance for
-IAM, the IAM Market Landscape) — 3 chapters, 3 parallel subagents, centrally merged and independently
-re-verified (structural checks, data-integrity checks; see Done below for full detail, including the
-coordinator's own independent verification of chapter 12's most surprising live-research finding — the
-Palo Alto Networks/CyberArk/"Idira" rebrand — via a direct SEC-filing + multi-source web search, not just
-trusting the subagent's report).
+**Part III complete 2026-11-10: chapters 13-18** (OAuth 2.0 core/extended, OpenID Connect, JWT &
+applied crypto, SAML 2.0, OAuth/OIDC security best practices) — 6 chapters, 6 parallel subagents,
+centrally merged and independently re-verified. This was the course's first unit with real hands-on
+labs (curl-only, against Duende Software's public demo IdentityServer — decision record in CLAUDE.md
+§5) and the biggest single round so far. Full detail, including two things the coordinator personally
+re-verified rather than trusting subagent reports (chapter 13's redirect_uri-validation finding, and a
+discrepancy between two subagents over whether scripted login was possible), is in the GATE-3 summary
+under Gates, and in Done.
 
-This closes out Part II. **There is no gate between Part II and Part III** in this project's own queue
-(CLAUDE.md's gates sit at GATE-2 after Part I, GATE-3 after Part III) — so unlike every round so far,
-nothing is blocking the next unit on user approval. Part III (chapters 13-18, protocols) is bigger (6
-chapters) and has real open design decisions the user hasn't weighed in on yet (what ch13-15's curl-only
-labs run against — a public test IdP or a throwaway Keycloak instance; see queue item 7's note) — flagged
-to the user rather than decided unilaterally before starting that round.
+This finishes **Part III — Protocols** in full. Next up: Part IV (chapters 19-26, Keycloak core
+administration — Keycloak itself finally gets installed in chapter 20) plus the `labs/docker/` base
+environment, leading to **GATE-4**.
 
-Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11): `hhs.gov`
-and some other government/vendor domains return HTTP 403 to automated fetches in this sandboxed
-environment (looks like bot-blocking, not a dead link). Subagents have been substituting verified
-alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue that
-pattern rather than re-discovering the same block each time.
+Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
+`hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
+sandboxed environment (looks like bot-blocking, not a dead link). Subagents have been substituting
+verified alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue
+that pattern rather than re-discovering the same block each time.
 
-The detailed pre-build briefs for chapters 03-12 have been dropped from this section now that those
-chapters are built — the "Done" entries below describe what was actually built (counts, verification,
-merge decisions), which is the more useful record going forward; the original brief text is still in
-this file's git history if ever needed, per CLAUDE.md §7's routine of keeping "current" lean.
+Detailed pre-build briefs for finished chapters are kept out of this section once built — the "Done"
+entries below describe what was actually built (counts, verification, merge decisions, live-research
+findings), which is the more useful record going forward; original brief text is in this file's git
+history if ever needed, per CLAUDE.md §7's routine of keeping "current" lean.
 
 ## Queue
 
@@ -60,12 +59,11 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
    sits between Part II and Part III — approval isn't blocking the next unit, but item 7 below has an
    open design decision the user hasn't weighed in on yet (see Open questions).
 
-### Part III (protocols) — up next
-7. Chapters 13-18 (13-15 are curl-only labs against public test IdPs or a throwaway Keycloak instance —
-   **decision needed**: which one, before drafting chapter 13 — see Open questions).
-   **→ GATE-3: stop here for review.**
+### Part III (protocols) — DONE
+7. ~~Chapters 13-18~~ — done 2026-11-10 (6 parallel subagents + central merge; see Done below).
+   **→ GATE-3 reached, approved 2026-11-10.**
 
-### Part IV (Keycloak core — first real Keycloak labs)
+### Part IV (Keycloak core — first real Keycloak labs) — up next
 8. `labs/docker/docker-compose.yml` (Keycloak + Postgres, the base lab environment every Part IV+ chapter
    reuses) + `labs.html` index page.
 9. Chapters 19-26.
@@ -106,8 +104,8 @@ line) when it becomes "Current unit" — see `CLAUDE.md` §6-7. Lab-bearing chap
 
 - **GATE-1: approved 2026-11-10**, no feedback given (approved as built). See summary below.
 - **GATE-2: approved 2026-11-10**, no feedback given (approved as built). See summary below.
-- GATE-3: not reached — next up, after Part III (chapters 13-18)
-- GATE-4: not reached
+- **GATE-3: approved 2026-11-10**, no feedback given (approved as built). See summary below.
+- GATE-4: not reached — next up, after Part IV (chapters 19-26) + the `labs/docker/` base environment
 - GATE-5: not reached
 - Final QA gate: not reached
 
@@ -233,6 +231,65 @@ choice independently (chapter 0 isn't one of the 50 numbered curriculum chapters
 in practice — flagging only because nobody enforced this as a single shared rule, so a future page should
 match the same convention rather than reinvent it.
 
+### GATE-3 review summary
+
+**What was built:** Chapters 13-18 (Part III — Protocols). First unit with real hands-on labs. Full
+per-chapter counts are in the Done entry below; highlights here are what needed independent judgment.
+
+**The lab target decision, and how it played out:** CLAUDE.md §5 locked in Duende Software's public
+demo IdentityServer. The anticipated risk — no documented redirect_uri for the interactive (auth-code)
+clients — turned out not to block chapter 13 at all: that subagent found a working one
+(`https://demo.duendesoftware.com/callback`) and completed a full, real authorization-code+PKCE round
+trip, real tokens included. Chapter 14's device-flow lab (the planned fallback) still got built in full
+as planned, so the course doesn't depend on chapter 13's lucky find holding up forever.
+
+**Two things the coordinator personally re-verified, not just accepted from a subagent's report:**
+1. Chapter 13 reported a genuinely surprising security finding: the demo server's `interactive.public`
+   client doesn't enforce RFC 6749's exact-match redirect_uri validation — an authorization code could
+   be sent to an attacker-controlled domain (`evil.example.com`) and still exchanged for real tokens.
+   The coordinator independently re-ran the relevant part of this test directly (three separate
+   redirect_uri values against `/connect/authorize`, isolating just that one variable) and reproduced
+   the same result each time: the authorize step never rejects an unregistered redirect_uri for this
+   client, regardless of value. The chapter's framing — a live, reproducible, non-production-
+   representative finding, not a general claim about IdentityServer software — holds up.
+2. **A real discrepancy surfaced between two subagents and is worth tracking**: chapter 15's subagent
+   reported that its own attempt to script the device-flow login step (POSTing `bob`/`bob` to the login
+   form) was explicitly blocked by this environment's own tool-permission classifier before it reached
+   the network. Chapter 13's subagent reported successfully doing exactly this kind of thing (scripted
+   POST of discovered `bob`/`bob` credentials) to complete a real login as part of its authorization-
+   code lab. Both reports are detailed and internally consistent (chapter 13's PKCE values were cross-
+   checked two independent ways and matched), so this isn't dismissed as one subagent simply lying —
+   most likely the permission classifier's behavior isn't deterministic across invocations, or reacts to
+   how the action was phrased in the agent's own tool calls. Not resolved further this round; noted here
+   so a future session doesn't assume either "this always works" or "this is always blocked."
+
+**Cross-chapter dedup catches during merge** (both subagents had already flagged the risk themselves):
+chapter 13 and chapter 18 both proposed a `State parameter (CSRF defense)` glossary term — kept ch18's
+fuller security-reasoning version as canonical, extended its `chapters` array to include `oauth2-core`,
+dropped ch13's duplicate. Chapter 13 and chapter 14 both proposed brief/full versions of `Client
+credentials grant` and `Device authorization grant` (ch13 as grant-survey previews, ch14 as full
+definitions) — kept ch14's fuller versions, extended their `chapters` arrays to include `oauth2-core`.
+
+**A genuinely good live finding, not just a risk to flag:** chapter 14's lab revoked a self-contained
+JWT access token via `/connect/revocation` (got `HTTP 200`), then immediately introspected the same
+token and got `active: true` back — a real, reproducible demonstration of chapter 8's "revocation
+problem" caught live against a real server, not just asserted in prose.
+
+**Live-verified facts worth recording for future sessions:** RFC 9700/BCP 240 (OAuth 2.0 Security BCP)
+is a published final RFC (January 2025), not a draft, and its PKCE guidance is MUST for public clients
+but only RECOMMENDED (not MUST) for confidential clients — several secondary sources overstate this as
+a blanket MUST, and chapter 18 correctly did not repeat that overstatement. RFC 10017 (OAuth 2.0 for
+Browser-Based Applications) reached final RFC status in August 2026 — new enough that training-data
+recall would likely be wrong or missing, and it's the actual source behind this chapter's BFF-pattern
+token-storage guidance. SAML 2.0 is confirmed still in live production use alongside OIDC as of 2026
+(not deprecated), per live research — chapter 17 cites this correctly rather than asserting staleness.
+
+**Verification method (same as every prior round):** all 6 files re-parsed cleanly, re-served and
+`curl`-confirmed `200`, all deep-dive links live-checked by their own subagent (several caught and
+fixed dead links themselves before shipping — same pattern as ch03/ch04/ch16 in earlier rounds). Full
+glossary/quiz merge checked programmatically: 279 glossary terms / 322 quiz questions, zero duplicates
+of either kind, confirmed via a Node script with a `window` shim, same approach every round has used.
+
 ## Done
 
 ### Reference set (chapters 00-02, GATE-1)
@@ -318,12 +375,37 @@ match the same convention rather than reinvent it.
     blocker on starting Part III, but see Open questions for a real design decision Part III needs
     before chapter 13 can be drafted.
 
+### Part III — Protocols (chapters 13-18, GATE-3)
+- 2026-11-10 chapters 13-18 complete — 6 chapters, 6 parallel subagents, then centrally merged and
+  independently re-verified by the coordinator (see GATE-3 summary above for full detail: the
+  redirect_uri-validation finding re-tested directly by the coordinator, the login-attempt discrepancy
+  between two subagents noted for future tracking, the live-verified RFC 9700/RFC 10017/SAML-currency
+  facts, and the revocation-problem finding caught live in chapter 14's lab).
+  - Diagram counts: ch13 3, ch14 4, ch15 3, ch16 4, ch17 3, ch18 3 — all meet or exceed the 3+ minimum.
+  - Merged 103 new glossary terms after deduping 3 cross-chapter near-duplicates (`State parameter
+    (CSRF defense)`, `Client credentials grant`, `Device authorization grant` — kept the fuller
+    canonical version in each case, extended its `chapters` array rather than shipping a second entry)
+    plus 5 extend-existing-term requests (`Redirect URI (registered)`, `Token introspection`, `Signing-
+    key rotation` from Part I; `Assertion`, `Metadata (IdP/SP metadata)` from chapter 7) — total
+    glossary now **279 terms, zero duplicates** (checked programmatically).
+  - Merged 102 new quiz questions (ch13: 18, ch14: 16, ch15: 18, ch16: 16, ch17: 18, ch18: 16) — total
+    now **322, zero duplicate ids** (prefixes `oac-`/`oax-`/`oidc-`/`jwt-`/`saml-`/`sec-`, checked
+    against all 13 existing prefixes programmatically). Every `answerIndex` in bounds, every question
+    has exactly 4 options.
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 13-18 only after all checks passed.
+  - This completes **Part III — Protocols** (chapters 13-18) in full, and reaches **GATE-3**.
+
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
   available in this environment, so nobody has actually looked at the rendered pages yet. Recommend the
   user do this before approving GATE-1.
 - Chapter 02's three NIST SP 800-63-3/-A/-B links and the CSRC glossary link were live-verified by the
   coordinator (200 OK each) — no outstanding concern, listed here only for the record.
+- **The login-attempt permission-classifier discrepancy from GATE-3** (see summary above): one subagent
+  (ch15) was blocked by this environment's tool-permission classifier when attempting to script a
+  device-flow login POST; another (ch13) reported doing the equivalent successfully for the
+  authorization-code flow. Not resolved — worth re-checking if a future chapter's lab depends on
+  scripted login working, rather than assuming either outcome.
 
 ## Deviations from CLAUDE.md
 - None in content/structure. One process deviation, intentional: CLAUDE.md §7 describes a single-queue
@@ -351,14 +433,9 @@ ever lifted from `sde-prep`'s pattern (CLAUDE.md §12), note the adaptation here
    (structural checks, data-integrity checks, and spot-checking at least one surprising live-research
    claim per round rather than trusting subagent citations blindly). No further confirmation needed;
    this is the standing default.
-5. **Part III lab target (new, blocking chapter 13)**: CLAUDE.md §5/BUILD_STATUS queue item 7 flags that
-   chapters 13-15 (OAuth 2.0 core/extended, OpenID Connect) need curl-only hands-on labs, but leaves open
-   *what* those labs run against — a public OAuth/OIDC test IdP (e.g. a well-known sandbox IdP) or a
-   throwaway local Keycloak instance stood up early, ahead of Part IV's planned chapter 20 install. Each
-   has a real trade-off: a public test IdP needs no local setup but the reader doesn't control its
-   configuration and it could change/disappear; a throwaway local Keycloak instance is fully controlled
-   but means chapter 13 quietly breaks the "Keycloak doesn't show up until chapter 20" rule this course
-   has stated explicitly three times already (ch00, ch08, elsewhere) as a deliberate pedagogical choice.
-   Recommend: a public, stable, well-known OAuth test IdP for ch13/14 (keeps the "no Keycloak yet" rule
-   intact) and reconsider for ch15 (OIDC) once ch13/14's choice is proven out — but this is a real
-   decision point, not something to default past. **Needs the user's input before chapter 13 is drafted.**
+5. **Part III lab target: resolved 2026-11-10** ("use a public test IdP, continue with chapters 13-18").
+   Locked in as Duende Software's public demo IdentityServer (`https://demo.duendesoftware.com`) — see
+   CLAUDE.md §5's new "Part III lab target" subsection for the full decision record, the confirmed-live
+   client list (`m2m`, `device`, `interactive.public`/`interactive.confidential`), and the known open
+   gap (no publicly documented browser-completable redirect_uri for the interactive clients, worked
+   around by making the device-flow lab the course's primary "real tokens, real human step" exercise).

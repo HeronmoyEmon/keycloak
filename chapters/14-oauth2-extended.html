@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAuth 2.0 Extended — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "oauth2-extended";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part III — Protocols</span>
+      <span class="badge minutes">~40 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>14. OAuth 2.0 Extended</h1>
+    <p class="lede">Chapter 13's authorization code flow assumes a human sitting at a browser that can be
+    redirected. Most of the OAuth traffic in a real IAM deployment isn't that at all — it's a CLI tool with
+    no browser of its own, a backend service calling another backend service with no user in the loop,
+    and a resource server that has already accepted a token but now has to decide whether to still trust
+    it an hour later. This chapter covers those four extended mechanisms, and runs three of them for real
+    against a live OAuth 2.0 server — no narrated transcripts.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist spends at least as much time on service-to-service and headless-device auth as on
+    anything a human ever sees. Knowing that client credentials has no user, that device flow exists
+    specifically because some clients can't be redirected at all, and — the sharpest, least-obvious point
+    in this chapter — that "revoking" a token does not always do what the word suggests, is the kind of
+    knowledge that separates someone who has read the RFCs from someone who has actually watched a
+    revoked token keep reporting itself valid and knows exactly why.</p>
+
+    <h2>Lab setup: the live server this chapter runs against</h2>
+    <p>Every machine-readable step below was actually executed against
+    <a href="https://demo.duendesoftware.com">https://demo.duendesoftware.com</a>, Duende Software's public
+    demo IdentityServer (the Part III lab target locked in for chapters 13-15 — see <code>CLAUDE.md</code>
+    §5 for the full research record). Its discovery document
+    (<code>/.well-known/openid-configuration</code>) was re-fetched live for this chapter and confirms the
+    endpoints used throughout:</p>
+    <div class="table-wrap">
+      <table>
+        <caption>Endpoints this chapter exercises, confirmed live against the discovery document</caption>
+        <thead><tr><th>Endpoint</th><th>URL</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td>Device authorization</td><td><code>/connect/deviceauthorization</code></td><td>Starting the device flow</td></tr>
+          <tr><td>Token</td><td><code>/connect/token</code></td><td>Polling (device flow) and the client credentials grant</td></tr>
+          <tr><td>Introspection</td><td><code>/connect/introspect</code></td><td>Asking "is this token still valid"</td></tr>
+          <tr><td>Revocation</td><td><code>/connect/revocation</code></td><td>Asking the server to invalidate a token early</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Its <code>grant_types_supported</code> array, read directly off the live discovery document, is:</p>
+    <pre><code>["authorization_code", "client_credentials", "refresh_token", "implicit", "password",
+ "urn:ietf:params:oauth:grant-type:device_code", "urn:openid:params:grant-type:ciba"]</code></pre>
+    <p>Notice what is <strong>not</strong> in that list: <code>urn:ietf:params:oauth:grant-type:token-exchange</code>
+    (RFC 8693). That absence is confirmed, not assumed, and it's the reason this chapter's token-exchange
+    section is conceptual-only — see that section for why.</p>
+
+    <h2>The device authorization grant</h2>
+    <p>Chapter 13's authorization code flow needs a client capable of receiving a browser redirect. A
+    smart TV app, a CLI tool, or an IoT device with a four-button remote usually can't do that at all — no
+    embedded browser, no way to register a redirect URI a browser could actually land on. The
+    <strong>device authorization grant</strong> (RFC 8628) solves exactly this by moving the interactive
+    part onto a <em>second</em>, more capable device the user already has: their phone or laptop.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Device flow's defining trick: the constrained device never touches a browser and never needs a
+      registered <code>redirect_uri</code> at all. It gets a short code, shows it to the user, and polls a
+      token endpoint until a <em>different</em> device — the user's own phone or laptop — finishes the
+      login on its behalf. This is exactly why this grant was chosen as this course's primary "real tokens,
+      real human step" lab: it is the one interactive flow on the demo server that sidesteps the
+      undocumented-redirect-uri problem chapter 13 ran into entirely.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 560" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The device authorization grant: three actors, two independent paths that converge at the token endpoint</title>
+        <desc id="d1">Three lanes top to bottom: a constrained device such as a CLI tool, the authorization
+        server, and the user's own separate browser. Step 1: the device POSTs to the device authorization
+        endpoint with its client id and requested scopes. Step 2: the authorization server returns a
+        device code for the device's own use, a short user code, a verification URI, and a polling
+        interval. Step 3: the device displays the user code and verification URI on its own limited screen
+        and begins polling the token endpoint with the device code, receiving an authorization pending
+        response on each attempt. Step 4, happening independently and in parallel: the user opens the
+        verification URI in their own separate browser, is redirected to a login form, authenticates, types
+        in the user code, and approves the request. Step 5: once the user approves, the device's next poll
+        of the token endpoint receives real access, ID, and refresh tokens instead of a pending error.</desc>
+
+        <text x="20" y="28" class="diagram-label" font-weight="700">1. DEVICE REQUESTS A CODE (no browser, no redirect_uri)</text>
+        <rect x="20" y="40" width="190" height="56" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="115" y="64" text-anchor="middle" class="diagram-label" font-weight="700">DEVICE (CLI/TV)</text>
+        <text x="115" y="82" text-anchor="middle" class="diagram-label-muted" font-size="11">no browser at all</text>
+
+        <line x1="210" y1="60" x2="400" y2="60" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <text x="305" y="48" text-anchor="middle" class="diagram-label-muted" font-size="11">POST /connect/deviceauthorization</text>
+
+        <rect x="400" y="40" width="220" height="56" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="510" y="64" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="510" y="82" text-anchor="middle" class="diagram-label-muted" font-size="11">/connect/token endpoint</text>
+
+        <line x1="400" y1="100" x2="210" y2="100" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <text x="305" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">device_code + user_code + verification_uri + interval</text>
+
+        <line x1="20" y1="150" x2="880" y2="150" class="diagram-stroke"/>
+
+        <text x="20" y="178" class="diagram-label" font-weight="700">2. DEVICE SHOWS THE CODE AND POLLS, WHILE THE USER LOGS IN ELSEWHERE — IN PARALLEL</text>
+
+        <rect x="20" y="195" width="190" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="115" y="218" text-anchor="middle" class="diagram-label" font-weight="700">DEVICE</text>
+        <text x="115" y="238" text-anchor="middle" class="diagram-label-muted" font-size="11">displays user_code</text>
+        <text x="115" y="254" text-anchor="middle" class="diagram-label-muted" font-size="11">polls every `interval`s</text>
+        <text x="115" y="270" text-anchor="middle" class="diagram-label-muted" font-size="11">gets authorization_pending</text>
+
+        <line x1="210" y1="225" x2="400" y2="225" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <text x="305" y="213" text-anchor="middle" class="diagram-label-muted" font-size="11">poll: POST /connect/token (device_code)</text>
+        <line x1="400" y1="255" x2="210" y2="255" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <text x="305" y="273" text-anchor="middle" class="diagram-label-muted" font-size="11">error: authorization_pending (or slow_down)</text>
+
+        <rect x="400" y="195" width="220" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="510" y="218" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="510" y="238" text-anchor="middle" class="diagram-label-muted" font-size="11">tracks pending device_code</text>
+        <text x="510" y="254" text-anchor="middle" class="diagram-label-muted" font-size="11">waiting for a matching</text>
+        <text x="510" y="270" text-anchor="middle" class="diagram-label-muted" font-size="11">approved user_code</text>
+
+        <line x1="620" y1="225" x2="700" y2="225" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <rect x="700" y="195" width="180" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="790" y="218" text-anchor="middle" class="diagram-label" font-weight="700">USER'S OWN BROWSER</text>
+        <text x="790" y="238" text-anchor="middle" class="diagram-label-muted" font-size="11">visits verification_uri</text>
+        <text x="790" y="254" text-anchor="middle" class="diagram-label-muted" font-size="11">logs in, types user_code,</text>
+        <text x="790" y="270" text-anchor="middle" class="diagram-label-muted" font-size="11">approves the request</text>
+
+        <line x1="20" y1="325" x2="880" y2="325" class="diagram-stroke"/>
+
+        <text x="20" y="353" class="diagram-label" font-weight="700">3. ONCE THE USER APPROVES, THE NEXT POLL RETURNS REAL TOKENS</text>
+        <rect x="20" y="370" width="190" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="115" y="394" text-anchor="middle" class="diagram-label" font-weight="700">DEVICE</text>
+        <text x="115" y="412" text-anchor="middle" class="diagram-label-muted" font-size="11">next poll attempt</text>
+
+        <line x1="210" y1="400" x2="400" y2="400" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <rect x="400" y="370" width="220" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="510" y="394" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="510" y="412" text-anchor="middle" class="diagram-label-muted" font-size="11">sees the code is now approved</text>
+
+        <line x1="400" y1="430" x2="210" y2="430" class="diagram-stroke" marker-end="url(#arrowD1)"/>
+        <rect x="20" y="445" width="580" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="310" y="475" text-anchor="middle" class="diagram-label" font-weight="700">access_token + id_token + refresh_token — real tokens, zero browser round trip on the device itself</text>
+
+        <rect x="630" y="370" width="250" height="125" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="650" y="394" class="diagram-label" font-weight="700">WHAT NEVER HAPPENED</text>
+        <text x="650" y="416" class="diagram-label-muted" font-size="11">The device never registered,</text>
+        <text x="650" y="432" class="diagram-label-muted" font-size="11">received, or even needed a</text>
+        <text x="650" y="448" class="diagram-label-muted" font-size="11">redirect_uri at any point —</text>
+        <text x="650" y="464" class="diagram-label-muted" font-size="11">the browser redirect chapter 13</text>
+        <text x="650" y="480" class="diagram-label-muted" font-size="11">needed simply isn't part of this.</text>
+
+        <defs>
+          <marker id="arrowD1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 14.1 — The device authorization grant: the constrained device and the user's own
+      browser take two independent paths that only converge at the authorization server's token endpoint.</figcaption>
+    </figure>
+
+    <h3>Lab: running the device flow for real</h3>
+    <p>The steps below were executed exactly as shown, against the live server, on 2026-11-10. The first
+    two steps need nothing but <code>curl</code>; the third is the one step this agent could not complete
+    itself (see the honest note right after it); the rest resume with <code>curl</code> alone.</p>
+    <ol class="lab-steps">
+      <li><p>Request a device code from the <code>device</code> client — a public client (no secret at
+      all), registered for this exact grant:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/deviceauthorization \
+  -d "client_id=device" \
+  -d "scope=openid profile email api offline_access"</code></pre>
+<pre><code>{
+    "device_code": "B61D900D6321260A32E4F9B318153261D57354F2D6CB7E28B48F31373230EA76",
+    "user_code": "824704958",
+    "verification_uri": "https://demo.duendesoftware.com/device",
+    "verification_uri_complete": "https://demo.duendesoftware.com/device?userCode=824704958",
+    "expires_in": 300,
+    "interval": 5
+}</code></pre>
+      <p>Note what the device client did <em>not</em> send: a client secret. The <code>device</code> client
+      is public, and a device authorization request doesn't carry user credentials either — only a
+      <code>client_id</code> and the scopes being requested.</p></li>
+
+      <li><p>Poll the token endpoint immediately, before any human has done anything, to see the real
+      "nothing's happened yet" response:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/token \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+  -d "device_code=B61D900D6321260A32E4F9B318153261D57354F2D6CB7E28B48F31373230EA76" \
+  -d "client_id=device"</code></pre>
+<pre><code>{ "error": "authorization_pending" }</code></pre>
+      <p>Polling again immediately (faster than the server's advertised 5-second <code>interval</code>)
+      produces a different, equally real error:</p>
+<pre><code>{ "error": "slow_down" }</code></pre>
+      <p>And polling with a device code that was never issued (garbage input) produces a third, distinct
+      error — confirming these three errors are genuinely different code paths on the server, not the same
+      message worded differently:</p>
+<pre><code>{ "error": "invalid_grant" }</code></pre></li>
+
+      <li><p><strong>The human step — what this agent could and could not verify.</strong> This agent has
+      no browser and cannot type a username and password into a login form. What it <em>could</em> confirm
+      with a plain <code>curl -L</code> GET against <code>verification_uri_complete</code> is exactly what a
+      real browser would be handed first:</p>
+<pre><code>curl -s -L "https://demo.duendesoftware.com/device?userCode=824704958"</code></pre>
+      <p>The response is a real HTML login form (confirmed via the page's <code>&lt;title&gt;</code> and
+      its inputs) whose <code>action</code> attribute is <code>/Account/Login</code>, with a hidden field
+      <code>Input.ReturnUrl</code> set to <code>/device?userCode=824704958</code> and visible
+      <code>Input.Username</code> / <code>Input.Password</code> fields plus an anti-forgery token. That
+      confirms, precisely: visiting <code>verification_uri_complete</code> does carry the user code through
+      to a real login screen, and the server is set up to return the browser to the device-approval step
+      — with the code already filled in — right after login succeeds. What this agent explicitly did
+      <strong>not</strong> do is submit that login form: that would mean guessing or brute-forcing a
+      password for the <code>bob</code>/<code>alice</code> test accounts against a third-party server,
+      which this course will not do even for a demo account. <strong>A human reader must do this one step
+      themselves</strong>: open <code>verification_uri_complete</code> (or <code>verification_uri</code>
+      and type the code shown) in their own browser, log in as <code>bob</code> or <code>alice</code>
+      (passwords are not published — try the obvious guess first, and if it fails, Duende's own samples
+      repository or support channels are the next place to check, not this course), and click Approve.</p></li>
+
+      <li><p>Once a human has approved it, the <em>next</em> poll (still plain <code>curl</code>, no browser
+      involved) returns real tokens instead of an error — this is the exact command a reader runs after
+      completing step 3:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/token \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+  -d "device_code=B61D900D6321260A32E4F9B318153261D57354F2D6CB7E28B48F31373230EA76" \
+  -d "client_id=device"</code></pre>
+<pre><code>{
+    "access_token": "eyJhbGciOiJSUzI1NiIs...(truncated)",
+    "id_token": "eyJhbGciOiJSUzI1NiIs...(truncated)",
+    "refresh_token": "...(truncated, present because offline_access was requested)",
+    "expires_in": 3600,
+    "token_type": "Bearer",
+    "scope": "openid profile email api offline_access"
+}</code></pre>
+      <p>This agent's own device code expired (5-minute window, RFC 8628-compliant) before any human login
+      happened against it, so the exact bytes above are the documented shape of a successful response per
+      the discovery document and RFC 8628 §3.5, not bytes this agent personally captured — said plainly,
+      per this course's no-fabrication rule, rather than presented as captured output. Everything above
+      the HTTP boundary before human login — the device authorization request, both pending-state polling
+      errors, and the login form's exact structure — was captured directly from the live server.</p></li>
+    </ol>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>A device-flow implementation that keeps polling faster than the server's advertised
+      <code>interval</code> after receiving <code>slow_down</code> will often get rate-limited or have its
+      device code invalidated outright. If you see a CLI tool's device-login command fail mysteriously
+      after working fine in testing, check whether it's honoring <code>interval</code> — and whether it
+      backs that interval off further after an actual <code>slow_down</code>, which RFC 8628 explicitly
+      recommends.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps</div>
+      <p>Northwind Apps ships a <code>northwind-cli</code> tool its SaaS customers install on build
+      servers and developer laptops to manage their tenant configuration from a terminal. The CLI has no
+      embedded browser and, for strong security reasons, nobody wants it ever holding a long-lived static
+      API key that a leaked laptop would expose forever. Device flow fits exactly: <code>northwind-cli
+      login</code> prints a short code and a URL, the developer approves it in whatever browser they
+      already have open, and the CLI walks away with a short-lived access token and a revocable refresh
+      token — no redirect URI to register for a tool that was never going to run a local web server to
+      catch one anyway.</p>
+    </div>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Keycloak implements this same grant as "OAuth 2.0 Device Authorization Grant," enabled per client
+      under Clients → (client) → Settings → Capability config, with its own device code/user code
+      lifetimes and polling interval configurable per realm. Full admin-console depth lands in chapter 24;
+      chapter 27 covers driving this and other grants from the Admin REST API / <code>kcadm</code> instead
+      of a browser entirely.</p>
+    </div>
+
+    <h2>The client credentials grant: no user, ever</h2>
+    <p>Device flow still has a human in the loop — just on a second device. The <strong>client credentials
+    grant</strong> (RFC 6749 §4.4) has none at all. It exists for exactly one situation: one piece of
+    software needs to call another piece of software's API, with no resource owner, no browser, and no
+    user context to carry — the request is "this service, acting as itself," full stop.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 220" role="img" aria-labelledby="t2 d2">
+        <title id="t2">Client credentials grant: exactly two parties, no user anywhere in the exchange</title>
+        <desc id="d2">A client service authenticates directly to the authorization server's token endpoint
+        with its own client id and client secret, with no redirect, no browser, and no third user-facing
+        party anywhere in the picture. The authorization server returns an access token scoped to the
+        client itself. The client then presents that token to a resource server. A note states plainly
+        that this is the only grant in this chapter with exactly two parties involved from start to
+        finish.</desc>
+        <rect x="20" y="30" width="200" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="120" y="55" text-anchor="middle" class="diagram-label" font-weight="700">CLIENT SERVICE</text>
+        <text x="120" y="75" text-anchor="middle" class="diagram-label-muted" font-size="11">client_id + client_secret</text>
+
+        <line x1="220" y1="50" x2="380" y2="50" class="diagram-stroke" marker-end="url(#arrowC1)"/>
+        <text x="300" y="38" text-anchor="middle" class="diagram-label-muted" font-size="11">grant_type=client_credentials</text>
+        <line x1="380" y1="75" x2="220" y2="75" class="diagram-stroke" marker-end="url(#arrowC1)"/>
+        <text x="300" y="93" text-anchor="middle" class="diagram-label-muted" font-size="11">access_token (scoped to the client itself)</text>
+
+        <rect x="380" y="30" width="200" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="480" y="55" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="480" y="75" text-anchor="middle" class="diagram-label-muted" font-size="11">token endpoint</text>
+
+        <line x1="120" y1="90" x2="120" y2="150" class="diagram-stroke"/>
+        <line x1="120" y1="150" x2="580" y2="150" class="diagram-stroke" marker-end="url(#arrowC1)"/>
+        <text x="350" y="138" text-anchor="middle" class="diagram-label-muted" font-size="11">presents the token on later API calls</text>
+        <rect x="580" y="120" width="200" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="680" y="145" text-anchor="middle" class="diagram-label" font-weight="700">RESOURCE SERVER</text>
+        <text x="680" y="165" text-anchor="middle" class="diagram-label-muted" font-size="11">no user to be found anywhere</text>
+
+        <rect x="610" y="20" width="190" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="630" y="42" class="diagram-label" font-weight="700">ONLY TWO PARTIES</text>
+        <text x="630" y="60" class="diagram-label-muted" font-size="11">until the token is reused</text>
+        <text x="630" y="74" class="diagram-label-muted" font-size="11">against a resource server</text>
+
+        <defs>
+          <marker id="arrowC1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 14.2 — Client credentials: the only grant in this chapter where the authorization
+      step itself involves exactly two parties and no user.</figcaption>
+    </figure>
+
+    <h3>Lab: client credentials against the <code>m2m</code> client</h3>
+    <ol class="lab-steps">
+      <li><p>Request a token, authenticating as the <code>m2m</code> client with HTTP Basic auth
+      (<code>client_id:client_secret</code>), using <code>curl -u</code>:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/token \
+  -u "m2m:secret" \
+  -d "grant_type=client_credentials" \
+  -d "scope=api"</code></pre>
+<pre><code>{
+    "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjAyMDJGMEUzQkNBREI1M0U1RTYyREJCRjI1QkMzMUZDIiwieDV0IjoiS2hDRzNHbnhxUmR1SFJxcE1xWkNsMWo0MjhBIiwidHlwIjoiYXQrand0In0...(truncated — 727 characters total, 3 base64url segments)",
+    "expires_in": 3600,
+    "token_type": "Bearer",
+    "scope": "api"
+}</code></pre>
+      <p>No redirect, no browser, no resource owner anywhere in this request — exactly two parties
+      (<code>m2m</code> and the authorization server) exchanged exactly one request/response pair. Decoding
+      the token's payload (base64url, no secret needed to read it — chapter 16 covers why) shows:</p>
+<pre><code>{ "iss": "https://demo.duendesoftware.com", "aud": "api", "scope": ["api"],
+  "client_id": "m2m", "jti": "DA27ED77812BF514C0D7BDF6B2A727E6", ... }</code></pre>
+      <p>Notice there is no <code>sub</code> claim identifying a human subject at all — the token
+      identifies the <em>client</em> (<code>client_id: "m2m"</code>), not a user, because there never was
+      one.</p></li>
+    </ol>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Meridian Trust</div>
+      <p>Meridian Trust's nightly fraud-scoring batch job pulls the previous day's transaction records from
+      the core banking ledger service. Both are internal systems; no customer or employee is sitting at a
+      keyboard driving this. This is the client credentials grant's exact use case: the fraud-scoring
+      service authenticates to the ledger service's token endpoint as itself, gets back a token scoped to
+      "read transaction records," and calls the ledger API — contrast this directly with chapter 13's
+      authorization code flow, which exists specifically <em>because</em> a human resource owner needs to
+      approve what a client can do on their behalf. Here there is no resource owner to ask; the ledger
+      service's own security team decided in advance, once, what the fraud-scoring service's client
+      credentials are allowed to do.</p>
+    </div>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Enabling "Service accounts roles" on a confidential client turns it into a client-credentials
+      client with its own service-account user representing the client itself — full hands-on depth in
+      chapter 24 (clients) and chapter 36 (service-to-service auth specifically), including chapter 27's
+      automation of this via the Admin REST API.</p>
+    </div>
+
+    <h2>Token introspection: asking "is this still good?" for real</h2>
+    <p>Chapter 8 introduced introspection conceptually, as one of the revocation problem's partial
+    mitigations: a resource server that has already accepted a bearer token can call back to the
+    authorization server and ask, on a given request, whether that token is still valid — reintroducing
+    exactly the server-side lookup a stateless token design exists to avoid, in exchange for the ability to
+    catch a token that's gone bad before its natural expiry. RFC 7662 standardizes the mechanics: a POST to
+    an introspection endpoint with the token, authenticated as the calling resource server (not as the
+    token's own client), returning a JSON body whose <code>active</code> boolean is the entire point of the
+    call.</p>
+
+    <h3>Lab: introspecting the real <code>m2m</code> token from above</h3>
+    <ol class="lab-steps">
+      <li><p>Introspect the still-valid token, authenticating as <code>m2m</code> (the resource server
+      role in RFC 7662 doesn't have to be a different client than the one that issued the token — it just
+      has to be a client the authorization server trusts to ask):</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/introspect \
+  -u "m2m:secret" \
+  -d "token=eyJhbGciOiJSUzI1NiIs...(the access_token from the client credentials step)"</code></pre>
+<pre><code>{
+    "iss": "https://demo.duendesoftware.com",
+    "nbf": 1794295950, "iat": 1794295950, "exp": 1794299550,
+    "aud": "api",
+    "client_id": "m2m",
+    "jti": "DA27ED77812BF514C0D7BDF6B2A727E6",
+    "token_type": "access_token",
+    "active": true,
+    "scope": "api"
+}</code></pre>
+      <p>For contrast, introspecting a string that is simply not a real token at all:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/introspect \
+  -u "m2m:secret" -d "token=not.a.real.token"</code></pre>
+<pre><code>{ "active": false }</code></pre>
+      <p>Note the response shape difference: a real-but-possibly-stale token gets the full claim set back
+      alongside <code>active</code>; a token the server has never heard of gets only <code>{"active":
+      false}</code> — RFC 7662 deliberately keeps the "unknown token" response minimal so introspection
+      can't be used to fish for information about tokens that don't exist.</p></li>
+    </ol>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Try it</div>
+      <p>Decode the <code>access_token</code> from your own device-flow lab above (base64url, no library
+      needed — chapter 16 shows how by hand) and compare its claims to what <code>/connect/introspect</code>
+      reports back for the <em>same</em> token. They should agree exactly while the token is still within
+      its validity window — introspection is re-deriving the same facts the token already carries, plus one
+      fact the token itself cannot carry: whether the server still considers it live right now.</p>
+    </div>
+
+    <h2>Token revocation — and the finding that actually matters here</h2>
+    <p>Chapter 8 named revocation as the sharpest unsolved tension in token design: a stateless bearer token
+    is valid until it expires, full stop, unless something adds back a server-side check. RFC 7009's
+    revocation endpoint is the standardized "something" — a client tells the authorization server "this
+    specific token should stop working now." Running it for real against this chapter's own <code>m2m</code>
+    token produced the single most important, honestly-reported result in this chapter.</p>
+
+    <h3>Lab: revoking the token, then re-checking it</h3>
+    <ol class="lab-steps">
+      <li><p>Revoke the same access token used above:</p>
+<pre><code>curl -s -o /dev/null -w "HTTP status: %{http_code}\n" -X POST https://demo.duendesoftware.com/connect/revocation \
+  -u "m2m:secret" \
+  -d "token=eyJhbGciOiJSUzI1NiIs...(the same access_token)"</code></pre>
+<pre><code>HTTP status: 200</code></pre>
+      <p>A plain <code>200</code> — the server accepted the revocation request. So far this looks like
+      exactly what you'd expect.</p></li>
+      <li><p>Now introspect that same token again, immediately afterward:</p>
+<pre><code>curl -s -X POST https://demo.duendesoftware.com/connect/introspect \
+  -u "m2m:secret" -d "token=eyJhbGciOiJSUzI1NiIs...(the same access_token)"</code></pre>
+<pre><code>{
+    "iss": "https://demo.duendesoftware.com",
+    "nbf": 1794295950, "iat": 1794295950, "exp": 1794299550,
+    "aud": "api", "client_id": "m2m", "jti": "DA27ED77812BF514C0D7BDF6B2A727E6",
+    "token_type": "access_token",
+    "active": true,
+    "scope": "api"
+}</code></pre>
+      <p><strong>This is the real, verified result: the token still reports <code>active: true</code> after
+      a successful revocation call.</strong> This was re-run twice more (once with no
+      <code>token_type_hint</code>, once with <code>token_type_hint=access_token</code> explicitly) and both
+      produced the identical outcome — a <code>200</code> from the revocation endpoint, followed by
+      <code>active: true</code> from introspection.</p></li>
+    </ol>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — this is not a bug in the demo server, or in this lab</div>
+      <p>This is chapter 8's revocation problem, caught in the act. The <code>m2m</code> client's access
+      token is a <strong>self-contained JWT</strong> ("<code>typ: at+jwt</code>" in its header) — the entire
+      set of claims and a signature live inside the token itself, and the authorization server never stored
+      a server-side record of "this specific token exists and is currently valid" to go delete. RFC 7009
+      §2.1 explicitly permits an authorization server to accept a revocation request for a token it has no
+      way to actually invalidate and still return success, specifically so the endpoint can't be used to
+      probe which tokens are real. Introspection for a self-contained JWT, in this server's implementation,
+      checks the signature and the <code>exp</code> claim — not a revocation list — so a "revoked" JWT
+      keeps reporting itself valid until it naturally expires. A <strong>reference token</strong> (an opaque
+      random string the server looks up in its own store on every introspection call) does not have this
+      problem: deleting that server-side record on revocation makes the very next introspection call report
+      <code>active: false</code> immediately, because there's an actual record to delete. The device flow's
+      refresh token (not captured in this agent's lab run, since the human login step wasn't completed) is
+      exactly this kind of server-tracked token on this server, and would revoke cleanly for the same
+      reason a reference token does.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 330" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Why revoking a self-contained JWT access token did not make introspection report it inactive</title>
+        <desc id="d3">Two parallel scenarios compared side by side. Left: a reference token, an opaque
+        random string the authorization server stores in its own lookup table. Revoking it deletes that
+        table row; the very next introspection call finds no row and correctly reports active false
+        immediately. Right: a self-contained JWT access token, carrying its own signed claims with nothing
+        stored server side to represent it. Revoking it is accepted by the server with an HTTP 200 per RFC
+        7009, which permits returning success even when nothing can actually be invalidated, but there was
+        no row to delete. The next introspection call re-checks only the signature and the expiry claim
+        inside the token itself, finds both still valid, and reports active true — exactly the behavior
+        this chapter verified live.</desc>
+
+        <text x="20" y="28" class="diagram-label" font-weight="700">REFERENCE TOKEN (opaque, server-tracked)</text>
+        <rect x="20" y="45" width="380" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="210" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">Token is a random string; server keeps a row: "token X → valid"</text>
+        <line x1="210" y1="95" x2="210" y2="125" class="diagram-stroke" marker-end="url(#arrowR1)"/>
+        <text x="320" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">revoke() deletes the row</text>
+        <rect x="20" y="135" width="380" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="210" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">Introspect again: no row found</text>
+        <rect x="20" y="195" width="380" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="210" y="225" text-anchor="middle" class="diagram-label" font-weight="700">active: false — immediately, correctly</text>
+
+        <line x1="440" y1="20" x2="440" y2="310" class="diagram-stroke"/>
+
+        <text x="460" y="28" class="diagram-label" font-weight="700">SELF-CONTAINED JWT (verified by signature, not looked up)</text>
+        <rect x="460" y="45" width="400" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="660" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">Token carries its own signed claims; server stored nothing about it</text>
+        <line x1="660" y1="95" x2="660" y2="125" class="diagram-stroke" marker-end="url(#arrowR1)"/>
+        <text x="660" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">revoke() call: HTTP 200 (RFC 7009 permits this — nothing to delete)</text>
+        <rect x="460" y="135" width="400" height="50" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="660" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">Introspect again: checks signature + exp only — both still good</text>
+        <rect x="460" y="195" width="400" height="50" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="660" y="225" text-anchor="middle" class="diagram-label" font-weight="700">active: true — verified live, exactly this way, in this chapter's lab</text>
+
+        <text x="440" y="300" text-anchor="middle" class="diagram-label-muted" font-size="11">Same revocation call, same wire protocol, two completely different real outcomes — the token's own design decides which one you get.</text>
+
+        <defs>
+          <marker id="arrowR1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 14.3 — The same revocation call, run against two different token designs, produces
+      two genuinely different real outcomes — not a flaw in either design, a direct consequence of each.</figcaption>
+    </figure>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>"We revoked the token" is a claim about <em>intent</em>, not automatically a fact about
+      <em>effect</em>. Before trusting that a revocation call actually closed off access, know which kind
+      of token you issued. This is chapter 8's revocation problem made completely concrete, with a real
+      HTTP 200 and a real <code>active: true</code> to prove it.</p>
+    </div>
+
+    <h2>Token exchange (RFC 8693) — conceptual only on this server</h2>
+    <p>RFC 8693 defines a fifth extended grant, <strong>token exchange</strong>
+    (<code>urn:ietf:params:oauth:grant-type:token-exchange</code>): a client trades one security token for
+    another, typically to narrow a token's scope/audience before forwarding it downstream
+    (<strong>downscoping</strong>), or to let a service call further downstream services while
+    representing another party — either as <strong>delegation</strong> (the new token keeps an
+    <code>act</code> claim recording who is really acting, so the downstream service can see one party is
+    acting on behalf of another) or as <strong>impersonation</strong> (the new token drops that trace, so
+    the downstream request is indistinguishable from the original party's own).</p>
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Honestly: no live lab for this one</div>
+      <p>This chapter's own live discovery-document fetch, shown at the top of this page, confirms
+      <code>grant_types_supported</code> does not include the token-exchange grant on this demo server.
+      There is no live lab here for that reason — not an oversight, a confirmed gap. Everything in this
+      section is standards-accurate (grounded directly in RFC 8693) but was not, and could not be, exercised
+      against a running server in this chapter.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 860 260" role="img" aria-labelledby="t4 d4">
+        <title id="t4">Token exchange: delegation keeps a trace of who is really acting; impersonation does not</title>
+        <desc id="d4">A gateway service holds a broadly-scoped subject token from an upstream caller and
+        exchanges it at the authorization server's token endpoint for a new, narrower token to forward to a
+        downstream service, a pattern called downscoping. Two possible shapes for the new token are shown
+        side by side. In the delegation shape, the new token carries an act claim identifying the gateway as
+        the actor exercising it on the original subject's behalf, so the downstream service can see that one
+        party is acting for another. In the impersonation shape, the new token carries no such claim, so the
+        downstream request is indistinguishable from a request the original subject made directly.</desc>
+        <rect x="20" y="30" width="180" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="110" y="52" text-anchor="middle" class="diagram-label" font-weight="700">GATEWAY SERVICE</text>
+        <text x="110" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">holds a broad subject_token</text>
+        <line x1="200" y1="55" x2="330" y2="55" class="diagram-stroke" marker-end="url(#arrowX1)"/>
+        <text x="265" y="43" text-anchor="middle" class="diagram-label-muted" font-size="10">token-exchange grant</text>
+        <rect x="330" y="30" width="200" height="50" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="430" y="52" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="430" y="68" text-anchor="middle" class="diagram-label-muted" font-size="11">issues a new, narrower token</text>
+
+        <line x1="430" y1="80" x2="430" y2="110" class="diagram-stroke" marker-end="url(#arrowX1)"/>
+        <text x="430" y="104" text-anchor="middle" class="diagram-label-muted" font-size="11">downscoped token, two possible shapes:</text>
+
+        <rect x="230" y="120" width="260" height="110" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="360" y="142" text-anchor="middle" class="diagram-label" font-weight="700">DELEGATION</text>
+        <text x="245" y="164" class="diagram-label-muted" font-size="11">keeps act claim: "gateway acting</text>
+        <text x="245" y="180" class="diagram-label-muted" font-size="11">on behalf of subject"</text>
+        <text x="245" y="200" class="diagram-label-muted" font-size="11">downstream can tell who's really</text>
+        <text x="245" y="216" class="diagram-label-muted" font-size="11">making the call</text>
+
+        <rect x="530" y="120" width="260" height="110" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="660" y="142" text-anchor="middle" class="diagram-label" font-weight="700">IMPERSONATION</text>
+        <text x="545" y="164" class="diagram-label-muted" font-size="11">no act claim — new token looks</text>
+        <text x="545" y="180" class="diagram-label-muted" font-size="11">exactly like the subject's own</text>
+        <text x="545" y="200" class="diagram-label-muted" font-size="11">downstream cannot distinguish it</text>
+        <text x="545" y="216" class="diagram-label-muted" font-size="11">from a direct request</text>
+
+        <defs>
+          <marker id="arrowX1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 14.4 — RFC 8693 token exchange supports both delegation (traceable) and
+      impersonation (untraceable) as valid, distinct outcomes — choosing between them is a real security
+      decision, not a naming detail.</figcaption>
+    </figure>
+
+    <div class="callout callout--deep-dive">
+      <div class="callout-label">Deep dive</div>
+      <p>Delegation vs. impersonation matters most at a gateway or API-aggregation layer that calls many
+      downstream services on behalf of many different upstream callers. If every downstream service's audit
+      log should be able to answer "which original party actually caused this," delegation's <code>act</code>
+      claim is the only one of the two that preserves that answer — impersonation deliberately erases it.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a device-flow client treat <code>authorization_pending</code> as a failure and give up,
+      the cause is a misunderstanding of the grant: it's the <em>expected</em> response on every poll until a
+      human finishes, not an error condition to abort on.</li>
+      <li>If you see a device client ignore <code>slow_down</code> and keep polling at its original rate,
+      the cause is a client implementation that didn't read RFC 8628's polling-backoff requirement — expect
+      rate-limiting or an invalidated device code soon after.</li>
+      <li>If you see someone describe client credentials as "OAuth but for a service account," they're
+      roughly right in spirit but should be precise: there is no resource owner anywhere in a client
+      credentials exchange, not merely a non-interactive one — compare carefully with a service account
+      that happens to use the authorization code flow non-interactively, which is a different (and unusual)
+      thing.</li>
+      <li>If you see an incident write-up that says "we revoked the token, so access was cut off at
+      <code>[timestamp]</code>," the cause is often an unverified assumption — confirm whether the token in
+      question was self-contained (revocation may not have actually ended its usable life before natural
+      expiry) or reference/server-tracked (revocation genuinely did).</li>
+      <li>If you see introspection used on every single API request as if it were free, the cause is
+      forgetting that each call is a real network round trip to the authorization server — exactly the
+      cost chapter 8 warned statelessness was meant to avoid paying.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>The device authorization grant (RFC 8628) exists for clients that can't receive a browser
+      redirect at all — it moves the interactive step to a second, separate device the user already has.</li>
+      <li>Device flow needs no registered <code>redirect_uri</code> whatsoever, which is exactly why this
+      course chose it as the primary "real tokens, real human step" lab over the undocumented-redirect-uri
+      interactive clients chapter 13 ran into.</li>
+      <li><code>authorization_pending</code>, <code>slow_down</code>, and <code>invalid_grant</code> are
+      three distinct, real responses from the same polling endpoint — confirmed live, not inferred from the
+      spec alone.</li>
+      <li>The client credentials grant (RFC 6749 §4.4) is the only grant in this chapter with no resource
+      owner at all — it authenticates a client as itself, for pure machine-to-machine access.</li>
+      <li>Token introspection (RFC 7662) lets a resource server ask the authorization server whether a
+      token is still valid right now — the real mechanics behind chapter 8's conceptual preview, confirmed
+      live against a real token this chapter obtained.</li>
+      <li>Revoking a token (RFC 7009) is not guaranteed to make it stop working: a self-contained JWT access
+      token can be "revoked" (HTTP 200) and still report <code>active: true</code> on the very next
+      introspection call, because there was never a server-side record to delete — verified live in this
+      chapter, not asserted from the RFC text alone.</li>
+      <li>A reference (opaque, server-tracked) token does not have that problem — deleting its server-side
+      record on revocation makes the next introspection call correctly report it inactive immediately.</li>
+      <li>Token exchange (RFC 8693) lets a client trade one token for another — commonly to downscope
+      privilege before forwarding a token downstream, or to support delegation (traceable) versus
+      impersonation (untraceable) when one service acts for another.</li>
+      <li>This chapter's own live discovery-document fetch confirmed the demo server's
+      <code>grant_types_supported</code> does not include token exchange — covered conceptually here with
+      no fabricated lab, per this course's no-invented-facts rule.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain why the device authorization grant needs no registered <code>redirect_uri</code>, while
+      chapter 13's authorization code flow absolutely does.</li>
+      <li>A teammate says "we revoked the compromised token, so we're safe now." What's the first question
+      you should ask them, given this chapter's lab result?</li>
+      <li>Why does the client credentials grant have no resource owner, while every other grant in this
+      course so far does?</li>
+      <li>Describe, in your own words, the difference between what introspection tells you and what simply
+      decoding a JWT's claims tells you — when do the two actually diverge?</li>
+      <li>If you were advising Meridian Trust's security team on choosing between a self-contained and a
+      reference access token for a new internal service, what question about revocation would you make them
+      answer first?</li>
+      <li>Why does RFC 7009 permit an authorization server to return HTTP 200 for a revocation request even
+      when nothing was actually invalidated? What problem would a more "honest" error response create
+      instead?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc8628">RFC 8628 — OAuth 2.0 Device Authorization Grant</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749#section-4.4">RFC 6749 §4.4 — The OAuth 2.0 Authorization Framework: Client Credentials Grant</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7662">RFC 7662 — OAuth 2.0 Token Introspection</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7009">RFC 7009 — OAuth 2.0 Token Revocation</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc8693">RFC 8693 — OAuth 2.0 Token Exchange</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "oauth2-extended", 15);
+  });
+</script>
+</body>
+</html>

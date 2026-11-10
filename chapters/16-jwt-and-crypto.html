@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JWT &amp; Applied Cryptography — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "jwt-and-crypto";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part III — Protocols</span>
+      <span class="badge minutes">~40 min</span>
+    </div>
+    <h1>16. JWT &amp; Applied Cryptography</h1>
+    <p class="lede">Chapter 8 introduced claims and tokens as pure concepts, deliberately leaving the wire
+    format unopened. Chapters 14 and 15 then handed you real access, refresh, and ID tokens out of a live
+    OAuth/OIDC server. This chapter finally opens the envelope: how a JWT is actually built out of bytes,
+    why most of it is readable by design rather than hidden, and exactly how a verifier decides which key
+    to trust — including the mechanics behind key rotation, which chapter 8 could only name.</p>
+
+    <h2>Why this matters</h2>
+    <p>An IAM specialist is routinely the person who has to explain, calmly, why putting a secret inside a
+    JWT claim was never safe — and the person who has to design a key-rotation plan that survives a
+    suspected compromise without breaking every session in production at once. Both of those conversations
+    require the same handful of mechanics: the difference between signing and encrypting, what a JWT's
+    three segments actually contain, and how a verifier picks the right key out of a published key set.
+    This chapter is also a hard prerequisite for chapter 17's SAML contrast and chapter 18's security
+    hardening — you can't reason about algorithm-confusion attacks or token-storage trade-offs until the
+    structure underneath them is concrete.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall — chapter 8</div>
+      <p>Chapter 8 defined a <strong>claim</strong> as a key-value assertion an issuer vouches for, and
+      named <strong>signing-key rotation</strong> as one of four partial mitigations for the revocation
+      problem — a blunt instrument that invalidates everything signed with the old key at once, deferred
+      to "chapter 16 for full mechanics." This is that chapter. Everything below assumes you already have
+      claims, issuer/audience/validity-window claims, and the revocation problem fresh from chapter 8 —
+      this chapter doesn't re-teach them, it makes their wire format concrete.</p>
+    </div>
+
+    <h2>JWS vs. JWE: signing and encryption are not the same thing</h2>
+    <p>A JSON Web Token is a container format, and that container can be built two structurally different
+    ways:</p>
+    <div class="table-wrap">
+      <table>
+        <caption>JWS vs. JWE — what each one actually protects</caption>
+        <thead><tr><th></th><th>JWS (JSON Web Signature)</th><th>JWE (JSON Web Encryption)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>What it protects</strong></td><td>Integrity and authenticity — proves the
+          content wasn't altered and (for asymmetric algorithms) identifies which key signed it.</td>
+          <td>Confidentiality — hides the content from anyone without the decryption key.</td></tr>
+          <tr><td><strong>Can anyone read the payload?</strong></td><td>Yes. Signing does not hide
+          anything; it only detects tampering.</td><td>No. The payload is ciphertext until decrypted.</td></tr>
+          <tr><td><strong>How common in this course's tokens</strong></td><td>The default. Every access
+          token and ID token this course has decoded in chapters 14-15 is a JWS.</td><td>Rare in everyday
+          OAuth/OIDC deployments — used when the claims themselves must stay confidential from anyone but
+          the intended recipient, not just tamper-evident.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 300" role="img" aria-labelledby="jt1 jd1">
+        <title id="jt1">JWS vs. JWE: who can read the payload</title>
+        <desc id="jd1">Left: a JWS token shown as three labeled segments — header and payload are both
+        plain, readable JSON; the signature segment only proves integrity and authenticity, it does not
+        hide anything. A note underneath states the token is base64url encoded, not encrypted, so anyone
+        holding it can read the header and payload. Right: a JWE token shown as a single opaque block
+        labeled entire token ciphertext, contents hidden until decrypted with the right key. A note
+        underneath states JWE is rare for everyday access and ID tokens and is used when the claims
+        themselves must stay confidential.</desc>
+        <text x="20" y="26" class="diagram-label" font-weight="700">JWS (signing) — this course's default</text>
+        <rect x="20" y="42" width="120" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="80" y="66" text-anchor="middle" class="diagram-label" font-size="12">HEADER</text>
+        <text x="80" y="84" text-anchor="middle" class="diagram-label-muted" font-size="10">plain JSON</text>
+        <text x="146" y="78" class="diagram-label-muted">.</text>
+        <rect x="160" y="42" width="150" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="235" y="66" text-anchor="middle" class="diagram-label" font-size="12">PAYLOAD</text>
+        <text x="235" y="84" text-anchor="middle" class="diagram-label-muted" font-size="10">claims — plain JSON</text>
+        <text x="316" y="78" class="diagram-label-muted">.</text>
+        <rect x="330" y="42" width="140" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="400" y="62" text-anchor="middle" class="diagram-label" font-size="12">SIGNATURE</text>
+        <text x="400" y="78" text-anchor="middle" class="diagram-label-muted" font-size="10">proves integrity</text>
+        <text x="400" y="92" text-anchor="middle" class="diagram-label-muted" font-size="10">+ authenticity only</text>
+        <rect x="20" y="120" width="450" height="46" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="245" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">Base64url encoded, NOT encrypted —</text>
+        <text x="245" y="156" text-anchor="middle" class="diagram-label-muted" font-size="11">anyone holding the token can read header + payload.</text>
+
+        <line x1="20" y1="200" x2="860" y2="200" class="diagram-stroke"/>
+
+        <text x="20" y="228" class="diagram-label" font-weight="700">JWE (encryption) — rare for everyday tokens</text>
+        <rect x="20" y="244" width="450" height="46" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="245" y="263" text-anchor="middle" class="diagram-label" font-size="12">ENTIRE TOKEN CIPHERTEXT</text>
+        <text x="245" y="280" text-anchor="middle" class="diagram-label-muted" font-size="10">contents hidden until decrypted with the right key</text>
+        <rect x="500" y="200" width="360" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="520" y="222" class="diagram-label-muted" font-size="11">Used when the claims themselves must stay</text>
+        <text x="520" y="240" class="diagram-label-muted" font-size="11">confidential from everyone but the intended</text>
+        <text x="520" y="258" class="diagram-label-muted" font-size="11">recipient — not just tamper-evident. Most access</text>
+        <text x="520" y="276" class="diagram-label-muted" font-size="11">and ID tokens in this course are JWS, not this.</text>
+      </svg>
+      <figcaption>Figure 16.1 — Signing (JWS) leaves the payload readable and only detects tampering;
+      encryption (JWE) hides the payload entirely. They solve different problems.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>"It's a JWT, so it's encrypted" is one of the most common and consequential beginner misconceptions
+      in all of IAM. It is false for the plain JWS tokens this course has used throughout chapters 13-15.
+      Concrete example: an engineer at <span class="org-chip northwind">Northwind Apps</span> once added a
+      customer's internal account-tier discount code directly into an access token's payload as a custom
+      claim, reasoning "it's inside the token, so only our API can see it." The claim is base64url-encoded
+      JSON, not ciphertext — any browser extension, proxy log, or curious user who copies the token out of
+      a dev-tools network tab can decode that claim in seconds with nothing more than a text editor, exactly
+      as you will below. If a value must stay hidden from the token's bearer, it does not belong in a JWS
+      payload at all — it belongs server-side, looked up by a claim that <em>is</em> safe to expose (like a
+      customer id), or inside an actual JWE if the architecture specifically calls for one.</p>
+    </div>
+
+    <h2>JWT structure: three base64url segments, not one blob</h2>
+    <p>A JWT using JWS's <strong>compact serialization</strong> — the dot-separated form you have already
+    seen in chapters 14-15's lab output — is exactly three segments: <code>header.payload.signature</code>,
+    each one independently base64url-encoded. Base64url is a text-safe encoding (RFC 4648 §5): it swaps the
+    `+`/`/` characters regular base64 uses for `-`/`_` so the result survives being placed in a URL or HTTP
+    header, and it is fully reversible by anyone — no key, no secret, nothing hidden by the encoding itself.</p>
+
+    <p>To make this concrete without depending on any particular lab's output still being valid, here is a
+    minimal JWT built and verified for this chapter (HS256, a symmetric algorithm covered below), with its
+    real base64url segments:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>A real, hand-built, verified JWT — decoded segment by segment</caption>
+        <thead><tr><th>Segment</th><th>Base64url (as it appears on the wire)</th><th>Decoded content</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Header</strong></td>
+          <td><code>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRlbW8ta2V5LTEifQ</code></td>
+          <td><code>{"alg":"HS256","typ":"JWT","kid":"demo-key-1"}</code></td></tr>
+          <tr><td><strong>Payload</strong></td>
+          <td><code>eyJpc3MiOiJodHRwczovL2lkcC5ub3J0aHdpbmRhcHBzLmV4YW1wbGUiLCJzdWIiOiJqYW5lLmRvZUBub3J0aHdpbmRhcHBzLmNvbSIsImF1ZCI6ImJpbGxpbmctYXBpIiwiaWF0IjoxNzk5ODAwMDAwLCJleHAiOjE3OTk4MDA5MDAsInJvbGVzIjpbInN1cHBvcnQtYWdlbnQiXX0</code></td>
+          <td><code>{"iss":"https://idp.northwindapps.example","sub":"jane.doe@northwindapps.com","aud":"billing-api","iat":1799800000,"exp":1799800900,"roles":["support-agent"]}</code></td></tr>
+          <tr><td><strong>Signature</strong></td>
+          <td><code>Gcu1-1U5JaPmiNjmleb6CBuLoQfUDwm-dVLCBuAYO2I</code></td>
+          <td>Opaque bytes — not decodable the way header/payload are. Recomputing HMAC-SHA256 over
+          <code>header.payload</code> with the signing key and comparing bytes is the only way to use
+          this segment, and it was verified byte-for-byte equal when this example was built.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Try it</div>
+      <p>No tool required beyond a terminal. Take the header segment above — or, better, the header segment
+      from a real access token you obtained in chapter 14 or 15's lab — and run it through base64url
+      decoding by hand: <code>echo 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRlbW8ta2V5LTEifQ' | tr '_-' '/+' | base64 -d</code>
+      (pad with trailing <code>=</code> if your `base64` complains about input length). You'll get back
+      plain JSON. Do the same for the payload segment. Then try it on the signature segment — it decodes to
+      meaningless bytes, because unlike the other two it was never JSON to begin with.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 340" role="img" aria-labelledby="jt2 jd2">
+        <title id="jt2">JWT anatomy: three base64url segments, two of which decode to JSON</title>
+        <desc id="jd2">A JWT shown as header, payload, and signature segments joined by dots. An arrow
+        from the header segment points down to its decoded JSON, showing alg, typ, and kid fields. An
+        arrow from the payload segment points down to its decoded JSON, showing iss, sub, aud, iat, exp,
+        and roles claims. The signature segment has no decode arrow — it is labeled opaque bytes, verified
+        not decoded, showing that only the first two segments are meant to be read as JSON while the third
+        is checked by recomputing it and comparing.</desc>
+        <rect x="20" y="20" width="230" height="40" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="135" y="45" text-anchor="middle" class="diagram-label" font-size="11">HEADER (base64url)</text>
+        <text x="258" y="46" class="diagram-label-muted">.</text>
+        <rect x="270" y="20" width="310" height="40" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="425" y="45" text-anchor="middle" class="diagram-label" font-size="11">PAYLOAD (base64url)</text>
+        <text x="588" y="46" class="diagram-label-muted">.</text>
+        <rect x="600" y="20" width="250" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="725" y="45" text-anchor="middle" class="diagram-label" font-size="11">SIGNATURE (base64url)</text>
+
+        <line x1="135" y1="60" x2="135" y2="95" class="diagram-stroke" marker-end="url(#arrowJ2)"/>
+        <line x1="425" y1="60" x2="425" y2="95" class="diagram-stroke" marker-end="url(#arrowJ2)"/>
+
+        <rect x="20" y="100" width="230" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="30" y="122" class="diagram-label-muted" font-size="11">{"alg":"HS256",</text>
+        <text x="30" y="140" class="diagram-label-muted" font-size="11"> "typ":"JWT",</text>
+        <text x="30" y="158" class="diagram-label-muted" font-size="11"> "kid":"demo-key-1"}</text>
+        <text x="30" y="178" class="diagram-label-muted" font-size="10">decoded — plain JSON, readable</text>
+
+        <rect x="270" y="100" width="310" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="280" y="120" class="diagram-label-muted" font-size="10">{"iss":"...northwindapps...", "sub":"jane.doe@...",</text>
+        <text x="280" y="138" class="diagram-label-muted" font-size="10"> "aud":"billing-api", "iat":..., "exp":...,</text>
+        <text x="280" y="156" class="diagram-label-muted" font-size="10"> "roles":["support-agent"]}</text>
+        <text x="280" y="178" class="diagram-label-muted" font-size="10">decoded — plain JSON, readable</text>
+
+        <rect x="600" y="100" width="250" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="610" y="130" class="diagram-label-muted" font-size="11">Opaque bytes.</text>
+        <text x="610" y="150" class="diagram-label-muted" font-size="11">Verified by recomputing,</text>
+        <text x="610" y="170" class="diagram-label-muted" font-size="11">never "decoded" into meaning.</text>
+
+        <rect x="20" y="250" width="830" height="70" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="40" y="275" class="diagram-label" font-size="12" font-weight="700">Signing input = header_b64 + "." + payload_b64 (exactly these bytes, nothing else)</text>
+        <text x="40" y="296" class="diagram-label-muted" font-size="11">The signature is computed over that exact string. Change one character anywhere in header or payload and the signature no longer matches.</text>
+
+        <defs>
+          <marker id="arrowJ2" markerWidth="8" markerHeight="8" refX="4" refY="6" orient="auto">
+            <path d="M0,0 L8,0 L4,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 16.2 — Header and payload decode to readable JSON; the signature segment is
+      opaque and is checked by recomputation, not decoding.</figcaption>
+    </figure>
+
+    <h2>JWK and JWKS: how a verifier gets the key without being handed a secret</h2>
+    <p>A verifier that didn't issue a token still needs the right cryptographic material to check its
+    signature. A <strong>JWK</strong> (JSON Web Key, RFC 7517) is a single key represented as JSON; a
+    <strong>JWKS</strong> (JSON Web Key Set) is a JSON document holding an array of JWKs — normally every
+    signing key an issuer currently considers valid. Chapter 15's discovery document already handed you the
+    mechanism that advertises where to find this: its <code>jwks_uri</code> field.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea — live-verified</div>
+      <p>Fetching <code>https://demo.duendesoftware.com/.well-known/openid-configuration</code> (the same
+      discovery document chapter 15 used) and reading its <code>jwks_uri</code> field gives:
+      <code>https://demo.duendesoftware.com/.well-known/openid-configuration/jwks</code> — confirmed live
+      while writing this chapter, not guessed. Fetching that URL returned a JSON Web Key Set with exactly
+      one currently-active key:</p>
+      <pre style="white-space:pre-wrap; font-size:0.85em; margin:0.6em 0 0;">{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "kid": "0202F0E3BCADB53E5E62DBBF25BC31FC",
+      "alg": "RS256",
+      "e": "AQAB",
+      "n": "sQJLxZnI8FUPRJKtZmDg77sOJq-sOMSB--AfLSoGwqw7HBNSJy1xRsbJI89w3vxSQf76-yFdxKWSZOtWqn--..." ,
+      "x5t": "KhCG3GnxqRduHRqpMqZCl1j428A",
+      "x5c": [ "MIIC+zCCAeOgAwIBAgIJ..." ]
+    }
+  ]
+}</pre>
+      <p style="margin-top:0.6em;"><code>kty</code> is the key type (RSA here), <code>use</code> says it's
+      for signing, <code>alg</code> names RS256, <code>n</code>/<code>e</code> are the RSA public key's
+      modulus and exponent (the actual verification material), and <code>x5c</code>/<code>x5t</code> carry
+      an X.509 certificate chain and thumbprint for the same key — extra material some verifiers use, not
+      required to check a signature with <code>n</code>/<code>e</code> alone. Note this live response
+      shows a single key with no second key present, which is the normal steady state — a second key only
+      appears in this array during an active rotation's overlap period, covered next.</p>
+    </div>
+
+    <h2><code>kid</code>-based key lookup</h2>
+    <p>A JWT's header carries a <code>kid</code> (key id) claim. A verifier reads that value, fetches (or
+    uses an already-cached) JWKS response, and scans its <code>keys</code> array for the one JWK whose own
+    <code>kid</code> matches. That match is what tells the verifier which key's public material to use for
+    this particular token — not the only key in the set, necessarily, and not the newest one by default,
+    specifically the one named by the token.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 880 300" role="img" aria-labelledby="jt3 jd3">
+        <title id="jt3">kid-based key lookup: matching a token to the right JWKS entry</title>
+        <desc id="jd3">A JWT with header kid 0202F0 arrives at a verifier. The verifier fetches the JWKS
+        endpoint, which returns an array containing two keys in this illustration, one with kid AAAA11
+        and one with kid 0202F0. The verifier scans for the entry whose kid matches the token's kid,
+        finds the 0202F0 entry, and uses that entry's public key material to check the token's
+        signature, confirmed valid.</desc>
+        <rect x="20" y="30" width="200" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="120" y="54" text-anchor="middle" class="diagram-label" font-weight="700">JWT arrives</text>
+        <text x="120" y="74" text-anchor="middle" class="diagram-label-muted" font-size="11">header kid: 0202F0...</text>
+
+        <line x1="220" y1="60" x2="330" y2="60" class="diagram-stroke" marker-end="url(#arrowJ3)"/>
+
+        <rect x="330" y="30" width="190" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="425" y="54" text-anchor="middle" class="diagram-label" font-weight="700">VERIFIER</text>
+        <text x="425" y="74" text-anchor="middle" class="diagram-label-muted" font-size="11">reads kid, needs a key</text>
+
+        <line x1="425" y1="90" x2="425" y2="140" class="diagram-stroke" marker-end="url(#arrowJ3)"/>
+        <text x="440" y="115" class="diagram-label-muted" font-size="11">fetch jwks_uri</text>
+
+        <rect x="300" y="145" width="280" height="130" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="315" y="167" class="diagram-label" font-size="11" font-weight="700">JWKS response — keys[ ]</text>
+        <rect x="315" y="177" width="250" height="36" rx="5" class="diagram-fill-surface diagram-stroke"/>
+        <text x="325" y="199" class="diagram-label-muted" font-size="11">kid: AAAA11... (no match)</text>
+        <rect x="315" y="219" width="250" height="36" rx="5" class="diagram-fill-success diagram-stroke"/>
+        <text x="325" y="241" class="diagram-label-muted" font-size="11">kid: 0202F0... (MATCH)</text>
+
+        <line x1="580" y1="237" x2="700" y2="237" class="diagram-stroke" marker-end="url(#arrowJ3)"/>
+        <text x="640" y="225" class="diagram-label-muted" font-size="10">use this key's n/e</text>
+
+        <rect x="700" y="207" width="160" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="780" y="231" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">SIGNATURE</text>
+        <text x="780" y="251" text-anchor="middle" class="diagram-label-muted" font-size="11">verified valid</text>
+
+        <defs>
+          <marker id="arrowJ3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 16.3 — The token's own `kid` tells the verifier which JWKS entry to use; this is
+      the mechanism that makes key rotation possible without breaking already-issued tokens immediately.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Realm Settings → Keys (chapter 21) lists every signing key a realm currently has, each tagged
+      active/passive and with its own `kid` — the admin-console view of exactly the JWKS entries described
+      here. Full hands-on depth lands there.</p>
+    </div>
+
+    <h2>Key rotation, concretely</h2>
+    <p>Chapter 8 named signing-key rotation only as a blunt revocation mitigation. Here is precisely how it
+    works, now that <code>kid</code>-based lookup is on the table:</p>
+    <ol>
+      <li><strong>Steady state.</strong> One active signing key (call it Key A) is in the JWKS response.
+      Every token in circulation was signed with Key A and verifies against it.</li>
+      <li><strong>Rotation begins — the overlap period.</strong> A new key, Key B, is published into the
+      JWKS response <em>alongside</em> Key A, before anything is signed with it. The issuer then switches to
+      signing new tokens with Key B. Tokens already out there, still signed with Key A, keep verifying
+      correctly, because Key A is still present in JWKS.</li>
+      <li><strong>Overlap ends.</strong> Once every token Key A ever signed has expired (or the chosen
+      overlap window has passed), Key A is removed from the JWKS response. Any token still claiming to be
+      signed by Key A — which, if the overlap was sized correctly, should not exist — would now fail
+      verification, because a verifier can no longer find a matching `kid`.</li>
+    </ol>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 900 340" role="img" aria-labelledby="jt4 jd4">
+        <title id="jt4">Key rotation timeline: Key A and Key B overlapping in JWKS, then Key A retired</title>
+        <desc id="jd4">A three-phase timeline. Phase one, steady state: only Key A is listed in JWKS and
+        signs all tokens. Phase two, overlap period: Key B is added to JWKS and begins signing new tokens,
+        while Key A remains in JWKS so tokens it already signed keep verifying. Phase three, retirement:
+        Key A is removed from JWKS once every token it signed has expired; any token still claiming Key A
+        would now fail verification. A side note explains that Meridian Trust, after a suspected key
+        compromise, deliberately shortens the overlap period, accepting that some still-valid but soon-to-
+        expire tokens may fail early, trading a short window of forced re-authentication for faster
+        containment.</desc>
+        <rect x="20" y="20" width="270" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="35" y="42" class="diagram-label" font-weight="700" font-size="12">1. STEADY STATE</text>
+        <text x="35" y="64" class="diagram-label-muted" font-size="11">JWKS: [ Key A ]</text>
+        <text x="35" y="82" class="diagram-label-muted" font-size="11">All tokens signed + verified with A</text>
+
+        <line x1="290" y1="65" x2="330" y2="65" class="diagram-stroke" marker-end="url(#arrowJ4)"/>
+
+        <rect x="330" y="20" width="280" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="345" y="42" class="diagram-label" font-weight="700" font-size="12">2. OVERLAP PERIOD</text>
+        <text x="345" y="64" class="diagram-label-muted" font-size="11">JWKS: [ Key A, Key B ]</text>
+        <text x="345" y="82" class="diagram-label-muted" font-size="11">New tokens use B; old tokens</text>
+        <text x="345" y="98" class="diagram-label-muted" font-size="11">signed with A still verify via A</text>
+
+        <line x1="610" y1="65" x2="650" y2="65" class="diagram-stroke" marker-end="url(#arrowJ4)"/>
+
+        <rect x="650" y="20" width="230" height="90" rx="8" class="diagram-fill-warning diagram-stroke"/>
+        <text x="665" y="42" class="diagram-label" font-weight="700" font-size="12">3. RETIREMENT</text>
+        <text x="665" y="64" class="diagram-label-muted" font-size="11">JWKS: [ Key B ]</text>
+        <text x="665" y="82" class="diagram-label-muted" font-size="11">Key A removed — any token still</text>
+        <text x="665" y="98" class="diagram-label-muted" font-size="11">claiming A now fails verification</text>
+
+        <rect x="20" y="150" width="860" height="150" rx="8" class="diagram-fill-danger diagram-stroke"/>
+        <text x="40" y="175" class="diagram-label" font-weight="700" font-size="13">Case study — <tspan class="diagram-label">Meridian Trust</tspan></text>
+        <text x="40" y="200" class="diagram-label-muted" font-size="12">After a suspected signing-key compromise, Meridian Trust cannot afford a full, leisurely overlap period — if</text>
+        <text x="40" y="220" class="diagram-label-muted" font-size="12">the old key is actually in an attacker's hands, every minute it stays listed in JWKS is a minute a forged</text>
+        <text x="40" y="240" class="diagram-label-muted" font-size="12">token can still verify. Meridian deliberately shortens phase 2 to a short, bounded window — accepting that</text>
+        <text x="40" y="260" class="diagram-label-muted" font-size="12">some still-valid, soon-to-expire access tokens get forced to re-authenticate early — trading convenience</text>
+        <text x="40" y="280" class="diagram-label-muted" font-size="12">for faster containment, the same shrink-the-blast-radius logic chapter 8 introduced, applied to a whole key.</text>
+
+        <defs>
+          <marker id="arrowJ4" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 16.4 — Rotation publishes the new key before using it, keeps the old key around
+      for an overlap period, then retires it. Shortening that overlap trades compatibility for containment.</figcaption>
+    </figure>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>If you see an outage immediately after a "routine" key rotation, the cause is very often step 3
+      happening before step 2 finished its job — someone removed the old key from JWKS while tokens it
+      signed were still unexpired and in active use. The fix is not "don't rotate keys"; it's sizing the
+      overlap period to be at least as long as the longest-lived token type still being verified (and,
+      for refresh tokens specifically, remembering they can live far longer than access tokens — chapter 8).</p>
+    </div>
+
+    <h2>Symmetric vs. asymmetric signing</h2>
+    <p>The algorithm named in a JWT's <code>alg</code> header falls into one of two families, and the
+    choice has a direct consequence for whether a JWKS endpoint can safely exist at all:</p>
+    <div class="table-wrap">
+      <table>
+        <caption>HS256 (symmetric) vs. RS256/ES256 (asymmetric)</caption>
+        <thead><tr><th></th><th>Symmetric — HS256</th><th>Asymmetric — RS256 / ES256</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Key(s) involved</strong></td><td>One shared secret, used to both sign and
+          verify.</td><td>A private key (signs) and a mathematically related public key (verifies) — RSA
+          for RS256, elliptic-curve for ES256.</td></tr>
+          <tr><td><strong>Can you publish the verification key in a public JWKS?</strong></td><td>No —
+          publishing the HMAC secret would hand out the ability to forge tokens, not just verify them.</td>
+          <td>Yes — the public key only lets you check a signature, never create a valid one. This is
+          exactly why the live Duende JWKS example above safely publishes <code>n</code>/<code>e</code>.</td></tr>
+          <tr><td><strong>Typical fit</strong></td><td>Closed systems where every verifier is trusted with
+          the secret (e.g. one service verifying its own tokens).</td><td>Open, multi-party systems — any
+          number of resource servers can verify tokens from one issuer without ever holding anything secret.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>This is also why the hand-built example earlier in this chapter used HS256 — easy to compute and
+    verify by hand with one shared secret, to make the base64url mechanics concrete — while the live demo
+    server's real tokens use RS256, the asymmetric choice that actually makes a public JWKS endpoint a safe
+    thing to run in production.</p>
+
+    <div class="callout callout--deep-dive">
+      <div class="callout-label">Deep dive — algorithm confusion</div>
+      <p>A verifier that blindly trusts the <code>alg</code> value out of an untrusted token's own header,
+      rather than enforcing an algorithm it already expects for that key, opens the door to a real, named
+      class of attack called <strong>algorithm confusion</strong> — for example, tricking an RS256 verifier
+      into treating a known-public RSA key's bytes as if they were an HMAC secret, letting an attacker forge
+      a validly-"signed" token with no private key at all. This chapter only names the problem; chapter 18
+      covers the defenses (pin the expected algorithm server-side, never read it from the token) in full.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Riverside Health</div>
+      <p>Riverside Health's patient portal verifies ID tokens from its hospital-wide identity provider using
+      RS256 and a cached JWKS response fetched at service startup. Because the system correctly caches by
+      `kid` and refreshes the JWKS periodically rather than once forever, a routine key rotation at the IdP
+      — new clinical-systems vendor onboarded, keys rotated as part of standard hygiene — doesn't require a
+      coordinated restart of every downstream service that verifies tokens; each service simply picks up the
+      new key the next time it refreshes its cached JWKS.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a secret, password, or anything meant to stay hidden inside a JWT payload claim, the
+      cause is someone confusing base64url encoding with encryption — a JWS payload is readable by anyone
+      who has the token.</li>
+      <li>If you see a verification outage right after a key rotation, the cause is usually an overlap
+      period that was too short, or skipped entirely, for the longest-lived token type still in use.</li>
+      <li>If you see a verifier configured to read its expected signing algorithm from the token's own
+      `alg` header rather than enforcing one server-side, the cause is a design vulnerable to algorithm
+      confusion — chapter 18 covers the fix.</li>
+      <li>If you see a symmetric HMAC secret published at a JWKS-style public endpoint "to make
+      verification easier for other teams," the cause is a misunderstanding of why RS256/ES256, not HS256,
+      is the family that was ever meant to be published that way.</li>
+      <li>If you see someone decode a JWT's signature segment expecting readable JSON, the cause is
+      forgetting that only the header and payload are JSON — the signature is opaque bytes, checked by
+      recomputation, never decoded for meaning.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>JWS (signing) proves integrity and authenticity but leaves the payload readable; JWE (encryption)
+      hides the payload. Most access and ID tokens in this course, and in most real deployments, are JWS.</li>
+      <li>A JWT is not automatically encrypted — base64url is a reversible encoding anyone can decode, not
+      a secret, and putting anything sensitive directly in a JWS payload claim exposes it to the bearer.</li>
+      <li>A JWT's compact serialization is exactly three base64url segments: header.payload.signature.</li>
+      <li>The header and payload decode to plain JSON; the signature segment is opaque bytes, verified by
+      recomputing it over the exact signing input (header_b64 + "." + payload_b64), never "decoded."</li>
+      <li>A JWK is a single key as JSON; a JWKS is a published set of them, usually reachable via the
+      discovery document's `jwks_uri` field — confirmed live on Duende's demo server during this chapter's
+      research.</li>
+      <li>A token's header `kid` tells a verifier which JWKS entry to use — the exact mechanism that makes
+      key rotation possible without immediately breaking every already-issued token.</li>
+      <li>Key rotation concretely means: publish the new key into JWKS before using it, sign new tokens
+      with it, keep the old key listed for an overlap period so already-issued tokens keep verifying, then
+      remove the old key once everything it signed has expired.</li>
+      <li>Symmetric (HS256) signing uses one shared secret for both signing and verifying and cannot be
+      safely published; asymmetric (RS256/ES256) signing lets a public verification key be published
+      openly, because it can check a signature but never forge one.</li>
+      <li>Algorithm confusion is a real, named attack class against verifiers that trust a token's own
+      `alg` header instead of enforcing an expected algorithm server-side — named here, defended against in
+      chapter 18.</li>
+      <li>Meridian Trust's response to a suspected key compromise — shortening the rotation overlap period
+      deliberately — is the same blast-radius-shrinking logic chapter 8 introduced, now applied to an
+      entire signing key rather than one token.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain to a junior engineer, without using the word "encrypted," exactly why a JWT's payload is
+      readable by anyone who has the token.</li>
+      <li>Walk through, step by step, what a verifier does with a token's `kid` header value from the
+      moment the token arrives to the moment the signature check completes.</li>
+      <li>Why does removing a signing key from JWKS too early — before every token it signed has expired
+      — cause an outage rather than a security improvement?</li>
+      <li>Why can an issuer safely publish an RS256 public key in a JWKS endpoint, but never an HS256
+      shared secret the same way?</li>
+      <li>If you were advising Meridian Trust during a suspected key-compromise incident, what trade-off
+      would you walk them through before they shorten the rotation overlap period?</li>
+      <li>A colleague says "let's just read the algorithm from the token's own header so we support
+      whatever the client sends." What's wrong with that design?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7515">RFC 7515 — JSON Web Signature (JWS)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7516">RFC 7516 — JSON Web Encryption (JWE)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7517">RFC 7517 — JSON Web Key (JWK)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7519">RFC 7519 — JSON Web Token (JWT)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc4648#section-5">RFC 4648 §5 — Base 64 Encoding with URL and Filename Safe Alphabet</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html">OWASP JSON Web Token Cheat Sheet (algorithm confusion and other JWT pitfalls)</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "jwt-and-crypto", 15);
+  });
+</script>
+</body>
+</html>

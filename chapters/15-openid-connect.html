@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenID Connect — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "openid-connect";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part III — Protocols</span>
+      <span class="badge minutes">~40 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>15. OpenID Connect</h1>
+    <p class="lede">Chapters 13 and 14 covered OAuth 2.0 in full — a framework for delegated
+    <em>authorization</em> (letting an application act on a resource owner's behalf) that deliberately
+    says nothing about who the resource owner <em>is</em>. OpenID Connect (OIDC) is the thin identity
+    layer built on top of OAuth 2.0 that answers exactly that question: it adds a standardized "who just
+    logged in" token, a way for a client to discover an identity provider's capabilities without
+    hardcoding them, and a standard way to ask for more profile data about the person who authenticated.
+    This chapter covers all three, using the same Duende demo IdentityServer and device-flow mechanism
+    chapter 14 used — real discovery JSON, a real device-flow token request, and the real UserInfo
+    endpoint's documented behavior.</p>
+
+    <h2>Why this matters</h2>
+    <p>Every "Login with Google," every SPA that shows "Welcome, Dr. Chen" immediately after redirecting
+    back from a login page, and every mobile app that reads a user's verified email without a second API
+    round trip is built on OIDC's ID token and UserInfo endpoint. An IAM specialist configuring Keycloak
+    as an OIDC provider spends real time deciding exactly two things this chapter prepares you for: which
+    scopes a client should request, and which claims should land in the ID token versus require a
+    UserInfo call — decisions with real performance and privacy consequences, not just checkbox-ticking.</p>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall from chapter 7</div>
+      <p>Chapter 7 defined <strong>Metadata</strong> as a machine-readable description of an IdP's or
+      SP/RP's endpoints and capabilities, exchanged so each side can configure itself correctly instead of
+      guessing — one of the three ingredients of <strong>Trust</strong> between an IdP and a relying
+      application, alongside signing keys and registered redirect URIs. OIDC's discovery document, below,
+      is the concrete, standardized, JSON implementation of exactly that idea. Where chapter 7 left
+      "metadata" and "trust" as general vocabulary that SAML (chapter 17) and OIDC would each implement
+      differently, this chapter is where OIDC's implementation gets filled in.</p>
+    </div>
+
+    <h2>OIDC in one sentence</h2>
+    <p>OpenID Connect reuses OAuth 2.0's authorization code, device, and other grants exactly as
+    chapters 13-14 described them, and adds three things on top: a new scope (<code>openid</code>) that
+    tells the authorization server "also issue an identity token," a new token type (the
+    <strong>ID token</strong>) carrying claims about who authenticated, and two supporting mechanisms —
+    the <strong>discovery document</strong> and the <strong>UserInfo endpoint</strong> — that make the
+    whole thing self-describing and extensible. Nothing about the OAuth mechanics you already know
+    changes; OIDC is additive, not a replacement protocol.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>"OAuth" and "OIDC" are not interchangeable, even though most real logins use both at once. OAuth
+      alone has no standardized concept of "who logged in" — an OAuth access token's only formally
+      guaranteed job is authorizing API calls. If an application needs to know the user's identity (name,
+      email, a stable subject identifier) rather than just needing to call an API on their behalf, it
+      needs the <code>openid</code> scope and an ID token, not just an OAuth access token.</p>
+    </div>
+
+    <h2>The discovery document</h2>
+    <p>Every OIDC provider publishes a single, well-known JSON document describing its own endpoints and
+    capabilities, at a fixed, predictable path: <code>/.well-known/openid-configuration</code>, appended
+    to the provider's issuer URL. A client that knows only the issuer URL can fetch this document once and
+    learn everything else it needs — which URL to redirect a user to for login, which URL to call to
+    exchange a code for tokens, which URL to call for UserInfo, which public keys to use to verify a
+    signature, and which scopes and claims the provider actually supports — instead of the integrator
+    hardcoding a half-dozen URLs by hand and hoping they never change.</p>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Live-verified, 2026-11-10</div>
+      <p>The following is the real response from
+      <code>curl https://demo.duendesoftware.com/.well-known/openid-configuration</code>, fetched for this
+      chapter, trimmed to the fields that matter here (the live document also lists CIBA, pushed
+      authorization requests, and DPoP support, which are out of scope for this chapter).</p>
+    </div>
+
+    <pre><code>{
+  "issuer": "https://demo.duendesoftware.com",
+  "authorization_endpoint": "https://demo.duendesoftware.com/connect/authorize",
+  "token_endpoint": "https://demo.duendesoftware.com/connect/token",
+  "userinfo_endpoint": "https://demo.duendesoftware.com/connect/userinfo",
+  "jwks_uri": "https://demo.duendesoftware.com/.well-known/openid-configuration/jwks",
+  "device_authorization_endpoint": "https://demo.duendesoftware.com/connect/deviceauthorization",
+  "revocation_endpoint": "https://demo.duendesoftware.com/connect/revocation",
+  "introspection_endpoint": "https://demo.duendesoftware.com/connect/introspect",
+  "end_session_endpoint": "https://demo.duendesoftware.com/connect/endsession",
+  "scopes_supported": ["openid", "profile", "email", "api", "offline_access", "..."],
+  "claims_supported": ["sub", "name", "family_name", "given_name", "middle_name",
+    "nickname", "preferred_username", "profile", "picture", "website", "gender",
+    "birthdate", "zoneinfo", "locale", "updated_at", "email", "email_verified"],
+  "response_types_supported": ["code", "token", "id_token", "id_token token", "..."],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "code_challenge_methods_supported": ["plain", "S256"]
+}</code></pre>
+
+    <div class="table-wrap">
+      <table>
+        <caption>What a client does with each discovery field</caption>
+        <thead><tr><th>Field</th><th>Lets the client learn</th></tr></thead>
+        <tbody>
+          <tr><td><code>issuer</code></td><td>The exact string that must appear in every token's
+          <code>iss</code> claim from this provider — a verifier checks this to prevent mix-up attacks
+          (chapter 18) where a token from a different, untrusted issuer is accepted by mistake.</td></tr>
+          <tr><td><code>authorization_endpoint</code></td><td>Where to redirect the browser to start a
+          login (the same endpoint chapter 13's authorization code flow and chapter 14's other grants
+          build requests against).</td></tr>
+          <tr><td><code>token_endpoint</code></td><td>Where to exchange a code/device code/refresh token
+          for actual tokens.</td></tr>
+          <tr><td><code>userinfo_endpoint</code></td><td>Where to call, with an access token, to fetch
+          claims about the authenticated user — this chapter's second lab target.</td></tr>
+          <tr><td><code>jwks_uri</code></td><td>Where to fetch the public keys needed to verify an ID
+          token's signature. The client never hardcodes a key; it fetches the current key set and looks
+          one up by <code>kid</code> — full mechanics in chapter 16, not duplicated here.</td></tr>
+          <tr><td><code>scopes_supported</code></td><td>Which scopes (standard and provider-specific) a
+          client is allowed to request at all — requesting an unsupported scope is simply ignored or
+          rejected, not silently granted.</td></tr>
+          <tr><td><code>claims_supported</code></td><td>Which claims the provider is willing to return, in
+          an ID token or from UserInfo, across all its supported scopes — the advertised ceiling of what
+          "asking for more data" can ever get a client.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 320" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The discovery document drives client configuration</title>
+        <desc id="d1">A client application box on the left makes one request to a well-known discovery
+        URL on an OIDC provider. The provider returns a JSON document. Four arrows fan out from that
+        document to four configured client behaviors: redirect the browser to the authorization endpoint
+        for login, exchange codes at the token endpoint, call the userinfo endpoint for profile claims,
+        and fetch signing keys from the jwks_uri to verify ID token signatures. A caption notes none of
+        these four URLs were hardcoded by the integrator.</desc>
+        <rect x="20" y="120" width="160" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="100" y="150" text-anchor="middle" class="diagram-label" font-weight="700">CLIENT APP</text>
+        <text x="100" y="170" text-anchor="middle" class="diagram-label-muted">knows only the issuer URL</text>
+
+        <line x1="180" y1="155" x2="260" y2="155" class="diagram-stroke" marker-end="url(#arrowd1)"/>
+        <text x="220" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">GET /.well-known/...</text>
+
+        <rect x="260" y="110" width="220" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="370" y="140" text-anchor="middle" class="diagram-label" font-weight="700">DISCOVERY DOCUMENT</text>
+        <text x="370" y="160" text-anchor="middle" class="diagram-label-muted">one JSON response</text>
+        <text x="370" y="178" text-anchor="middle" class="diagram-label-muted">(provider metadata, ch.7)</text>
+
+        <line x1="480" y1="125" x2="610" y2="40" class="diagram-stroke" marker-end="url(#arrowd1)"/>
+        <line x1="480" y1="145" x2="610" y2="105" class="diagram-stroke" marker-end="url(#arrowd1)"/>
+        <line x1="480" y1="165" x2="610" y2="200" class="diagram-stroke" marker-end="url(#arrowd1)"/>
+        <line x1="480" y1="185" x2="610" y2="265" class="diagram-stroke" marker-end="url(#arrowd1)"/>
+
+        <rect x="610" y="15" width="190" height="50" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="705" y="36" text-anchor="middle" class="diagram-label-muted" font-size="11">redirect for login</text>
+        <text x="705" y="52" text-anchor="middle" class="diagram-label-muted" font-size="10">authorization_endpoint</text>
+
+        <rect x="610" y="80" width="190" height="50" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="705" y="101" text-anchor="middle" class="diagram-label-muted" font-size="11">exchange code/device code</text>
+        <text x="705" y="117" text-anchor="middle" class="diagram-label-muted" font-size="10">token_endpoint</text>
+
+        <rect x="610" y="178" width="190" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="705" y="199" text-anchor="middle" class="diagram-label-muted" font-size="11">fetch profile claims</text>
+        <text x="705" y="215" text-anchor="middle" class="diagram-label-muted" font-size="10">userinfo_endpoint</text>
+
+        <rect x="610" y="243" width="190" height="50" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="705" y="264" text-anchor="middle" class="diagram-label-muted" font-size="11">verify ID token signature</text>
+        <text x="705" y="280" text-anchor="middle" class="diagram-label-muted" font-size="10">jwks_uri</text>
+
+        <text x="370" y="300" text-anchor="middle" class="diagram-label-muted">None of the four right-hand URLs were hardcoded by the integrator.</text>
+        <defs>
+          <marker id="arrowd1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 15.1 — One discovery request configures a client's authorization, token exchange, UserInfo, and key-verification behavior without hardcoding any of the four endpoints.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>Every Keycloak realm publishes its own discovery document at
+      <code>/realms/&lt;realm&gt;/.well-known/openid-configuration</code>. Which scopes and claims show up
+      in <code>scopes_supported</code>/<code>claims_supported</code> is driven directly by that realm's
+      configured client scopes and protocol mappers — the admin-console screen covered in depth in
+      chapter 24.</p>
+    </div>
+
+    <h2>The ID token: structure and claims</h2>
+    <p>When a client includes the <code>openid</code> scope in an authorization or token request, the
+    provider returns, alongside the usual OAuth access (and optionally refresh) token, a new token: the
+    <strong>ID token</strong>. Structurally, an ID token is a JWT — three base64url-encoded, dot-separated
+    parts (header, payload, signature) — but this chapter deliberately stops at the payload's claims. How
+    that signature is computed and verified, and how a verifier finds the right key via the
+    <code>jwks_uri</code> you just saw, is chapter 16's job in full; conflating the two is exactly the
+    beginner mistake chapter 16 names directly, so this chapter won't pre-empt it.</p>
+    <p>At the JSON-claims level, every ID token issued for a successful login carries roughly this shape
+    (field values below are representative of what a provider in this course's reach would issue — <em>see
+    the lab callout further down for exactly which of these claims are confirmed live for the demo
+    server versus standard by spec</em>):</p>
+
+    <pre><code>{
+  "iss": "https://demo.duendesoftware.com",
+  "sub": "88421113",
+  "aud": "device",
+  "exp": 1762760130,
+  "iat": 1762756530,
+  "auth_time": 1762756528,
+  "nonce": "n-0S6_WzA2Mj",
+
+  "name": "Bob Smith",
+  "given_name": "Bob",
+  "family_name": "Smith",
+  "preferred_username": "bob",
+  "email": "BobSmith@email.com",
+  "email_verified": true
+}</code></pre>
+
+    <div class="table-wrap">
+      <table>
+        <caption>ID token claims: required by spec vs. carried because of requested scopes</caption>
+        <thead><tr><th>Claim</th><th>Source</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>iss</code>, <code>sub</code>, <code>aud</code>, <code>exp</code>, <code>iat</code></td>
+          <td>Always present (OIDC Core §2)</td><td>Issuer, subject (stable user identifier), intended
+          audience (the client_id this token was issued for), expiry, and issued-at time — the minimum any
+          ID token must carry to be verifiable at all.</td></tr>
+          <tr><td><code>auth_time</code></td><td>Present if requested or if <code>max_age</code> was used</td>
+          <td>When the user actually authenticated — distinct from <code>iat</code> (when this particular
+          token was issued), which matters once refresh tokens are in play and a new ID token can be
+          minted well after the original login.</td></tr>
+          <tr><td><code>nonce</code></td><td>Echoed back only if the client sent one</td><td>A client-supplied
+          random value, echoed back unchanged, that lets the client verify this specific ID token was
+          issued in response to this specific request — a replay/mix-up defense covered in full in
+          chapter 18.</td></tr>
+          <tr><td><code>name</code>, <code>given_name</code>, <code>family_name</code>,
+          <code>preferred_username</code></td><td>Present only if <code>profile</code> scope was
+          requested</td><td>Standard profile claims (see Standard vs. custom scopes, below).</td></tr>
+          <tr><td><code>email</code>, <code>email_verified</code></td><td>Present only if
+          <code>email</code> scope was requested</td><td>Standard email claims — <code>email_verified</code>
+          specifically distinguishes "this address was confirmed via a verification flow" from merely
+          "a user typed this into a form."</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>An ID token is proof of <em>authentication</em> (who logged in, and when) — it is not an access
+      token, and a resource server should not accept an ID token in place of one just because both are
+      JWTs with similar-looking claims. The <code>aud</code> claim is exactly how a well-behaved verifier
+      tells them apart in practice: an ID token's audience is the client itself, not an API.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 800 260" role="img" aria-labelledby="t2 d2">
+        <title id="t2">ID token and UserInfo: two paths to the same claims</title>
+        <desc id="d2">A box labeled requested scopes (openid profile email) feeds into two parallel
+        paths. Path one: issued directly inside the ID token at token-exchange time, read locally by the
+        client with no extra network call, but only as fresh as the moment of login. Path two: fetched
+        live from the UserInfo endpoint using the access token, requiring a network call, but always
+        current. Both paths terminate in the same claim set: sub, name, preferred_username, email,
+        email_verified.</desc>
+        <rect x="300" y="15" width="200" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="400" y="36" text-anchor="middle" class="diagram-label" font-weight="700">REQUESTED SCOPES</text>
+        <text x="400" y="52" text-anchor="middle" class="diagram-label-muted" font-size="11">openid profile email</text>
+
+        <line x1="360" y1="65" x2="170" y2="110" class="diagram-stroke" marker-end="url(#arrowd2)"/>
+        <line x1="440" y1="65" x2="630" y2="110" class="diagram-stroke" marker-end="url(#arrowd2)"/>
+
+        <rect x="40" y="110" width="260" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="170" y="134" text-anchor="middle" class="diagram-label" font-weight="700">INSIDE THE ID TOKEN</text>
+        <text x="170" y="152" text-anchor="middle" class="diagram-label-muted" font-size="11">read locally, no network call</text>
+        <text x="170" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">fresh only as of login time</text>
+
+        <rect x="500" y="110" width="260" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="630" y="134" text-anchor="middle" class="diagram-label" font-weight="700">FROM USERINFO</text>
+        <text x="630" y="152" text-anchor="middle" class="diagram-label-muted" font-size="11">call with the access token</text>
+        <text x="630" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">always current, costs a round trip</text>
+
+        <line x1="170" y1="180" x2="370" y2="225" class="diagram-stroke" marker-end="url(#arrowd2)"/>
+        <line x1="630" y1="180" x2="430" y2="225" class="diagram-stroke" marker-end="url(#arrowd2)"/>
+
+        <rect x="250" y="222" width="300" height="30" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="400" y="242" text-anchor="middle" class="diagram-label-muted" font-size="11">same claim set either way: sub, name, preferred_username, email, email_verified</text>
+        <defs>
+          <marker id="arrowd2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 15.2 — The same requested scopes populate the same claims whichever path a client chooses; the trade-off is freshness versus an extra network call, not different data.</figcaption>
+    </figure>
+
+    <h2>The UserInfo endpoint</h2>
+    <p>Not every claim needs to ride inside the ID token. A client can instead call the discovery
+    document's <code>userinfo_endpoint</code> with a valid access token (one issued with at least the
+    <code>openid</code> scope) and get the same kind of standard claims back as a plain JSON object —
+    useful when the ID token was kept small, when claims might have changed since login and need a fresh
+    read, or when an access token is all a particular part of the system was handed.</p>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Hands-on lab: the device flow, reused from chapter 14</div>
+      <p>Chapter 14 already established that the <code>device</code> client on Duende's public demo
+      server is this course's primary "real tokens, real human step" lab, because the device authorization
+      grant needs no registered redirect_uri at all. This chapter reuses that exact mechanism — same
+      client, same grant — rather than inventing a second interactive flow, this time requesting
+      <code>openid profile email</code> so the resulting access token is valid at the UserInfo endpoint.
+      Everything below through step 4 was run live for this chapter on 2026-11-10; step 5 is what you run
+      yourself, because completing it requires a human clicking through a real login page in a real
+      browser — something this chapter's author (an agent, not a person with a browser) cannot do, and
+      additionally the agent's own tool-use policy blocked even a scripted attempt to submit the demo
+      server's test-account password on your behalf, as an extra safety layer worth knowing about rather
+      than quietly working around.</p>
+    </div>
+
+    <ol class="lab-steps">
+      <li><p>Request a device code, scoped for an identity lookup (<code>openid profile email</code>)
+      rather than chapter 14's bare <code>api</code> scope:</p>
+<pre><code>$ curl -s -X POST https://demo.duendesoftware.com/connect/deviceauthorization \
+    -d "client_id=device" \
+    -d "scope=openid profile email offline_access"</code></pre>
+      <p>Real response, captured live:</p>
+<pre><code>{
+  "device_code": "D0D8B1DFB1CD58F2BA25AE16682384F39B19DD6F5FFF29B6CD7510A924D9B753",
+  "user_code": "411569867",
+  "verification_uri": "https://demo.duendesoftware.com/device",
+  "verification_uri_complete": "https://demo.duendesoftware.com/device?userCode=411569867",
+  "expires_in": 300,
+  "interval": 5
+}</code></pre>
+      <p>(That specific <code>device_code</code>/<code>user_code</code> pair is already expired — codes
+      live 300 seconds and are single-use. Run the command yourself to get your own.)</p></li>
+
+      <li><p>Visiting <code>verification_uri_complete</code> live, unauthenticated, redirects to a plain
+      server-rendered login form (no JavaScript app, confirmed by fetching the page directly) at
+      <code>/Account/Login?ReturnUrl=/device?userCode=...</code>. This is the step that needs a human: open
+      that URL in a real browser, log in as one of the demo accounts visible on the live login page, and
+      approve the device's requested scopes when prompted.</p></li>
+
+      <li><p>While the human step in step 2 is still pending, polling the token endpoint returns a
+      specific, well-defined "come back later" error rather than a generic failure — confirmed live:</p>
+<pre><code>$ curl -s -X POST https://demo.duendesoftware.com/connect/token \
+    -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+    -d "device_code=&lt;your device_code&gt;" \
+    -d "client_id=device"
+
+HTTP/2 400
+{"error":"authorization_pending"}</code></pre>
+      <p>Poll again every <code>interval</code> seconds (5, per step 1's response) using the same
+      <code>device_code</code>. Once you complete step 2 in your browser, the next poll returns
+      <code>200</code> with real <code>access_token</code>, <code>id_token</code>, and (because
+      <code>offline_access</code> was requested) <code>refresh_token</code> fields — this is the exact
+      mechanism chapter 14 walks through for the access-token side; the new part here is the
+      <code>id_token</code>, decodable by hand (base64url, no library needed — try it, and see chapter 16
+      for the full signature-verification mechanics this chapter skips).</p></li>
+
+      <li><p>The UserInfo endpoint's behavior with no token, or an invalid one, is confirmed live — both
+      correctly return <code>401</code> with an RFC 6750-style <code>WWW-Authenticate</code> header
+      naming the problem, rather than a generic error or, worse, silently returning data:</p>
+<pre><code>$ curl -s -i https://demo.duendesoftware.com/connect/userinfo
+HTTP/2 401
+www-authenticate: Bearer realm="IdentityServer",error="invalid_token"
+
+$ curl -s -i https://demo.duendesoftware.com/connect/userinfo \
+    -H "Authorization: Bearer not-a-real-token"
+HTTP/2 401
+www-authenticate: Bearer realm="IdentityServer",error="invalid_token"</code></pre></li>
+
+      <li><p><strong>Run this yourself</strong> once you have a real access token from step 3 (one
+      requested with the <code>openid profile email</code> scope, so it's accepted here):</p>
+<pre><code>$ curl -s https://demo.duendesoftware.com/connect/userinfo \
+    -H "Authorization: Bearer &lt;your real access_token&gt;"</code></pre>
+      <p>Per the discovery document's <code>claims_supported</code> list confirmed in this chapter and
+      OIDC Core's standard claims set, expect a JSON object shaped like:</p>
+<pre><code>{
+  "sub": "88421113",
+  "name": "Bob Smith",
+  "given_name": "Bob",
+  "family_name": "Smith",
+  "preferred_username": "bob",
+  "email": "BobSmith@email.com",
+  "email_verified": true
+}</code></pre>
+      <p>Note the overlap with the ID token payload shown earlier — both are populated from the same
+      underlying claims, filtered by the same requested scopes; UserInfo is a second way to ask for the
+      same data, not a different dataset.</p></li>
+    </ol>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>If you see a UserInfo call fail with <code>401 invalid_token</code>, the two most common causes
+      in practice are: the access token simply expired (they're short-lived by design — chapter 8), or the
+      token was issued without the <code>openid</code> scope at all, so it's a perfectly valid OAuth
+      access token that was never entitled to call an OIDC-specific endpoint in the first place. Check
+      which scopes the original token request actually included before assuming the token is broken.</p>
+    </div>
+
+    <h2>Standard vs. custom scopes and claims</h2>
+    <p>OIDC defines a small set of standard scopes, each unlocking a fixed bundle of standard claims —
+    confirmed directly against the demo server's own <code>scopes_supported</code>/<code>claims_supported</code>
+    fields above:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Standard OIDC scopes and the claims they unlock</caption>
+        <thead><tr><th>Scope</th><th>Required?</th><th>Unlocks these standard claims</th></tr></thead>
+        <tbody>
+          <tr><td><code>openid</code></td><td>Yes — this is what makes a request an OIDC request at all,
+          rather than plain OAuth</td><td><code>sub</code> (and the other always-present ID-token claims:
+          <code>iss</code>, <code>aud</code>, <code>exp</code>, <code>iat</code>)</td></tr>
+          <tr><td><code>profile</code></td><td>No</td><td><code>name</code>, <code>given_name</code>,
+          <code>family_name</code>, <code>middle_name</code>, <code>nickname</code>,
+          <code>preferred_username</code>, <code>profile</code>, <code>picture</code>, <code>website</code>,
+          <code>gender</code>, <code>birthdate</code>, <code>zoneinfo</code>, <code>locale</code>,
+          <code>updated_at</code></td></tr>
+          <tr><td><code>email</code></td><td>No</td><td><code>email</code>,
+          <code>email_verified</code></td></tr>
+          <tr><td><code>offline_access</code></td><td>No</td><td>Not a claim — it's what makes the
+          token response include a refresh token at all (chapter 14/8), listed here only because it
+          appears alongside the claims-bearing scopes above in real requests.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>A real application almost always needs more than this fixed bundle — a tenant ID, a subscription
+    tier, an internal employee number. OIDC doesn't forbid this: a provider can define and advertise
+    <strong>custom scopes and custom claims</strong> of its own, as long as it's honest about them in its
+    own <code>claims_supported</code> list. The demo server used for this lab doesn't expose any (its
+    <code>claims_supported</code> list, shown earlier, is exactly the standard set) — a concrete example of
+    what a custom claim looks like in practice is deferred to the "In Keycloak" callout below, since
+    that's exactly what a Keycloak protocol mapper is for.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 800 300" role="img" aria-labelledby="t3 d3">
+        <title id="t3">Standard scopes unlock fixed claim bundles; custom claims need a provider-side mapper</title>
+        <desc id="d3">Three standard scope boxes — openid, profile, email — each point to their own
+        bundle of standard claims, all drawn from the provider's published claims_supported list. A
+        fourth box, a custom claim such as tenant_id, is drawn separately with a dashed border and a note
+        that it does not come from any standard scope; instead it requires the provider to define a
+        custom claim and advertise it, which in Keycloak means configuring a protocol mapper on a client
+        scope.</desc>
+        <rect x="20" y="30" width="150" height="40" rx="6" class="diagram-fill-accent diagram-stroke"/>
+        <text x="95" y="55" text-anchor="middle" class="diagram-label" font-weight="700">openid</text>
+        <line x1="170" y1="50" x2="260" y2="50" class="diagram-stroke" marker-end="url(#arrowd3)"/>
+        <rect x="260" y="25" width="220" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="370" y="46" text-anchor="middle" class="diagram-label-muted" font-size="11">sub, iss, aud, exp, iat</text>
+        <text x="370" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">always present</text>
+
+        <rect x="20" y="100" width="150" height="40" rx="6" class="diagram-fill-info diagram-stroke"/>
+        <text x="95" y="125" text-anchor="middle" class="diagram-label" font-weight="700">profile</text>
+        <line x1="170" y1="120" x2="260" y2="120" class="diagram-stroke" marker-end="url(#arrowd3)"/>
+        <rect x="260" y="95" width="400" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="460" y="116" text-anchor="middle" class="diagram-label-muted" font-size="11">name, given_name, family_name, preferred_username, picture, locale...</text>
+        <text x="460" y="132" text-anchor="middle" class="diagram-label-muted" font-size="10">per claims_supported, live-confirmed</text>
+
+        <rect x="20" y="170" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"/>
+        <text x="95" y="195" text-anchor="middle" class="diagram-label" font-weight="700">email</text>
+        <line x1="170" y1="190" x2="260" y2="190" class="diagram-stroke" marker-end="url(#arrowd3)"/>
+        <rect x="260" y="165" width="220" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+        <text x="370" y="186" text-anchor="middle" class="diagram-label-muted" font-size="11">email, email_verified</text>
+
+        <rect x="20" y="245" width="150" height="40" rx="6" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5,3"/>
+        <text x="95" y="270" text-anchor="middle" class="diagram-label" font-weight="700">custom claim</text>
+        <line x1="170" y1="265" x2="260" y2="265" class="diagram-stroke" stroke-dasharray="5,3" marker-end="url(#arrowd3)"/>
+        <rect x="260" y="240" width="420" height="50" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="5,3"/>
+        <text x="470" y="261" text-anchor="middle" class="diagram-label-muted" font-size="11">e.g. tenant_id — not in this demo server's claims_supported</text>
+        <text x="470" y="277" text-anchor="middle" class="diagram-label-muted" font-size="10">needs a provider-defined, advertised custom claim (Keycloak: a protocol mapper)</text>
+        <defs>
+          <marker id="arrowd3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 15.3 — Standard scopes unlock a fixed, advertised bundle of claims; a claim outside that bundle needs the provider to define and advertise it, not a different client-side request.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>A Keycloak client scope bundles a set of protocol mappers, each one deciding what one claim gets
+      added to an ID token, an access token, or a UserInfo response, and from where (a user attribute, a
+      hardcoded value, a role name). Northwind Apps adding a <code>tenant_id</code> claim so every
+      connected customer application can tell which tenant a logged-in user belongs to without a second
+      API call is exactly this mechanism — the admin-console screen for configuring it is covered in
+      chapter 24.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Riverside Health</div>
+      <p>Riverside Health's patient portal requests the <code>openid profile email</code> scopes when a
+      patient logs in. Once the browser returns from login, the portal decodes the <strong>ID token's
+      claims directly</strong> — no second network call — and uses <code>preferred_username</code> to
+      greet the patient by their chosen name, and <code>email_verified</code> to decide, in real time,
+      whether to show a "please verify your email to enable appointment reminders" banner. Because both
+      claims already rode inside the ID token from the <code>profile</code> and <code>email</code> scopes
+      the portal requested, there's nothing further to fetch: the portal's home page can render
+      immediately after the redirect completes, which matters for a patient population that skews older
+      and less tolerant of a slow, multi-step login. If the portal later needs a claim it didn't request
+      at login time, or needs to re-check whether an email was verified <em>since</em> login (say, the
+      patient just clicked a verification link in another tab), that's exactly when it would fall back to
+      a live UserInfo call instead of trusting a potentially stale ID token.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see a client hardcoding an IdP's authorization/token/UserInfo URLs instead of fetching
+      the discovery document once at startup, the cause is skipping the one mechanism OIDC provides
+      specifically so those URLs never need to be hardcoded or manually kept in sync when a provider
+      changes them.</li>
+      <li>If you see code that treats an ID token as if it were an access token (e.g. sending it to a
+      resource server's API), the cause is missing that an ID token's <code>aud</code> claim names the
+      client itself, not an API — it was never meant to authorize anything beyond proving who logged in.</li>
+      <li>If you see a UserInfo call fail with <code>invalid_token</code>, check which scopes the original
+      token request included before assuming the token or the endpoint is broken — a token issued without
+      <code>openid</code> simply never earns UserInfo access.</li>
+      <li>If you see an application re-requesting the full <code>profile</code> scope just to get one
+      extra field it doesn't otherwise use, the cause is not understanding that <code>claims_supported</code>
+      is a fixed, advertised ceiling — if a needed claim isn't in that list at all, no scope combination
+      will ever produce it, and the real fix is a custom claim/protocol mapper on the provider side, not a
+      different scope request.</li>
+      <li>If you see an integration confusing "the user is logged in" with "the user's email is verified,"
+      the cause is skipping the <code>email_verified</code> claim specifically — OIDC deliberately
+      separates "this person authenticated" from "this specific contact detail was confirmed," and a
+      portal that conflates the two can send sensitive notifications to an unconfirmed address.</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>OpenID Connect is an identity layer added on top of OAuth 2.0, not a replacement for it — the
+      same grants from chapters 13-14 are reused unchanged; OIDC adds the <code>openid</code> scope, the
+      ID token, discovery, and UserInfo.</li>
+      <li>The discovery document (<code>/.well-known/openid-configuration</code>) is the concrete, JSON
+      implementation of chapter 7's general "metadata" and "trust" concepts, letting a client learn an
+      IdP's endpoints and capabilities without hardcoding them.</li>
+      <li>An ID token's always-present claims (<code>iss</code>, <code>sub</code>, <code>aud</code>,
+      <code>exp</code>, <code>iat</code>) are what make it independently verifiable; <code>profile</code>-
+      and <code>email</code>-scoped claims are only present if those scopes were actually requested.</li>
+      <li>An ID token proves authentication, not authorization — its audience is the client itself, never
+      a resource server, and it should never be sent to an API in place of an access token.</li>
+      <li>The UserInfo endpoint returns the same kind of standard claims as the ID token, fetched live with
+      a valid access token, rather than decoded from a token the client is already holding — useful when
+      claims might have changed since login or when only an access token was available.</li>
+      <li><code>scopes_supported</code> and <code>claims_supported</code> in the discovery document are an
+      advertised ceiling: a scope that isn't listed won't be honored, and a claim that isn't listed can
+      never be produced by any scope combination.</li>
+      <li>Custom claims (a tenant ID, a subscription tier) are added by the provider, not invented by the
+      client — in Keycloak, this is exactly what a client scope's protocol mappers configure.</li>
+      <li><code>email_verified</code> is deliberately a separate claim from the mere presence of
+      <code>email</code> — treating "logged in" as proof an email address was confirmed is a real,
+      consequential mistake, not a pedantic distinction.</li>
+      <li>This chapter's lab reused chapter 14's device-flow mechanism rather than inventing a second
+      interactive flow — the same device client, now requesting <code>openid profile email</code> so the
+      resulting access token is valid at the UserInfo endpoint.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain, to someone who only knows OAuth 2.0 and nothing else, what specifically OIDC adds on
+      top — and name one thing that does <em>not</em> change between a plain OAuth flow and an OIDC flow.</li>
+      <li>Walk through what a client does with a discovery document's <code>jwks_uri</code> field, and
+      explain why hardcoding that URL instead of discovering it would eventually cause a real outage.</li>
+      <li>A resource server receives what looks like a valid JWT and is tempted to just check its signature
+      and accept it as proof of API authorization. What single claim should make it reject the token, and
+      why?</li>
+      <li>Give one concrete reason an application might call UserInfo live instead of relying on claims
+      already present in an ID token it's holding.</li>
+      <li>Riverside Health's patient portal currently requests <code>openid profile email</code>. If a new
+      requirement asks the portal to show a patient's insurance-plan tier on login, walk through what would
+      actually need to change on the Keycloak side (chapter 24) versus what would need to change in the
+      portal's own code.</li>
+      <li>Why is it meaningful that <code>claims_supported</code> is published in the discovery document at
+      all, rather than a client just trying scopes and seeing what comes back?</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0 — ID token and UserInfo endpoint definitions</a></li>
+      <li><a href="https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims">OpenID Connect Core 1.0 §5.1 — Standard Claims</a></li>
+      <li><a href="https://openid.net/specs/openid-connect-discovery-1_0.html">OpenID Connect Discovery 1.0 — the <code>/.well-known/openid-configuration</code> document</a></li>
+      <li><a href="https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata">OpenID Connect Discovery 1.0 §3 — Provider Metadata fields</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749 — The OAuth 2.0 Authorization Framework (the layer OIDC builds on)</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_client_scopes">Keycloak Server Administration Guide — Client Scopes</a></li>
+      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_protocol-mappers">Keycloak Server Administration Guide — Protocol Mappers</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "openid-connect", 15);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAuth 2.0 Core — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "oauth2-core";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <div class="chapter-meta">
+      <span class="badge">Part III — Protocols</span>
+      <span class="badge minutes">~45 min</span>
+      <span class="badge lab">Hands-on lab</span>
+    </div>
+    <h1>13. OAuth 2.0 Core</h1>
+    <p class="lede">Chapter 7 gave you the role vocabulary for SSO and federation in the abstract — IdP,
+    SP, RP — and a one-line promise that "full mechanics in chapter 13." This is that chapter. OAuth 2.0
+    is the protocol most modern SSO, API access, and "login with X" integrations are actually built on,
+    and it brings its own role vocabulary that only partly overlaps with chapter 7's. You'll get the four
+    OAuth roles, a survey of grant types, the authorization code flow in full mechanical detail with a
+    real sequence diagram, a PKCE pair you compute yourself and verify by hand, and a hands-on lab against
+    a live, public OAuth2/OIDC server — including a genuinely surprising, live-verified finding about what
+    happens when redirect URI validation isn't enforced the way the spec requires.</p>
+
+    <h2>Why this matters</h2>
+    <p>Almost every "Sign in with Google," every mobile app that talks to a backend API, and — starting
+    chapter 20 — every Keycloak client registration you will ever configure, runs on OAuth 2.0 underneath.
+    An IAM specialist who can't read an authorization code exchange, explain what PKCE actually defends
+    against, or say precisely why a redirect URI has to match exactly rather than loosely, cannot debug a
+    broken login integration, review a client registration for security problems, or explain to a security
+    team why a given mobile app's OAuth setup is or isn't safe. This chapter is also the one place in the
+    course where you'll watch a real public authorization server <em>fail</em> to enforce part of the
+    spec correctly, live, which turns out to be one of the clearest ways to learn why that part of the spec
+    exists at all.</p>
+
+    <h2>The four OAuth roles</h2>
+    <p>OAuth 2.0 (<a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749</a>) defines four roles. They
+    are not the same four names chapter 7 gave you, and getting the mapping precisely right — including
+    where it <em>doesn't</em> hold — matters more than memorizing the list.</p>
+    <ul>
+      <li><strong>Resource Owner</strong> — the entity capable of granting access to a protected resource.
+      In the overwhelming majority of real scenarios, this is a human end user. (OAuth allows the resource
+      owner to be a non-human entity too, but that's unusual in practice.)</li>
+      <li><strong>Client</strong> — the application requesting access to a protected resource on the
+      resource owner's behalf. This is the OAuth term for what you'd colloquially call "the app" —
+      Northwind's SPA, a mobile app, a backend service.</li>
+      <li><strong>Authorization Server</strong> — the server that authenticates the resource owner, obtains
+      their authorization, and issues access tokens to the client after doing so.</li>
+      <li><strong>Resource Server</strong> — the server hosting the protected resources, capable of
+      accepting and responding to requests using access tokens. In plain language: an API.</li>
+    </ul>
+
+    <div class="callout callout--concept-recall">
+      <div class="callout-label">Recall from chapter 7 — and where the mapping breaks</div>
+      <p>Chapter 7 gave you IdP (Identity Provider) and SP/RP (Service Provider / Relying Party) as the
+      two roles in an SSO/federation relationship. OAuth's <strong>Authorization Server is roughly the IdP
+      role</strong> — it's the system that authenticates the resource owner and vouches for the result to
+      someone else. But the mapping is not a clean 1:1 rename, and treating it as one will cause real
+      confusion later:</p>
+      <ul>
+        <li><strong>OAuth has no name for the end user as a role in the IdP/SP vocabulary</strong> — chapter
+        7 never needed to name "the person being authenticated" as a formal role, because SSO/federation is
+        about the relationship between IdP and SP/RP. OAuth, by contrast, names the end user directly:
+        <strong>Resource Owner</strong>. This exists because OAuth is fundamentally a delegation protocol
+        — it's about a resource owner granting a client limited access to something the resource owner
+        controls — not purely an authentication handshake between two systems.</li>
+        <li><strong>OAuth's Resource Server has no equivalent at all in chapter 7's vocabulary.</strong> SAML
+        and plain OIDC brokering/federation never needed to name "a protected API" as a role, because
+        those patterns are about logging a user into an application, not about a client calling an API on
+        a user's behalf. Chapter 15 will show that OIDC — which is built as a layer on top of OAuth — adds
+        back an ID-token-and-UserInfo pattern that makes the RP/Client and Resource-Server-caller roles
+        blur together in the common "login + call your own backend" case.</li>
+        <li><strong>OAuth's Client is not quite the same shape as SP/RP.</strong> An SP/RP authenticates a
+        user and then runs its own session for them. An OAuth Client requests and holds tokens so it can
+        call APIs — authenticating the end user is OpenID Connect's job (chapter 15), layered on top of
+        plain OAuth, not something OAuth itself promises to do.</li>
+      </ul>
+      <p>The short version: reuse "Authorization Server ≈ IdP" as a memory aid, but don't try to force
+      Resource Owner or Resource Server into chapter 7's two-role picture — they're genuinely new concepts
+      OAuth introduces because it's solving a different problem (delegated, scoped access to resources)
+      than SSO/federation alone (authenticating a user once, trusted by multiple apps).</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 440" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The four OAuth roles and how they connect</title>
+        <desc id="d1">Four boxes: Resource Owner top left, Client top right, Authorization Server bottom
+        left, Resource Server bottom right. Arrow A from Resource Owner to Client labeled "A: resource
+        owner authorizes the client". Arrow B from Client to Authorization Server labeled "B: client
+        requests a token, presenting the authorization grant". Arrow C from Authorization Server back to
+        Client labeled "C: authorization server issues an access token". Arrow D from Client to Resource
+        Server labeled "D: client presents the access token". Arrow E from Resource Server back to Client
+        labeled "E: resource server serves the protected resource".</desc>
+
+        <rect x="40" y="40" width="220" height="80" rx="10" class="diagram-fill-accent diagram-stroke"/>
+        <text x="150" y="75" text-anchor="middle" class="diagram-label" font-weight="700">RESOURCE OWNER</text>
+        <text x="150" y="95" text-anchor="middle" class="diagram-label-muted">Usually: the end user</text>
+
+        <rect x="520" y="40" width="220" height="80" rx="10" class="diagram-fill-info diagram-stroke"/>
+        <text x="630" y="75" text-anchor="middle" class="diagram-label" font-weight="700">CLIENT</text>
+        <text x="630" y="95" text-anchor="middle" class="diagram-label-muted">The application ("the app")</text>
+
+        <rect x="40" y="310" width="260" height="90" rx="10" class="diagram-fill-success diagram-stroke"/>
+        <text x="170" y="345" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="170" y="365" text-anchor="middle" class="diagram-label-muted">Authenticates the owner,</text>
+        <text x="170" y="382" text-anchor="middle" class="diagram-label-muted">issues access tokens</text>
+
+        <rect x="500" y="310" width="260" height="90" rx="10" class="diagram-fill-warning diagram-stroke"/>
+        <text x="630" y="345" text-anchor="middle" class="diagram-label" font-weight="700">RESOURCE SERVER</text>
+        <text x="630" y="365" text-anchor="middle" class="diagram-label-muted">An API — accepts requests</text>
+        <text x="630" y="382" text-anchor="middle" class="diagram-label-muted">bearing an access token</text>
+
+        <line x1="260" y1="80" x2="520" y2="80" class="diagram-stroke" marker-end="url(#arrowA)"/>
+        <text x="390" y="65" text-anchor="middle" class="diagram-label-muted">A: authorizes the client</text>
+
+        <line x1="560" y1="120" x2="220" y2="310" class="diagram-stroke" marker-end="url(#arrowA)"/>
+        <text x="330" y="210" text-anchor="middle" class="diagram-label-muted">B: requests token,</text>
+        <text x="330" y="226" text-anchor="middle" class="diagram-label-muted">presents grant</text>
+
+        <line x1="300" y1="355" x2="595" y2="150" class="diagram-stroke" marker-end="url(#arrowA)"/>
+        <text x="500" y="260" text-anchor="middle" class="diagram-label-muted">C: issues access token</text>
+
+        <line x1="650" y1="120" x2="650" y2="310" class="diagram-stroke" marker-end="url(#arrowA)"/>
+        <text x="720" y="220" text-anchor="middle" class="diagram-label-muted">D: presents token</text>
+
+        <line x1="590" y1="310" x2="610" y2="120" class="diagram-stroke" marker-end="url(#arrowA)" stroke-dasharray="5,4"/>
+        <text x="540" y="180" text-anchor="middle" class="diagram-label-muted">E: serves resource</text>
+
+        <defs>
+          <marker id="arrowA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 13.1 — The four OAuth roles (RFC 6749's abstract protocol flow). Note there is no
+      role here named "IdP" — Authorization Server fills that function, but Resource Owner and Resource
+      Server are OAuth-specific roles with no chapter-7 equivalent.</figcaption>
+    </figure>
+
+    <div class="callout callout--in-keycloak">
+      <div class="callout-label">In Keycloak</div>
+      <p>A Keycloak <strong>realm</strong> plays the Authorization Server role. A registered
+      <strong>client</strong> in that realm is the OAuth Client. The Resource Owner is whichever user logs
+      in. Keycloak doesn't run your Resource Server for you — that's your own API, configured to validate
+      tokens Keycloak issued — but Keycloak client scopes can describe what that API expects. Full client
+      registration screen in chapter 24.</p>
+    </div>
+
+    <h2>Grant types: a survey (depth comes later)</h2>
+    <p>A <strong>grant type</strong> is a defined way for a client to obtain an access token. OAuth defines
+    several; this chapter covers the authorization code grant in full mechanical detail below (it's the
+    one every interactive, browser-based login flow uses). Client credentials and device code get a
+    one-line preview here — chapter 14 is where they get the same full treatment.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>OAuth 2.0 grant types, at a glance</caption>
+        <thead><tr><th>Grant type</th><th>What it's for</th><th>Needs a browser?</th><th>Depth</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Authorization code (+ PKCE)</strong></td><td>A human logs in through a browser;
+          the client ends up with tokens without ever seeing the user's credentials.</td><td>Yes</td>
+          <td>This chapter, in full.</td></tr>
+          <tr><td><strong>Client credentials</strong></td><td>Machine-to-machine: the client authenticates
+          as itself, with no resource owner involved at all.</td><td>No</td><td>Preview here; full depth
+          chapter 14.</td></tr>
+          <tr><td><strong>Device code</strong></td><td>A device with no usable browser (a CLI tool, a
+          smart-TV app) shows a code; the user approves it on a second device that does have a
+          browser.</td><td>Indirectly (on a second device)</td><td>Preview here; full depth and this
+          course's primary "real human step" lab, chapter 14.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — two grant types you should recognize, but not use</div>
+      <p><strong>Resource Owner Password Credentials (ROPC)</strong> has the client collect the user's
+      username and password directly and trade them for a token in one request — no redirect, no
+      Authorization Server login page at all. <strong>Implicit</strong> returns an access token directly in
+      the browser's URL fragment, skipping the code-exchange step entirely. Both exist in the original RFC
+      6749 and both are now considered legacy/discouraged by current best practice — ROPC because it trains
+      users to type passwords into arbitrary client apps (defeating the entire point of centralizing
+      authentication) and defeats the Authorization Server's ability to add MFA or step-up checks of its
+      own; Implicit because an access token sitting in a URL fragment is exposed to browser history, referrer
+      leakage, and any script that can read the current URL, with no code-exchange step as a buffer. Chapter
+      18 covers the full security reasoning (and current OAuth 2.0 Security Best Current Practice guidance)
+      behind retiring both. If you see either one in a real client registration today, that's worth a second
+      look, not a shrug.</p>
+    </div>
+
+    <h2>The authorization code flow, in full mechanical detail</h2>
+    <p>This is the flow behind essentially every "click a login button, get redirected, log in, land back
+    in the app, now logged in" experience. Four phases:</p>
+    <ol>
+      <li>The client redirects the browser to the Authorization Server's <strong>authorization endpoint</strong>
+      (<code>/authorize</code>), including which client is asking, what scopes it wants, and where to send
+      the browser back to (<code>redirect_uri</code>).</li>
+      <li>The user authenticates (and, depending on configuration, consents) directly with the Authorization
+      Server — the client never sees the password.</li>
+      <li>The Authorization Server redirects the browser back to the client's registered <code>redirect_uri</code>,
+      with a short-lived, single-use <strong>authorization code</strong> attached as a query parameter.</li>
+      <li>The client — this part happens server-to-server, not via the browser — exchanges that code at the
+      <strong>token endpoint</strong> (<code>/token</code>) for an access token (and, if requested, an ID
+      token and refresh token).</li>
+    </ol>
+    <p>The code itself is deliberately not very useful on its own: it's short-lived (usually a window of
+    seconds to a few minutes), single-use, and bound to the specific client and redirect URI that requested
+    it. The whole point of the extra round trip through the code is that the browser — the least trustworthy
+    place to put a long-lived, powerful access token — only ever sees the short-lived code, never the
+    access token itself.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 760 620" role="img" aria-labelledby="t2 d2">
+        <title id="t2">Authorization code flow with PKCE — full sequence</title>
+        <desc id="d2">A sequence diagram with three lifelines: Browser, Client App, and Authorization
+        Server. Step 0: the client generates a code_verifier and derives a code_challenge via SHA-256 plus
+        base64url encoding, before any network call. Step 1: the client redirects the browser to the
+        authorization server's authorize endpoint, including client_id, redirect_uri, scope,
+        code_challenge, and code_challenge_method=S256. Step 2: the authorization server shows a login
+        page directly to the browser; the user authenticates there, not through the client. Step 3: the
+        authorization server redirects the browser back to the client's redirect_uri with a short-lived
+        authorization code and the original state value. Step 4: the browser delivers that code to the
+        client by loading the redirect_uri. Step 5: the client, server-to-server, posts to the token
+        endpoint with the authorization code and the original code_verifier, not the challenge. Step 6:
+        the authorization server recomputes the challenge from the verifier, checks it matches the one
+        from step 1, and if so returns an access token and ID token directly to the client — never
+        exposed to the browser.</desc>
+
+        <line x1="110" y1="70" x2="110" y2="580" class="diagram-stroke"/>
+        <line x1="380" y1="70" x2="380" y2="580" class="diagram-stroke"/>
+        <line x1="650" y1="70" x2="650" y2="580" class="diagram-stroke"/>
+
+        <rect x="30" y="20" width="160" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="110" y="50" text-anchor="middle" class="diagram-label" font-weight="700">BROWSER</text>
+
+        <rect x="290" y="20" width="180" height="50" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="380" y="50" text-anchor="middle" class="diagram-label" font-weight="700">CLIENT APP</text>
+
+        <rect x="550" y="20" width="200" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="650" y="45" text-anchor="middle" class="diagram-label" font-weight="700">AUTHORIZATION SERVER</text>
+        <text x="650" y="62" text-anchor="middle" class="diagram-label-muted">/authorize and /token</text>
+
+        <rect x="290" y="90" width="180" height="46" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="380" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">0. generate code_verifier,</text>
+        <text x="380" y="122" text-anchor="middle" class="diagram-label-muted" font-size="11">derive code_challenge (S256)</text>
+
+        <line x1="380" y1="160" x2="110" y2="160" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="245" y="150" text-anchor="middle" class="diagram-label-muted" font-size="11">1. redirect to /authorize</text>
+        <text x="245" y="178" text-anchor="middle" class="diagram-label-muted" font-size="10">(client_id, redirect_uri, scope,</text>
+        <text x="245" y="191" text-anchor="middle" class="diagram-label-muted" font-size="10">code_challenge, code_challenge_method=S256)</text>
+
+        <line x1="110" y1="220" x2="650" y2="220" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="380" y="210" text-anchor="middle" class="diagram-label-muted" font-size="11">browser follows redirect to the auth server</text>
+
+        <line x1="650" y1="260" x2="110" y2="260" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="380" y="250" text-anchor="middle" class="diagram-label-muted" font-size="11">2. login page served directly to the browser</text>
+        <text x="380" y="275" text-anchor="middle" class="diagram-label-muted" font-size="10">user authenticates here — client never sees the password</text>
+
+        <line x1="110" y1="300" x2="650" y2="300" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="380" y="293" text-anchor="middle" class="diagram-label-muted" font-size="10">user submits credentials</text>
+
+        <line x1="650" y1="345" x2="110" y2="345" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="380" y="335" text-anchor="middle" class="diagram-label-muted" font-size="11">3. redirect to redirect_uri?code=...&amp;state=...</text>
+
+        <line x1="110" y1="385" x2="380" y2="385" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="245" y="375" text-anchor="middle" class="diagram-label-muted" font-size="11">4. browser loads redirect_uri, delivers code to client</text>
+
+        <line x1="380" y1="430" x2="650" y2="430" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="515" y="418" text-anchor="middle" class="diagram-label-muted" font-size="11">5. POST /token (server-to-server)</text>
+        <text x="515" y="446" text-anchor="middle" class="diagram-label-muted" font-size="10">code + code_verifier (not the challenge)</text>
+
+        <rect x="560" y="465" width="180" height="46" rx="6" class="diagram-fill-warning diagram-stroke"/>
+        <text x="650" y="483" text-anchor="middle" class="diagram-label-muted" font-size="11">recompute SHA-256(verifier),</text>
+        <text x="650" y="497" text-anchor="middle" class="diagram-label-muted" font-size="11">compare to stored challenge</text>
+
+        <line x1="650" y1="535" x2="380" y2="535" class="diagram-stroke" marker-end="url(#arrowB)"/>
+        <text x="515" y="525" text-anchor="middle" class="diagram-label-muted" font-size="11">6. access_token + id_token — straight to the client,</text>
+        <text x="515" y="553" text-anchor="middle" class="diagram-label-muted" font-size="10">never exposed in the browser's address bar</text>
+
+        <defs>
+          <marker id="arrowB" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 13.2 — Authorization code flow with PKCE, step by step. The access token is only
+      ever handed to the client over a direct, server-to-server channel (step 6) — the browser only ever
+      sees the short-lived code.</figcaption>
+    </figure>
+
+    <h2>PKCE: protecting the code exchange</h2>
+    <p><strong>PKCE</strong> (Proof Key for Code Exchange, <a href="https://www.rfc-editor.org/rfc/rfc7636">RFC
+    7636</a>, pronounced "pixy") closes a specific gap: if a malicious app on the same device, or a network
+    observer, manages to intercept the authorization code in step 3/4 of Figure 13.2, could it redeem that
+    code for tokens itself? Without PKCE, yes — the code alone is enough. PKCE adds a second secret the
+    client itself generates and never sends to the Authorization Server in plaintext until the very last
+    step:</p>
+    <ul>
+      <li><strong><code>code_verifier</code></strong> — a high-entropy random string (43-128 characters,
+      per RFC 7636 §4.1), generated fresh by the client for this one authorization attempt and kept only
+      on the client.</li>
+      <li><strong><code>code_challenge</code></strong> — derived from the verifier by SHA-256 hashing it
+      and base64url-encoding the result (<code>code_challenge_method=S256</code>), sent in the clear in
+      step 1 (the <code>/authorize</code> redirect).</li>
+      <li>At the token exchange (step 5), the client sends the original <strong>plaintext verifier</strong>,
+      never the challenge. The Authorization Server independently recomputes SHA-256(verifier), checks it
+      matches the challenge it recorded back in step 1, and only then issues tokens.</li>
+    </ul>
+    <p>Whoever intercepts the code in steps 3-4 never saw the verifier (it was never transmitted — only
+    its one-way hash was, in step 1, and a SHA-256 hash can't be reversed back into the original string).
+    Without the matching verifier, the intercepted code is useless at the token endpoint.</p>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Computed for real — not invented example values</div>
+      <p>Rather than making up a <code>code_verifier</code>/<code>code_challenge</code> pair that merely
+      <em>looks</em> plausible, here is one actually generated and independently cross-checked for this
+      chapter:</p>
+      <pre><code># Generate a code_verifier: 64 characters from the RFC 7636 §4.1 unreserved
+# alphabet [A-Za-z0-9-._~], well inside the required 43-128 character range.
+$ openssl rand -base64 96 | tr -d '=+/\n' | cut -c1-64
+1z3WfdiVIG2BrhYi5ELjNrSGDgJ7e9SvsEho2fbjUXO4bN4T86VEkmfMMvS6VEjm
+
+# Derive code_challenge = BASE64URL(SHA256(ASCII(code_verifier))), no padding.
+$ printf '%s' '1z3WfdiVIG2BrhYi5ELjNrSGDgJ7e9SvsEho2fbjUXO4bN4T86VEkmfMMvS6VEjm' \
+    | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '='
+3aPn7lZkllR8WMnw1GvGsVqXxZC5FGX_tZnHrQf3mRc</code></pre>
+      <p>Cross-checked independently with Python's own <code>hashlib</code>/<code>base64</code> (not just
+      trusting one tool's output):</p>
+      <pre><code>&gt;&gt;&gt; import hashlib, base64
+&gt;&gt;&gt; v = "1z3WfdiVIG2BrhYi5ELjNrSGDgJ7e9SvsEho2fbjUXO4bN4T86VEkmfMMvS6VEjm"
+&gt;&gt;&gt; base64.urlsafe_b64encode(hashlib.sha256(v.encode("ascii")).digest()).decode().rstrip("=")
+'3aPn7lZkllR8WMnw1GvGsVqXxZC5FGX_tZnHrQf3mRc'   # matches the openssl output exactly</code></pre>
+      <p>This exact pair is reused in the live lab below — it's the one actually submitted to a real
+      authorization server's <code>/authorize</code> and <code>/token</code> endpoints, not a illustrative
+      stand-in.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 780 220" role="img" aria-labelledby="t3 d3">
+        <title id="t3">How a code_challenge is derived from a code_verifier (S256)</title>
+        <desc id="d3">A left-to-right pipeline. Box 1: code_verifier, a high-entropy random string 43 to
+        128 characters long, generated fresh by the client and kept secret until the token exchange. Arrow
+        to box 2: SHA-256 hash function applied to the verifier's ASCII bytes. Arrow to box 3: the 32-byte
+        digest is base64url-encoded with padding characters stripped. Result: code_challenge, sent in the
+        clear in the initial authorize request. A dashed note below states the operation is one-way: the
+        challenge cannot be reversed back into the verifier.</desc>
+        <rect x="20" y="60" width="180" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+        <text x="110" y="95" text-anchor="middle" class="diagram-label" font-weight="700">code_verifier</text>
+        <text x="110" y="113" text-anchor="middle" class="diagram-label-muted" font-size="11">random, 43-128 chars</text>
+        <text x="110" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">kept secret by the client</text>
+
+        <line x1="200" y1="105" x2="300" y2="105" class="diagram-stroke" marker-end="url(#arrowC)"/>
+        <rect x="300" y="75" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+        <text x="380" y="100" text-anchor="middle" class="diagram-label" font-weight="700">SHA-256</text>
+        <text x="380" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">one-way hash</text>
+
+        <line x1="460" y1="105" x2="560" y2="105" class="diagram-stroke" marker-end="url(#arrowC)"/>
+        <rect x="560" y="60" width="200" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+        <text x="660" y="90" text-anchor="middle" class="diagram-label" font-weight="700">code_challenge</text>
+        <text x="660" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">base64url(digest),</text>
+        <text x="660" y="123" text-anchor="middle" class="diagram-label-muted" font-size="11">no padding — sent in the clear</text>
+
+        <text x="390" y="195" text-anchor="middle" class="diagram-label-muted">One-way: a verifier can be checked against a challenge; a challenge cannot be turned back into a verifier.</text>
+
+        <defs>
+          <marker id="arrowC" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure 13.3 — Deriving a code_challenge from a code_verifier. Only the challenge ever
+      travels in a URL; the verifier stays on the client until the token exchange.</figcaption>
+    </figure>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea — PKCE isn't just for "public" clients anymore</div>
+      <p>PKCE was originally designed for public clients (mobile and single-page apps) that can't hold a
+      client secret safely. Current best practice (chapter 18 covers this in full, with the specific BCP
+      guidance) recommends PKCE for <strong>every</strong> authorization code flow, confidential clients
+      included — it's cheap to add and closes the code-interception gap regardless of whether the client
+      also has a secret. The live lab below uses a <em>public</em> client specifically (no secret at all),
+      which is exactly the case PKCE was built for.</p>
+    </div>
+
+    <h2>Hands-on lab: a real authorization code + PKCE round trip</h2>
+    <p>Chapters 13-15 run their labs against <strong>Duende Software's public demo IdentityServer</strong>
+    at <code>https://demo.duendesoftware.com</code> — a real, publicly reachable OAuth2/OIDC server kept
+    running specifically for testing against, not a throwaway instance. This keeps "Keycloak doesn't show up
+    until chapter 20" intact while still giving you real tokens from a real token endpoint, not a narrated
+    transcript.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Before the brief for this chapter was written, the honest expectation was: this might not fully work</div>
+      <p>The research that set up this lab found that <code>interactive.public</code>'s registered redirect
+      URIs weren't publicly documented, and the only one anyone had found was a native-app custom scheme
+      (<code>myapp://callback</code>) that a browser-and-curl lab can't catch. The plan going in was to
+      degrade gracefully: teach the mechanics precisely, hand-compute a real PKCE pair, and point you at
+      chapter 14's device flow for the "I personally completed a real round trip" experience instead.
+      <strong>Direct testing for this chapter found a working one</strong> — documented exactly, including
+      the probing that found it, below.</p>
+    </div>
+
+    <ol class="lab-steps">
+      <li><p><strong>Step 1 — confirm the discovery document is live</strong> and note the endpoints it
+      advertises.</p>
+      <pre><code>$ curl -s https://demo.duendesoftware.com/.well-known/openid-configuration | python3 -m json.tool
+{
+    "issuer": "https://demo.duendesoftware.com",
+    "authorization_endpoint": "https://demo.duendesoftware.com/connect/authorize",
+    "token_endpoint": "https://demo.duendesoftware.com/connect/token",
+    "device_authorization_endpoint": "https://demo.duendesoftware.com/connect/deviceauthorization",
+    "introspection_endpoint": "https://demo.duendesoftware.com/connect/introspect",
+    "revocation_endpoint": "https://demo.duendesoftware.com/connect/revocation",
+    "code_challenge_methods_supported": ["plain", "S256"],
+    "grant_types_supported": ["authorization_code", "client_credentials", "refresh_token",
+      "implicit", "password", "urn:ietf:params:oauth:grant-type:device_code", "urn:openid:params:grant-type:ciba"],
+    ...
+}</code></pre>
+      <p>Confirmed live, as of this chapter's writing (2026-11-10). Note <code>grant_types_supported</code>
+      still lists <code>implicit</code> and <code>password</code> (ROPC) — this is a demo server showing
+      off everything IdentityServer supports, not a recommendation to use either (see the pitfall callout
+      above).</p></li>
+
+      <li><p><strong>Step 2 — the easy, fully curl-able case: client credentials.</strong> Before touching
+      the browser-dependent flow, confirm a token endpoint actually issues tokens, with the simplest grant
+      there is (full depth in chapter 14 — this is just a live sanity check here).</p>
+      <pre><code>$ curl -s -X POST https://demo.duendesoftware.com/connect/token \
+    -d "grant_type=client_credentials&client_id=m2m&client_secret=secret&scope=api"
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...[truncated for readability]...FTOBhXblAe3PtU",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "scope": "api"
+}</code></pre>
+      <p>Real token, real server, confirmed.</p></li>
+
+      <li><p><strong>Step 3 — probe for a working redirect_uri.</strong> The brief for this chapter called
+      for genuine effort here before giving up. Calling <code>/connect/authorize</code> for
+      <code>interactive.public</code> with no <code>redirect_uri</code> at all returns a generic error — not
+      useful for triangulation on its own:</p>
+      <pre><code>$ curl -s -i "https://demo.duendesoftware.com/connect/authorize?client_id=interactive.public&amp;response_type=code&amp;scope=openid%20profile&amp;code_challenge=...&amp;code_challenge_method=S256"
+HTTP/2 303
+location: https://demo.duendesoftware.com/home/error?errorId=...
+# (page content: "Sorry, there was an error: invalid_request")</code></pre>
+      <p>IdentityServer's design, it turns out, defers the actual redirect_uri check until <em>after</em>
+      login — not at the initial <code>/authorize</code> call. Supplying almost any syntactically valid
+      <code>redirect_uri</code> at this stage produces the same "proceed to login" response, which means
+      this particular error page can't distinguish a registered redirect_uri from an unregistered one. The
+      real test has to happen after actually logging in. Reasoning from Duende's own public JS/SPA sample
+      conventions (a same-origin <code>/callback</code> path is the typical pattern for their own demo
+      clients, confirmed by browsing their public Samples repo structure), the candidate
+      <code>https://demo.duendesoftware.com/callback</code> was tried end to end — see the next step.</p></li>
+
+      <li><p><strong>Step 4 — generate your own PKCE pair</strong> (reuse the commands from the PKCE section
+      above, or generate a fresh pair — either is fine, they just need to be your own matched pair):</p>
+      <pre><code>$ CODE_VERIFIER=$(openssl rand -base64 96 | tr -d '=+/\n' | cut -c1-64)
+$ CODE_CHALLENGE=$(printf '%s' "$CODE_VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')</code></pre></li>
+
+      <li><p><strong>Step 5 — open the authorize URL in your own browser</strong> (this is the one step a
+      human, not curl, actually performs):</p>
+      <pre><code>https://demo.duendesoftware.com/connect/authorize?client_id=interactive.public&amp;response_type=code&amp;scope=openid%20profile&amp;redirect_uri=https%3A%2F%2Fdemo.duendesoftware.com%2Fcallback&amp;code_challenge=$CODE_CHALLENGE&amp;code_challenge_method=S256&amp;state=mystate123</code></pre>
+      <p>You'll land on a real IdentityServer login page. The test accounts <strong>bob/bob</strong> and
+      <strong>alice/alice</strong> are confirmed to work live (verified directly for this chapter by
+      actually logging in as both — the password pattern is not documented anywhere on the homepage, so
+      this is genuinely checked, not assumed from a convention). Log in.</p></li>
+
+      <li><p><strong>Step 6 — read the code out of your browser's address bar.</strong> You'll land on
+      <code>https://demo.duendesoftware.com/callback?code=...&amp;state=mystate123&amp;session_state=...&amp;iss=...</code>
+      — the page itself renders a 404 (there's no app running at that path on the demo site), but that
+      doesn't matter: the authorization code is sitting in plain sight in the URL. This is exactly what a
+      real public client's JS would read programmatically; you're doing the same thing by eye. Copy the
+      <code>code</code> value.</p>
+      <p>Verified for real while writing this chapter (full session replayed with curl simulating the
+      browser's cookie jar, to document it precisely — a real browser performs the identical steps):</p>
+      <pre><code># after logging in as bob/bob with a matching code_challenge, the auth server
+# redirected to:
+https://demo.duendesoftware.com/callback?code=99E3B405AE1BB4C00E5202D899D100280C6289318A76935360ED3FD8E6A7985B-1&amp;state=xyz123state&amp;session_state=tXaAHy6VjjzaDa1VjxHUCr0jDtiH6qvRK_bzYfyDFkY.0B...&amp;iss=https%3A%2F%2Fdemo.duendesoftware.com</code></pre></li>
+
+      <li><p><strong>Step 7 — exchange the code for tokens</strong> (server-to-server — this is the part a
+      real client app's backend, or in a public client's case its own JS, would do automatically):</p>
+      <pre><code>$ curl -s -X POST https://demo.duendesoftware.com/connect/token \
+    --data-urlencode "grant_type=authorization_code" \
+    --data-urlencode "client_id=interactive.public" \
+    --data-urlencode "code=99E3B405AE1BB4C00E5202D899D100280C6289318A76935360ED3FD8E6A7985B-1" \
+    --data-urlencode "redirect_uri=https://demo.duendesoftware.com/callback" \
+    --data-urlencode "code_verifier=1z3WfdiVIG2BrhYi5ELjNrSGDgJ7e9SvsEho2fbjUXO4bN4T86VEkmfMMvS6VEjm"
+
+{
+  "id_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...gV9tZCkeirrT3MwTgdT5X4MU5khcth_rJtWswOKhzJ-Gtbz26ZbbKayxacxNx_XgUwMDbB0g",
+  "access_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...FZO6Ztd9osuJh_Gs6mIg",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "scope": "openid profile"
+}</code></pre>
+      <p><strong>This is a genuinely completed authorization code + PKCE round trip against a live
+      server</strong> — real login, real PKCE pair, real code, real tokens. No narrated transcript, no
+      fabricated success.</p></li>
+
+      <li><p><strong>Step 8 — confirm the token endpoint's behavior on bad or missing input</strong> (worth
+      knowing, since it's the same shape of error a real debugging session will show you):</p>
+      <pre><code># missing/garbage code:
+$ curl -s -X POST .../connect/token -d "grant_type=authorization_code&client_id=interactive.public&code=not-a-real-code&redirect_uri=...&code_verifier=..."
+{"error":"invalid_grant"}          # HTTP 400
+
+# reusing an already-exchanged code (the real one from step 7, tried again):
+{"error":"invalid_grant"}          # HTTP 400 — codes really are single-use
+
+# a fresh, never-used code, but with the WRONG code_verifier:
+{"error":"invalid_grant"}          # HTTP 400 — PKCE really is enforced server-side, not cosmetic</code></pre>
+      <p>Notice the server returns the identical generic <code>invalid_grant</code> for all three distinct
+      failure causes (bad code, reused code, wrong verifier) rather than a more specific error. That's
+      correct, deliberate behavior, not a bug — a more specific error would leak information useful to an
+      attacker probing which part of a forged request is wrong.</p></li>
+    </ol>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">What's verified live vs. what's degraded — stated plainly</div>
+      <p><strong>Fully verified live, for real, in this session:</strong> the discovery document; the
+      client-credentials grant end to end; a working, reader-reachable <code>redirect_uri</code> for
+      <code>interactive.public</code> (<code>https://demo.duendesoftware.com/callback</code>) found by
+      direct probing; a complete authorization code + PKCE round trip including real login as both
+      <code>bob/bob</code> and <code>alice/alice</code>, a hand-computed and independently cross-checked
+      PKCE pair, a real issued code, and real tokens from the token endpoint; the token endpoint's
+      <code>invalid_grant</code> behavior on bad code, reused code, and wrong verifier.</p>
+      <p><strong>One thing to degrade honestly about even though the flow itself worked:</strong> the
+      <code>/callback</code> landing page itself is a bare 404 — there's no actual demo app running there
+      to show you a polished "you're logged in" screen the way a real product would. You're reading the
+      code out of the address bar by eye and feeding it to curl by hand, which is a slightly more manual
+      experience than clicking through a real app's login button. The mechanics are completely real; the
+      UI polish around them is not. If you'd rather see a flow with a real app on the other end of the
+      redirect, chapter 14's device-flow lab is still the smoothest "real human step, real product feel"
+      experience this course offers, and is worth doing either way.</p>
+    </div>
+
+    <h2>What the redirect_uri check protects — and a live, surprising finding about it</h2>
+    <p>Chapter 7 already told you a registered redirect URI is one of the three ingredients of trust between
+    an IdP and a relying application. Here's precisely why, in OAuth's own terms, and then something worth
+    knowing that direct testing turned up.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">What RFC 6749 actually requires</div>
+      <p>Per <a href="https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2.3">RFC 6749 §3.1.2.3</a>: "When a
+      redirection URI is included in an authorization request, the authorization server <strong>MUST
+      compare and match</strong> the value received against at least one of the registered redirection
+      URIs... using <strong>simple string comparison</strong>" — i.e. exact match, not a prefix or substring
+      check. §3.1.2.4 adds: on a missing, invalid, or mismatching redirect URI, the server "<strong>MUST
+      NOT</strong> automatically redirect the user-agent to the invalid redirection URI."</p>
+    </div>
+
+    <p>Why exact-match, rather than "starts with" or "same domain"? Because an attacker who can register —
+    or get accepted — a redirect URI that merely resembles the legitimate one (a different path on the same
+    domain, a subdomain they control, a URL that happens to share a prefix) gets the authorization code
+    redirected to a destination <em>they</em> control, instead of the real application. Whoever receives
+    that code can attempt to exchange it for tokens issued on behalf of whichever user just authenticated —
+    effectively hijacking their login.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">A live, verified finding — not what you'd expect from a spec-compliant server</div>
+      <p>While preparing this lab, the exact-match behavior above was tested directly against
+      <code>interactive.public</code> on the live demo server — by substituting
+      <code>redirect_uri=https://evil.example.com/callback</code> (a domain this course doesn't own) in
+      place of the real one, keeping everything else (the PKCE challenge, the login as <code>bob</code>)
+      identical. <strong>The authorization server completed the flow anyway</strong>: it redirected the
+      browser to <code>https://evil.example.com/callback?code=...</code> with a real, valid authorization
+      code, and that code exchanged successfully at <code>/connect/token</code> for a real
+      <code>access_token</code>/<code>id_token</code> for bob's identity — exactly as if the redirect URI
+      had been the registered one.</p>
+      <p>This directly contradicts what RFC 6749 §3.1.2.3-3.1.2.4 require. The most likely explanation is
+      that this specific public demo client is deliberately configured to accept arbitrary redirect URIs,
+      precisely so any visitor can test against it with their own callback endpoint without needing to ask
+      Duende to register one — a reasonable trade-off for a public demo server with no real protected data
+      behind it, but not something you would ever want to see from a production Authorization Server. This
+      wasn't fabricated to make a point — it's exactly what the live server returned when tested, and it's
+      the clearest possible demonstration of why the exact-match check matters: on a server where it isn't
+      enforced, redirecting a real user's authorization code to an attacker-controlled destination is
+      trivially easy, and the server will hand over real tokens for it.</p>
+    </div>
+
+    <div class="callout callout--case-study">
+      <div class="callout-label">Case study — Northwind Apps registers a customer-integration client</div>
+      <p>Northwind Apps is onboarding a new enterprise customer that wants to build its own internal
+      dashboard against Northwind's API, using OAuth to let its employees log in with their own Northwind
+      accounts. Northwind's security team insists on registering the exact, full callback URL the
+      customer's dashboard will use — <code>https://dashboard.customer-co.example/auth/callback</code> —
+      rather than accepting a broader pattern like "anything under <code>customer-co.example</code>" for
+      convenience during setup.</p>
+      <p>This is not bureaucratic friction. If Northwind's Authorization Server validated redirect URIs by
+      substring or domain match instead of exact string match — the way the demo server above was just
+      shown to do, in effect, by accepting <em>any</em> URI at all — an attacker who controlled
+      <strong>any</strong> page under <code>customer-co.example</code> (a forgotten marketing subdomain, a
+      misconfigured S3 bucket serving that domain, a second app the customer runs there with its own
+      vulnerabilities) could redirect a legitimate Northwind login's authorization code to themselves, and
+      — exactly as demonstrated above — exchange it for a real access token scoped to whichever Northwind
+      employee just authenticated. Exact-match registration closes that off entirely: the code only ever
+      gets redirected to the one, specific, pre-approved URL, and nothing else qualifies, no matter what
+      else happens to live on that domain. Keycloak's own client redirect-URI configuration, which enforces
+      exactly this kind of match, is covered concretely in chapter 24.</p>
+    </div>
+
+    <h2>Common mistakes</h2>
+    <ul class="common-mistakes">
+      <li>If you see someone describe PKCE as "only for mobile apps," the cause is treating it as a legacy
+      public-client-only workaround instead of current best practice for every authorization code flow,
+      confidential clients included (chapter 18 covers why).</li>
+      <li>If you see a redirect_uri registered as a wildcard or a domain prefix ("anything under
+      *.example.com") "to make testing easier," the cause is exactly the gap this chapter's live
+      demo-server finding demonstrated — it trades exact-match security for convenience, and the convenience
+      isn't worth it once there's real user data behind the token.</li>
+      <li>If you see someone try to read an access token straight out of a redirect URL in the authorization
+      code flow, the cause is confusing it with the deprecated Implicit grant — in the authorization code
+      flow, only a short-lived <em>code</em> ever appears in the browser; the access token only ever arrives
+      via the server-to-server token exchange.</li>
+      <li>If you see "invalid_grant" from a token endpoint and assume it specifically means "wrong PKCE
+      verifier," the cause is over-reading a deliberately generic error — the same error also covers an
+      expired code, an already-used code, or a code issued to a different client, by design.</li>
+      <li>If you see someone call the Authorization Server "the IdP" and leave it at that without ever
+      naming Resource Owner or Resource Server, the cause is importing chapter 7's two-role picture wholesale
+      instead of recognizing OAuth introduces genuinely new roles for a genuinely different problem
+      (delegated resource access, not just login).</li>
+    </ul>
+
+    <h2>Glossary terms introduced here</h2>
+    <div id="chapter-glossary-mount"></div>
+
+    <h2>Takeaways</h2>
+    <ul class="takeaways">
+      <li>OAuth 2.0 defines four roles — Resource Owner, Client, Authorization Server, Resource Server —
+      and only Authorization Server maps cleanly onto chapter 7's IdP; Resource Owner and Resource Server
+      are genuinely new concepts, not renamed ones.</li>
+      <li>The authorization code flow exists specifically so the browser only ever handles a short-lived,
+      single-use code, never the access token itself — the token is only ever exchanged over a direct
+      server-to-server call.</li>
+      <li>PKCE adds a client-generated secret (code_verifier) that never travels in plaintext until the
+      final token exchange, so an intercepted authorization code alone isn't enough to obtain tokens.</li>
+      <li>Current best practice recommends PKCE on every authorization code flow, not just for public
+      clients that lack a secret.</li>
+      <li>Resource Owner Password Credentials and Implicit are both legacy, discouraged grant types —
+      recognize them, don't reach for them in new designs.</li>
+      <li>RFC 6749 requires exact, simple-string-comparison redirect URI matching, specifically to prevent
+      an attacker from redirecting a real user's authorization code to a destination they control.</li>
+      <li>A live test against a real public demo server found it does <em>not</em> enforce exact-match
+      redirect URI validation for one of its clients — a concrete, verified demonstration of exactly what
+      that check is supposed to prevent, not a hypothetical.</li>
+      <li>A token endpoint returning the same generic error (<code>invalid_grant</code>) for a bad code, a
+      reused code, and a wrong PKCE verifier is deliberate, not sloppy — specific errors here would help an
+      attacker.</li>
+      <li>Client credentials and device code grants exist for machine-to-machine and no-browser scenarios
+      respectively — both get full treatment in chapter 14, which also hosts this course's primary "real
+      human step" completed round-trip lab.</li>
+    </ul>
+
+    <h2>Self-check</h2>
+    <ol class="self-check">
+      <li>Explain precisely why "Authorization Server ≈ IdP" is a useful memory aid but not an exact
+      mapping. What roles does OAuth introduce that chapter 7's IdP/SP/RP vocabulary has no equivalent for,
+      and why does OAuth need them?</li>
+      <li>Walk through, in order, what travels in the browser's address bar during the authorization code
+      flow, and what travels only over a direct server-to-server connection. Why does that split exist?</li>
+      <li>A colleague says "we don't need PKCE, our client has a confidential secret." Using this chapter's
+      reasoning, explain what gap PKCE closes that a client secret alone does not.</li>
+      <li>Describe, step by step, what an attacker would need in order to actually exploit a redirect_uri
+      validated by substring or domain match rather than exact string match. What specifically does
+      exact-match registration deny them?</li>
+      <li>Why does a token endpoint returning <code>invalid_grant</code> for three different failure causes
+      (bad code, reused code, wrong verifier) count as a deliberate security decision rather than a gap in
+      error handling?</li>
+      <li>If Meridian Trust's mobile banking app used the Implicit grant instead of authorization code +
+      PKCE, name one concrete way a stolen access token could end up in the wrong hands that would not be
+      possible — or would be much harder — under the authorization code flow.</li>
+    </ol>
+
+    <h2>Quiz</h2>
+    <div class="quiz-block" id="quiz-mount"></div>
+
+    <h2>Deep dive</h2>
+    <ul>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749 — The OAuth 2.0 Authorization Framework</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2">RFC 6749 §3.1.2 — Redirection Endpoint (registration requirements, exact-match comparison, invalid-endpoint handling)</a></li>
+      <li><a href="https://www.rfc-editor.org/rfc/rfc7636">RFC 7636 — Proof Key for Code Exchange (PKCE) by OAuth Public Clients</a></li>
+      <li><a href="https://docs.duendesoftware.com/identityserver/quickstarts/">Duende IdentityServer Quickstarts documentation</a></li>
+      <li><a href="https://github.com/DuendeSoftware/Samples">DuendeSoftware/Samples — public GitHub repository of IdentityServer client/sample configurations</a></li>
+    </ul>
+
+    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "oauth2-core", 15);
+  });
+</script>
+</body>
+</html>

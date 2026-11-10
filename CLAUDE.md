@@ -209,6 +209,41 @@ are in §6 since those are built first.
 | 49 | Becoming an IAM specialist: skills matrix, career paths, certifications, interview question bank | — |
 | 50 | IAM & Keycloak master glossary and cheat sheets (reference chapter, feeds `glossary.html`) | — |
 
+### Part III lab target (decided 2026-11-10, at the user's choice)
+
+Chapters 13-15's curl-only hands-on labs run against **Duende Software's public demo IdentityServer**
+at `https://demo.duendesoftware.com` (discovery document: `/.well-known/openid-configuration`) — a
+public, no-signup-required OAuth2/OIDC test server maintained specifically for this purpose, not a
+throwaway Keycloak instance. This keeps the "Keycloak doesn't show up until chapter 20" rule intact.
+
+Confirmed live (2026-11-10) demo clients relevant to these chapters (verify again before reuse — this is
+a third-party service that can change without this course's control):
+- `m2m` / secret `secret`, scope `api`, `client_credentials` grant — fully curl-able end to end, no
+  browser needed. Good fit for ch13's grant-type survey and ch14's client-credentials/introspection/
+  revocation lab (`/connect/introspect`, `/connect/revocation` are both live on this server).
+- `device`, no secret, scopes `api openid profile email offline_access`, device authorization grant
+  (`/connect/deviceauthorization`) — the one interactive flow on this server that needs **no registered
+  redirect_uri at all** (the reader visits a verification URL and types a code), which sidesteps the
+  redirect_uri-registration problem entirely. This is the course's primary "real tokens, real human step,
+  fully verifiable" lab — reuse it for ch15's ID token/UserInfo lab too, rather than inventing a second
+  interactive flow.
+- `interactive.public` (PKCE, no secret) and `interactive.confidential` (PKCE, secret `secret`) exist for
+  authorization-code + PKCE, but **their registered redirect_uri(s) are not publicly documented** — as of
+  this research, only a native-app custom-scheme redirect (`myapp://callback`) was confirmed, which a
+  browser+curl lab can't catch. Chapter 13 should still try to resolve a working browser-completable
+  redirect_uri (check Duende's own quickstart docs, try the Samples repo, or test candidate values against
+  `/connect/authorize` and read the specific error) — but if that doesn't pan out after reasonable effort,
+  degrade gracefully: teach the authorization code + PKCE *mechanics* with a verified, hand-computed PKCE
+  example (a real `code_verifier`/`code_challenge` pair, S256, computable with `openssl`/Python — no
+  network dependency) and lean on chapter 14's device-flow lab for the "actually completed a real round
+  trip" experience. Say so honestly rather than ship a lab step that doesn't actually work for the reader.
+- Test user accounts `bob`/`alice` are confirmed to exist (visible on the live login page) — exact
+  passwords aren't publicly documented on the homepage; verify live (commonly `bob`/`bob` pattern in
+  Duende's own samples, but confirm rather than assume) before telling a reader to use them.
+- Token exchange (RFC 8693) does **not** appear in this server's `grant_types_supported` — if ch14 covers
+  it, say plainly that it's conceptual here (the demo server doesn't support a live exchange lab), rather
+  than fabricating one.
+
 ## 6. Detailed briefs for the reference set (build these first)
 
 These establish the template (diagram style, quiz pattern, glossary mechanics, "In Keycloak" callout
