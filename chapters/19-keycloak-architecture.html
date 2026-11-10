@@ -5,513 +5,578 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keycloak Architecture &amp; Deployment Options — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "keycloak-architecture";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part IV — Keycloak Core Administration</span>
-      <span class="badge minutes">~30 min</span>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IV — Keycloak Core Administration</span>
+          <span class="badge minutes">~30 min</span>
+        </div>
+        <h1>19. Keycloak Architecture &amp; Deployment Options</h1>
+        <p class="lede">Eighteen chapters in, Keycloak has been mentioned constantly and installed never. This
+        chapter is the hinge: before chapter 20 brings up a real local Keycloak via Docker Compose, you need a
+        map of what you're about to run — what it's built on, what it needs next to it (a database, maybe a
+        cache), how it scales from a laptop to a bank's production estate, and which of this course's three
+        running orgs would actually choose which deployment shape and why. No lab yet — this is the blueprint
+        you'll build from starting next chapter.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist is routinely the person who has to answer "can we actually run this ourselves, and
+        what does that commit us to?" — a question chapter 12 already raised at the market level (Keycloak vs.
+        a commercial alternative) and this chapter now answers at the infrastructure level. Getting the
+        deployment model wrong is expensive to walk back: standing up Keycloak as a single uncached instance
+        for a bank-scale workload, or over-provisioning a clustered multi-node deployment for a three-person
+        internal tool, are both real mistakes specialists get hired to prevent. Everything here is foundational
+        for Parts IV-IX — every later chapter's lab runs on the shape of Keycloak this chapter introduces.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">Recall from chapter 13</div>
+          <p>Chapter 13 named <strong>Authorization Server</strong> as one of OAuth 2.0's four roles — the
+          party that authenticates the resource owner, obtains their authorization, and issues access tokens —
+          and promised "full depth from chapter 19 on." This chapter pays that off concretely: <strong>a
+          Keycloak realm is Keycloak's instantiation of the Authorization Server role.</strong> Chapters 13-15
+          used a third party, Duende Software's public demo IdentityServer, to play that role in curl-only
+          labs. Starting chapter 20, the reader stands up their own Authorization Server — a Keycloak
+          realm — and every later OAuth/OIDC lab in this course talks to it instead of a borrowed public one.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="quarkus-distribution" data-title="The Quarkus-based distribution">
+        <h2>The Quarkus-based distribution</h2>
+        <p>Keycloak's server is built on <strong>Quarkus</strong>, a Java framework designed specifically for
+        fast startup and a low memory footprint in containerized environments — the opposite design goal from
+        the older general-purpose Java application servers Keycloak originally ran on. This isn't a cosmetic
+        implementation detail: it's why a Keycloak container can realistically start in a few seconds instead
+        of the much longer cold-start times a traditional Java EE application server needed, which matters
+        directly for container orchestration (a Kubernetes pod that takes a long time to become ready is a
+        worse citizen in an autoscaling cluster) and for this course's own labs (chapter 20's Docker Compose
+        stack needs to come up fast and repeatably, every time a reader tears it down and re-runs it).</p>
+
+        <p>A brief, live-verified historical note: Keycloak originally shipped on a WildFly-based (Java EE)
+        distribution. Keycloak's own project announced in October 2021 that, starting with <strong>Keycloak
+        17</strong> (released December 2021), the Quarkus-based distribution would become fully supported and
+        the WildFly-based distribution would be deprecated; sources differ slightly on exactly which later
+        release dropped the WildFly build entirely (accounts point to somewhere in the Keycloak 18-20 range,
+        roughly through mid-2022), but the direction and rough timing are consistent across the project's own
+        announcement and its release history. The practical upshot for this course: every version this course
+        uses, including the pinned <strong>26.8.2</strong>, is Quarkus-only — there is no WildFly option to
+        accidentally reach for in current docs.</p>
+
+        <p>The most important operational consequence of the Quarkus distribution is a hard split between two
+        kinds of configuration:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Build-time vs. runtime configuration in the Quarkus-based Keycloak distribution</caption>
+            <thead>
+              <tr><th>Aspect</th><th>Build-time configuration</th><th>Runtime configuration</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>When it's set</td><td>Baked in during <code>kc build</code> — produces an optimized,
+              pre-compiled server image tailored to the chosen options</td><td>Read fresh every time the server
+              starts, via <code>kc start</code>/<code>kc start-dev</code>, environment variables, or
+              <code>conf/keycloak.conf</code></td></tr>
+              <tr><td>Examples</td><td>Which database vendor (<code>--db</code>), whether clustering/caching is
+              enabled, which features are turned on</td><td>The database connection URL/credentials, hostname,
+              HTTP(S) port, log level</td></tr>
+              <tr><td>Changing it</td><td>Requires re-running <code>kc build</code> to re-optimize the server —
+              a deliberate, slower step</td><td>Just restart the server with new values — fast, routine</td></tr>
+              <tr><td>Why the split exists</td><td>Baking stable, rarely-changed decisions (database vendor,
+              feature set) into the build lets Quarkus pre-compile and optimize far more aggressively than a
+              server that has to stay fully dynamic for everything</td><td>Keeps genuinely environment-specific
+              values (secrets, hostnames) out of the build step entirely, so the same built image can be
+              promoted across dev/stage/prod with only runtime values changing</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 680 300" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Keycloak's Quarkus distribution: build-time vs. runtime configuration</title>
+            <desc id="d1">Two sequential stages. Stage one, labeled "kc build (build-time)", takes inputs
+            such as database vendor, clustering/caching on or off, and enabled features, and produces an
+            optimized server image. Stage two, labeled "kc start / kc start-dev (runtime)", takes that built
+            image plus runtime inputs such as database URL and credentials, hostname, and HTTP port, and
+            produces a running Keycloak server. An arrow loops from the running server back to "kc build" only
+            when a build-time option must change, labeled "rebuild required," while a separate arrow shows
+            restarting with new runtime values looping directly back into stage two without touching stage
+            one.</desc>
+
+            <text x="340" y="26" text-anchor="middle" class="diagram-label" font-weight="700">Two configuration moments, two different costs to change</text>
+
+            <rect x="40" y="60" width="260" height="150" rx="10" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="170" y="86" text-anchor="middle" class="diagram-label" font-weight="700">kc build</text>
+            <text x="170" y="102" text-anchor="middle" class="diagram-label-muted" font-size="11">(build-time configuration)</text>
+            <text x="170" y="126" text-anchor="middle" class="diagram-label-muted" font-size="11">--db vendor</text>
+            <text x="170" y="142" text-anchor="middle" class="diagram-label-muted" font-size="11">clustering/caching on/off</text>
+            <text x="170" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">enabled features</text>
+            <text x="170" y="184" text-anchor="middle" class="diagram-label" font-size="11">&#8594; optimized server image</text>
+
+            <rect x="380" y="60" width="260" height="150" rx="10" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="510" y="86" text-anchor="middle" class="diagram-label" font-weight="700">kc start / kc start-dev</text>
+            <text x="510" y="102" text-anchor="middle" class="diagram-label-muted" font-size="11">(runtime configuration)</text>
+            <text x="510" y="126" text-anchor="middle" class="diagram-label-muted" font-size="11">DB URL + credentials</text>
+            <text x="510" y="142" text-anchor="middle" class="diagram-label-muted" font-size="11">hostname, HTTP(S) port</text>
+            <text x="510" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">log level</text>
+            <text x="510" y="184" text-anchor="middle" class="diagram-label" font-size="11">&#8594; running server</text>
+
+            <line x1="300" y1="135" x2="380" y2="135" class="diagram-stroke" marker-end="url(#arrow19)"></line>
+            <path d="M 510 220 C 510 250, 170 250, 170 220" class="diagram-stroke" fill="none" marker-end="url(#arrow19)"></path>
+            <text x="340" y="268" text-anchor="middle" class="diagram-label-muted" font-size="11">changing a build-time option means re-running kc build; runtime values just need a restart</text>
+            <defs>
+              <marker id="arrow19" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 19.1 — Keycloak's Quarkus distribution separates rarely-changed, baked-in
+          decisions (build-time) from per-environment values read fresh at startup (runtime).</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall (previewed here, chapter 20 covers it in depth)</div>
+          <p><code>kc start-dev</code> is a development-only convenience mode — it auto-enables an in-memory
+          (<code>dev-file</code>) database, disables HTTPS requirements, and skips several production checks
+          specifically so a first run is frictionless. Running it in production is one of the most common
+          real-world Keycloak misconfigurations: it's fast to reach for during a demo and easy to forget to
+          swap out before going live. Chapter 20's lab uses <code>start-dev</code> deliberately for local
+          learning and says so explicitly, then shows what changes for a production-mode run.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="database-backends" data-title="Database backends">
+        <h2>Database backends</h2>
+        <p>Keycloak needs a relational database to persist realms, users, credentials, clients, sessions
+        (depending on deployment mode), and everything else an admin configures — it is not a database-free
+        product. Live-checked against Keycloak's own current documentation, the officially supported database
+        vendors as of 26.x are:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Database backends officially supported by Keycloak 26.x (live-verified against
+            keycloak.org's own server guide)</caption>
+            <thead>
+              <tr><th><code>--db</code> value</th><th>Vendor(s) it covers</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>postgres</code></td><td>PostgreSQL, EnterpriseDB Advanced, Amazon Aurora
+              PostgreSQL</td><td>This course's own lab environment (chapter 20 onward) uses Postgres 17 — the
+              most common production choice and the one every later chapter's lab assumes.</td></tr>
+              <tr><td><code>mariadb</code></td><td>MariaDB Server</td><td>&nbsp;</td></tr>
+              <tr><td><code>mysql</code></td><td>MySQL</td><td>&nbsp;</td></tr>
+              <tr><td><code>mssql</code></td><td>Microsoft SQL Server, Azure SQL Database, Azure SQL Managed
+              Instance</td><td>&nbsp;</td></tr>
+              <tr><td><code>oracle</code></td><td>Oracle Database</td><td>The Oracle JDBC driver is not bundled
+              with Keycloak and must be installed separately before it can be used.</td></tr>
+              <tr><td><code>dev-file</code></td><td>An embedded file-based database, development only</td>
+              <td>The default when no <code>--db</code> is set. Keycloak's own docs explicitly deprecate
+              relying on this default in production mode — you must name a real vendor explicitly.</td></tr>
+              <tr><td><code>dev-mem</code></td><td>An embedded in-memory database, development only</td>
+              <td>Data does not survive a restart — strictly for quick local experimentation.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The database isn't an implementation detail the reader can ignore: it's the system of record for
+        every realm, and (depending on the HA architecture chosen, covered below) it can also become the
+        shared store that lets multiple Keycloak nodes agree on session state. Chapter 43 covers performance
+        tuning and database sizing in depth; this chapter only needs the reader to know which vendors are a
+        legitimate choice and that <code>dev-file</code>/<code>dev-mem</code> are never a legitimate production
+        choice.</p>
+
+        <p>A worked example of why the vendor choice is rarely free: <span class="org-chip meridian">Meridian
+        Trust</span> is a retail bank, and retail banks very often already run Oracle Database for their core
+        banking systems, with an Oracle DBA team, licensing, and operational runbooks already in place. Picking
+        <code>--db oracle</code> for Keycloak lets Meridian Trust's identity layer slot into infrastructure and
+        expertise that already exists, at the cost of a build-time step the Postgres path doesn't need —
+        installing the Oracle JDBC driver separately before <code>kc build</code> can even target it. A
+        greenfield team with no existing database standard, by contrast, has no such pull toward Oracle and
+        would default to <code>postgres</code> — this course's own lab choice — precisely because nothing forces
+        a different vendor on them.</p>
+      </section>
+
+      <section class="slide" data-slide="deployment-spectrum" data-title="Standalone, containerized, and Kubernetes">
+        <h2>Standalone, containerized, and Kubernetes: a deployment spectrum</h2>
+        <p>Keycloak can run in three broadly different shapes, and they aren't competing "right answers" — they
+        sit on a spectrum of operational complexity traded for scale and resilience:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>The Keycloak deployment spectrum</caption>
+            <thead>
+              <tr><th>Shape</th><th>What it looks like</th><th>Fits</th><th>Where this course covers it</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Standalone deployment</strong></td><td>A single <code>kc</code> process running
+              directly on a VM or bare host, talking to a database on the same or a nearby host</td><td>Small
+              internal tools, quick evaluation, a single team's low-traffic app</td><td>Mentioned here as the
+              simplest point on the spectrum; not this course's primary lab shape</td></tr>
+              <tr><td><strong>Containerized deployment</strong></td><td>Keycloak and its database each run as a
+              container, wired together by Docker Compose (or a single <code>docker run</code> for the quickest
+              case)</td><td>Local development, this course's own labs, small-to-mid production setups that
+              don't yet need orchestration-level self-healing</td><td><strong>Chapter 20</strong> — this
+              course's own lab environment runs exactly this shape (Keycloak 26.8.2 + PostgreSQL 17 via Docker
+              Compose), and every chapter 20-40 lab builds on it</td></tr>
+              <tr><td><strong>Kubernetes deployment</strong></td><td>Keycloak runs as one or more pods managed
+              by the Keycloak Operator or a Helm chart, with Kubernetes handling scheduling, restarts, and
+              scaling of nodes</td><td>Organizations that need elastic scaling, self-healing, and are already
+              running Kubernetes for everything else — the shape production CIAM traffic at real scale tends to
+              end up in</td><td><strong>Chapter 42</strong> covers this in full (Operator, Helm); this chapter
+              only names it as the far end of the spectrum</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 680 260" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The deployment spectrum: standalone, containerized, Kubernetes</title>
+            <desc id="d2">A horizontal spectrum with three stops, left to right, with an arrow underneath
+            labeled "increasing orchestration and elastic scale, increasing operational complexity." Leftmost
+            stop: standalone, a single box labeled "kc process on a VM/bare host," annotated "simplest, least
+            self-healing." Middle stop: containerized, a box labeled "Keycloak container + Postgres container,
+            wired by Docker Compose," annotated "this course's own lab, chapter 20 onward." Rightmost stop:
+            Kubernetes, a box labeled "Keycloak Operator or Helm chart managing pods across a cluster,"
+            annotated "elastic scaling and self-healing, full depth in chapter 42."</desc>
+
+            <text x="340" y="24" text-anchor="middle" class="diagram-label" font-weight="700">One product, three operational shapes</text>
+
+            <line x1="60" y1="210" x2="620" y2="210" class="diagram-stroke" marker-end="url(#arrow19b)"></line>
+            <text x="340" y="232" text-anchor="middle" class="diagram-label-muted" font-size="11">increasing orchestration, elastic scale, and operational complexity</text>
+
+            <rect x="50" y="60" width="170" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="135" y="90" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Standalone</text>
+            <text x="135" y="112" text-anchor="middle" class="diagram-label-muted" font-size="10">kc process on a</text>
+            <text x="135" y="126" text-anchor="middle" class="diagram-label-muted" font-size="10">VM / bare host</text>
+            <text x="135" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">simplest, least self-healing</text>
+
+            <rect x="255" y="60" width="170" height="100" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="340" y="84" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Containerized</text>
+            <text x="340" y="104" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak + Postgres</text>
+            <text x="340" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">via Docker Compose</text>
+            <text x="340" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">this course's lab, ch. 20+</text>
+
+            <rect x="460" y="60" width="170" height="100" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="545" y="84" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Kubernetes</text>
+            <text x="545" y="104" text-anchor="middle" class="diagram-label-muted" font-size="10">Operator / Helm chart</text>
+            <text x="545" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">managing pods at scale</text>
+            <text x="545" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">full depth: chapter 42</text>
+            <defs>
+              <marker id="arrow19b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 19.2 — The same Keycloak server runs in three shapes; this course's own labs sit
+          at the containerized stop, with chapter 42 covering the Kubernetes end separately.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="clustering-ha" data-title="Clustering and high availability">
+        <h2>Clustering and high availability: Infinispan, briefly</h2>
+        <p>A single Keycloak node is a single point of failure and a hard ceiling on throughput. Keycloak's
+        answer to both problems is to run <strong>multiple nodes as a cluster</strong>, sharing session and
+        authentication-session state so a request can land on any node and still see consistent data. The
+        component that makes this possible is <strong>Infinispan</strong>, a distributed, in-memory data grid
+        Keycloak embeds for exactly this purpose — live-verified against Keycloak's own current high-
+        availability documentation, Infinispan is still the caching layer behind Keycloak 26.x clustering,
+        configured by default through <code>conf/cache-ispn.xml</code>.</p>
+
+        <p>At a conceptual level (full depth in chapter 41, which is where this course actually configures a
+        multi-node setup), Keycloak's own documentation describes more than one way to put nodes together:</p>
+        <ul>
+          <li>A <strong>single-cluster</strong> deployment: nodes in one cluster share an embedded Infinispan
+          cache directly between themselves, with no external dependency beyond the shared database — the
+          simplest HA shape, suited to a single site/region.</li>
+          <li>A <strong>multi-site (multi-cluster)</strong> deployment, for organizations that need resilience
+          across more than one data center or region: Keycloak's own docs describe more than one approach here,
+          including one that relies on a separate external Infinispan cluster per site and a newer approach
+          that leans on the database itself to carry session state across sites instead, trading one kind of
+          operational cost (running extra Infinispan infrastructure) for another (more database load). This is
+          exactly the kind of multi-site trade-off chapter 41 covers in depth; this chapter only needs the
+          reader to recognize that "clustering" and "multi-site HA" are related but distinct problems.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 680 320" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Keycloak clustering: multiple nodes, a shared Infinispan cache, and a shared database</title>
+            <desc id="d3">A load balancer at the top distributes requests to three Keycloak nodes below it.
+            Each Keycloak node has an embedded Infinispan cache, and the three Infinispan caches are shown
+            connected to each other to indicate they replicate session and authentication-session data amongst
+            themselves. All three Keycloak nodes also connect down to one shared PostgreSQL database, which
+            holds the durable system of record (realms, users, clients, credentials) independent of which node
+            served a given request.</desc>
+
+            <text x="340" y="24" text-anchor="middle" class="diagram-label" font-weight="700">Clustering: any node can serve a request and see the same session state</text>
+
+            <rect x="260" y="45" width="160" height="40" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="340" y="70" text-anchor="middle" class="diagram-label" font-size="12">Load balancer</text>
+
+            <line x1="300" y1="85" x2="140" y2="130" class="diagram-stroke"></line>
+            <line x1="340" y1="85" x2="340" y2="130" class="diagram-stroke"></line>
+            <line x1="380" y1="85" x2="540" y2="130" class="diagram-stroke"></line>
+
+            <rect x="60" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="140" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 1</text>
+            <text x="140" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
+
+            <rect x="260" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="340" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 2</text>
+            <text x="340" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
+
+            <rect x="460" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="540" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 3</text>
+            <text x="540" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
+
+            <line x1="220" y1="160" x2="260" y2="160" class="diagram-stroke" stroke-dasharray="4,3"></line>
+            <line x1="420" y1="160" x2="460" y2="160" class="diagram-stroke" stroke-dasharray="4,3"></line>
+            <text x="340" y="210" text-anchor="middle" class="diagram-label-muted" font-size="10">Infinispan caches replicate session / auth-session state between nodes</text>
+
+            <rect x="260" y="250" width="160" height="50" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="340" y="280" text-anchor="middle" class="diagram-label" font-size="12">Shared PostgreSQL</text>
+
+            <line x1="140" y1="190" x2="300" y2="250" class="diagram-stroke"></line>
+            <line x1="340" y1="190" x2="340" y2="250" class="diagram-stroke"></line>
+            <line x1="540" y1="190" x2="380" y2="250" class="diagram-stroke"></line>
+          </svg>
+          <figcaption>Figure 19.3 — Clustering conceptually: a load balancer spreads requests across nodes,
+          Infinispan keeps session state consistent between them, and the database remains the durable system
+          of record underneath. Full configuration in chapter 41.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="realm-as-auth-server" data-title="A realm is a concrete Authorization Server">
+        <h2>A realm is a concrete Authorization Server</h2>
+        <p>Chapter 13's OAuth 2.0 role vocabulary named the Authorization Server abstractly. Inside Keycloak,
+        that role is filled by a <strong>realm</strong> — a completely isolated management namespace within one
+        Keycloak server: its own users, credentials, clients, roles, groups, identity providers, and
+        authentication flows, invisible to and unreachable from every other realm on the same server. One
+        Keycloak installation can host many realms side by side, each independently playing the Authorization
+        Server role for its own set of clients and users. (Keycloak ships with a built-in <code>master</code>
+        realm, reserved for managing the Keycloak server itself — chapter 20 deliberately leaves it alone and
+        creates a separate realm, <code>northwind-apps</code>, for this course's own labs, rather than mixing
+        application realms into the one that administers Keycloak itself.)</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 680 280" role="img" aria-labelledby="t4 d4">
+            <title id="t4">One Keycloak server, multiple realms, each a concrete Authorization Server</title>
+            <desc id="d4">A large outer box labeled "One Keycloak server" contains two separate inner boxes
+            that do not touch or overlap. The first inner box, labeled "master realm," is annotated "reserved
+            for administering Keycloak itself — chapter 20 leaves this alone." The second inner box, labeled
+            "northwind-apps realm," is annotated "this course's own realm, created in chapter 20" and lists its
+            contents: users, clients, roles, groups, identity providers, authentication flows. An arrow labeled
+            "plays the OAuth 2.0 Authorization Server role (chapter 13)" points from the northwind-apps box
+            outward to a small external box labeled "client app," showing the realm issuing tokens to it.</desc>
+
+            <rect x="30" y="40" width="620" height="210" rx="10" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="340" y="30" text-anchor="middle" class="diagram-label" font-weight="700">One Keycloak server</text>
+
+            <rect x="55" y="65" width="190" height="100" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="150" y="90" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">master realm</text>
+            <text x="150" y="112" text-anchor="middle" class="diagram-label-muted" font-size="10">reserved for administering</text>
+            <text x="150" y="126" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak itself</text>
+            <text x="150" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">ch. 20 leaves this alone</text>
+
+            <rect x="280" y="65" width="260" height="165" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="410" y="88" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps realm</text>
+            <text x="410" y="108" text-anchor="middle" class="diagram-label-muted" font-size="10">users &#183; clients &#183; roles &#183; groups</text>
+            <text x="410" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">identity providers &#183; auth flows</text>
+            <text x="410" y="146" text-anchor="middle" class="diagram-label" font-size="11">plays the OAuth 2.0</text>
+            <text x="410" y="162" text-anchor="middle" class="diagram-label" font-size="11">Authorization Server role</text>
+
+            <line x1="540" y1="150" x2="610" y2="150" class="diagram-stroke" marker-end="url(#arrow19c)"></line>
+            <rect x="595" y="120" width="70" height="60" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="630" y="155" text-anchor="middle" class="diagram-label" font-size="10">client app</text>
+            <defs>
+              <marker id="arrow19c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <text x="340" y="260" text-anchor="middle" class="diagram-label-muted" font-size="11">Each realm is a fully isolated namespace — a separate, concrete Authorization Server per realm</text>
+          </svg>
+          <figcaption>Figure 19.4 — A Keycloak realm concretely fills chapter 13's Authorization Server role;
+          one server can host many realms, each isolated from the others.</figcaption>
+        </figure>
+
+        <p>This closes a loop that's been open since chapter 13: <code>demo.duendesoftware.com</code> was a
+        real, working Authorization Server, just not one the reader controlled or could inspect from the admin
+        side. Starting chapter 20, the reader creates and administers their own — able to see every setting
+        that produces the tokens their curl commands received, not just the tokens themselves.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: which deployment model fits each org?">
+        <h2>Case study: which deployment model fits each org?</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> fits the <strong>containerized-to-
+          Kubernetes</strong> end of the spectrum: its CIAM traffic (thousands of end-customer logins across
+          many tenant companies, chapter 12's defining CIAM shape) is bursty and needs to scale elastically
+          with sign-up/login spikes rather than running permanently over-provisioned — exactly the elastic
+          scaling and self-healing a Kubernetes-managed deployment (chapter 42) is built for, once the business
+          outgrows a fixed containerized footprint.</p>
+          <p><span class="org-chip riverside">Riverside Health</span> fits <strong>self-hosted, on-premises
+          standalone or containerized</strong> deployment: chapter 12's HIPAA-driven data-residency reasoning
+          (wanting full control over where identity data physically lives, rather than handing that control to
+          a SaaS vendor or even an external cloud region) pushes toward infrastructure the hospital network
+          directly controls, sized to its own clinician-workforce population rather than consumer-scale
+          traffic.</p>
+          <p><span class="org-chip meridian">Meridian Trust</span> fits <strong>clustered, highly-available</strong>
+          deployment: a retail bank's authentication system going down is a business-stopping, possibly
+          regulator-notifying event, not a minor outage — the uptime expectations chapter 12's PCI-DSS context
+          implies push directly toward the multi-node, Infinispan-backed clustering this chapter previewed and
+          chapter 41 configures in full, rather than accepting a single node as an acceptable risk.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>Running <code>start-dev</code> in production because it was the fastest way to get a demo
+          working, then forgetting to switch to a real database vendor and production mode before real traffic
+          arrives.</li>
+          <li>Treating "no license fee" (chapter 12) as "no infrastructure decisions required" — standalone vs.
+          containerized vs. Kubernetes, and clustered vs. single-node, are real choices Keycloak doesn't make
+          for you.</li>
+          <li>Assuming a build-time option (like the database vendor) can be changed with a simple restart —
+          it requires re-running <code>kc build</code>, a slower, deliberate step.</li>
+          <li>Confusing "clustering" (multiple nodes sharing session state via Infinispan, for throughput and
+          failover within one site) with "multi-site HA" (resilience across multiple data centers/regions) —
+          they're related but solve different failure scenarios, and chapter 41 treats them as distinct.</li>
+          <li>Picking Kubernetes by default because it sounds more "production-grade," without the operational
+          capacity to run a Kubernetes cluster well — a containerized Docker Compose deployment (this course's
+          own lab shape) is a legitimate, durable production choice for many organizations, not just a toy.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Keycloak's server runs on Quarkus, a Java framework built for fast startup and a small footprint
+          in containers — it replaced an earlier WildFly-based distribution, with Quarkus becoming fully
+          supported starting Keycloak 17 (December 2021) and the WildFly build phased out over the following
+          releases.</li>
+          <li>The Quarkus distribution splits configuration into build-time (baked in via <code>kc build</code>,
+          needs a rebuild to change) and runtime (read fresh via <code>kc start</code>, just needs a
+          restart) — knowing which bucket a setting falls into changes how expensive it is to change later.</li>
+          <li><code>start-dev</code> mode is a development convenience (in-memory database, relaxed checks) and
+          is never an appropriate production configuration.</li>
+          <li>Keycloak 26.x officially supports PostgreSQL (including EnterpriseDB Advanced and Amazon Aurora
+          PostgreSQL), MariaDB, MySQL, Microsoft SQL Server (including Azure SQL variants), and Oracle Database
+          as production database backends — <code>dev-file</code>/<code>dev-mem</code> are development-only and
+          explicitly deprecated as a production default.</li>
+          <li>Keycloak runs across a deployment spectrum — standalone, containerized, Kubernetes — trading
+          operational complexity for scale and self-healing; this course's own labs (chapter 20 onward) use the
+          containerized point, with Kubernetes covered separately in chapter 42.</li>
+          <li>Infinispan is the distributed, in-memory data grid Keycloak embeds for clustering — multiple
+          nodes share session and authentication-session state through it so a request can land on any node
+          and still see consistent data; full configuration lands in chapter 41.</li>
+          <li>Clustering (multiple nodes, one site) and multi-site high availability (resilience across data
+          centers/regions) are related but distinct problems, with more than one documented architecture for
+          the latter trading an external Infinispan cluster per site against extra database load.</li>
+          <li>A Keycloak realm is the concrete implementation of chapter 13's OAuth 2.0 Authorization Server
+          role — a fully isolated namespace of users, clients, roles, and flows; one server can host many
+          realms side by side, each playing that role independently.</li>
+          <li>The three case-study orgs map onto three different points on the deployment spectrum for
+          different, defensible reasons: Northwind Apps toward containerized/Kubernetes elasticity, Riverside
+          Health toward self-hosted on-premises control, Meridian Trust toward clustered high availability.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain, in your own words, why Keycloak's build-time/runtime configuration split exists — what would be lost if every setting were simply read at startup with no distinction?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The split exists because baking stable, rarely-changed decisions (database vendor, clustering/caching, enabled features) into the build step lets Quarkus pre-compile and optimize the server far more aggressively than if every setting had to stay dynamic. If every setting were read fresh at startup with no distinction, Keycloak would lose that aggressive build-time optimization — it would have to stay flexible enough to handle any database vendor or feature combination at runtime, undermining the fast-startup, low-footprint design Quarkus was chosen for in the first place. It would also blur the operational signal of which changes are safe, routine restarts (hostname, DB credentials) versus which require a deliberate rebuild (switching database vendors), making day-to-day operations riskier.</p>
+          </details></li>
+          <li><details>
+            <summary>Why is <code>dev-file</code> an acceptable database choice while learning this course's labs but an unacceptable one in any real deployment?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>dev-file</code> is an embedded, file-based database meant purely for quick local experimentation with zero setup — exactly what a reader working through labs on a laptop needs. But Keycloak's own docs explicitly deprecate relying on it in production: it doesn't give the durability, concurrent-access guarantees, or operational tooling (backups, replication, monitoring) that a real vendor like PostgreSQL provides, and it can't act as the shared store multiple clustered nodes rely on to agree on session state. What's a convenience for a disposable local environment becomes a liability the moment real users, uptime expectations, or multiple nodes are involved.</p>
+          </details></li>
+          <li><details>
+            <summary>Pick one of the three case-study orgs and argue for a different deployment model than this chapter assigned it — what would have to change about that org for your alternative to become the better call?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Take Riverside Health, assigned self-hosted standalone/containerized here. One could argue it should instead move toward Keycloak on Kubernetes if the hospital network grew sharply — say it expanded from a single hospital network into a multi-state health system with many more clinics and a much larger, more volatile patient-portal login volume. At that point the fixed-capacity containerized deployment this chapter assigned it would no longer flex with demand, and the elastic scaling and self-healing Kubernetes offers (chapter 42) could outweigh the HIPAA data-residency case for staying purely self-hosted — provided the Kubernetes cluster itself still ran inside infrastructure the hospital directly controlled, preserving data residency while gaining elasticity.</p>
+          </details></li>
+          <li><details>
+            <summary>What specifically does Infinispan solve that a single Keycloak node with no cache at all could not? Be precise about what state has to be shared and why.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Infinispan solves the problem of session and authentication-session state consistency across multiple Keycloak nodes. A single node with no cache has no such problem because there's only one place that state can live — but the moment a load balancer spreads requests across multiple nodes, a user's login session (and any in-progress authentication-session, such as being mid-way through an MFA step) has to be visible no matter which node happens to handle their next request. Without a shared, replicated mechanism like Infinispan, a request landing on a different node than the one that started the login would see no session at all, breaking the flow. Infinispan is what lets any node see consistent session/auth-session data, independent of the durable system-of-record data (realms, users, clients) that lives in the database instead.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, without looking back at the text, how a Keycloak realm concretely fills the Authorization Server role chapter 13 defined abstractly — what, specifically, does a realm contain that makes it capable of doing that job?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Chapter 13 defined the Authorization Server abstractly as the OAuth 2.0 party that authenticates the resource owner, obtains their authorization, and issues access tokens. A Keycloak realm fills that role concretely because it is a fully isolated namespace that owns everything needed to do that job for its own clients: its own users and their credentials (to authenticate the resource owner), its own authentication flows (to actually run that authentication and obtain consent), and its own clients, roles, and groups (to know who it's issuing tokens to and what those tokens should claim). Because a realm is isolated from every other realm on the same server, each one can independently play the Authorization Server role for a different set of applications and users without interfering with another realm doing the same thing.</p>
+          </details></li>
+          <li><details>
+            <summary>Why might an organization deliberately choose a containerized Docker Compose deployment over Kubernetes even if it could run Kubernetes well? What is it trading away, and what is it avoiding?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It's avoiding the real operational overhead Kubernetes adds — cluster administration, more moving parts to monitor and secure, and a steeper day-to-day operational burden — when its actual traffic and resilience needs don't demand elastic autoscaling or self-healing across many nodes. It's trading away some of that elasticity and automated self-healing, but for an organization whose Keycloak workload is small-to-mid scale and predictable, a containerized Docker Compose deployment is a legitimate, durable production choice (as this chapter states) rather than a toy — it avoids paying the complexity cost of infrastructure it doesn't actually need yet.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/server/db">Keycloak Server Administration Guide — Configuring the database</a></li>
+          <li><a href="https://www.keycloak.org/server/configuration">Keycloak Server Administration Guide — Configuring Keycloak (build-time vs. runtime options)</a></li>
+          <li><a href="https://www.keycloak.org/server/caching">Keycloak Server Administration Guide — Configuring distributed caches (Infinispan)</a></li>
+          <li><a href="https://www.keycloak.org/high-availability/introduction">Keycloak High Availability Guide — Introduction and architecture overview</a></li>
+          <li><a href="https://www.keycloak.org/2021/10/keycloak-x-update">Keycloak project blog — "Keycloak.X Update" (the Quarkus/WildFly transition announcement)</a></li>
+          <li><a href="https://www.keycloak.org/server/containers">Keycloak Server Administration Guide — Running Keycloak in a container</a></li>
+        </ul>
+      </section>
+
     </div>
-    <h1>19. Keycloak Architecture &amp; Deployment Options</h1>
-    <p class="lede">Eighteen chapters in, Keycloak has been mentioned constantly and installed never. This
-    chapter is the hinge: before chapter 20 brings up a real local Keycloak via Docker Compose, you need a
-    map of what you're about to run — what it's built on, what it needs next to it (a database, maybe a
-    cache), how it scales from a laptop to a bank's production estate, and which of this course's three
-    running orgs would actually choose which deployment shape and why. No lab yet — this is the blueprint
-    you'll build from starting next chapter.</p>
-
-    <h2>Why this matters</h2>
-    <p>An IAM specialist is routinely the person who has to answer "can we actually run this ourselves, and
-    what does that commit us to?" — a question chapter 12 already raised at the market level (Keycloak vs.
-    a commercial alternative) and this chapter now answers at the infrastructure level. Getting the
-    deployment model wrong is expensive to walk back: standing up Keycloak as a single uncached instance
-    for a bank-scale workload, or over-provisioning a clustered multi-node deployment for a three-person
-    internal tool, are both real mistakes specialists get hired to prevent. Everything here is foundational
-    for Parts IV-IX — every later chapter's lab runs on the shape of Keycloak this chapter introduces.</p>
-
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">Recall from chapter 13</div>
-      <p>Chapter 13 named <strong>Authorization Server</strong> as one of OAuth 2.0's four roles — the
-      party that authenticates the resource owner, obtains their authorization, and issues access tokens —
-      and promised "full depth from chapter 19 on." This chapter pays that off concretely: <strong>a
-      Keycloak realm is Keycloak's instantiation of the Authorization Server role.</strong> Chapters 13-15
-      used a third party, Duende Software's public demo IdentityServer, to play that role in curl-only
-      labs. Starting chapter 20, the reader stands up their own Authorization Server — a Keycloak
-      realm — and every later OAuth/OIDC lab in this course talks to it instead of a borrowed public one.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <h2>The Quarkus-based distribution</h2>
-    <p>Keycloak's server is built on <strong>Quarkus</strong>, a Java framework designed specifically for
-    fast startup and a low memory footprint in containerized environments — the opposite design goal from
-    the older general-purpose Java application servers Keycloak originally ran on. This isn't a cosmetic
-    implementation detail: it's why a Keycloak container can realistically start in a few seconds instead
-    of the much longer cold-start times a traditional Java EE application server needed, which matters
-    directly for container orchestration (a Kubernetes pod that takes a long time to become ready is a
-    worse citizen in an autoscaling cluster) and for this course's own labs (chapter 20's Docker Compose
-    stack needs to come up fast and repeatably, every time a reader tears it down and re-runs it).</p>
-
-    <p>A brief, live-verified historical note: Keycloak originally shipped on a WildFly-based (Java EE)
-    distribution. Keycloak's own project announced in October 2021 that, starting with <strong>Keycloak
-    17</strong> (released December 2021), the Quarkus-based distribution would become fully supported and
-    the WildFly-based distribution would be deprecated; sources differ slightly on exactly which later
-    release dropped the WildFly build entirely (accounts point to somewhere in the Keycloak 18-20 range,
-    roughly through mid-2022), but the direction and rough timing are consistent across the project's own
-    announcement and its release history. The practical upshot for this course: every version this course
-    uses, including the pinned <strong>26.8.2</strong>, is Quarkus-only — there is no WildFly option to
-    accidentally reach for in current docs.</p>
-
-    <p>The most important operational consequence of the Quarkus distribution is a hard split between two
-    kinds of configuration:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>Build-time vs. runtime configuration in the Quarkus-based Keycloak distribution</caption>
-        <thead>
-          <tr><th>Aspect</th><th>Build-time configuration</th><th>Runtime configuration</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>When it's set</td><td>Baked in during <code>kc build</code> — produces an optimized,
-          pre-compiled server image tailored to the chosen options</td><td>Read fresh every time the server
-          starts, via <code>kc start</code>/<code>kc start-dev</code>, environment variables, or
-          <code>conf/keycloak.conf</code></td></tr>
-          <tr><td>Examples</td><td>Which database vendor (<code>--db</code>), whether clustering/caching is
-          enabled, which features are turned on</td><td>The database connection URL/credentials, hostname,
-          HTTP(S) port, log level</td></tr>
-          <tr><td>Changing it</td><td>Requires re-running <code>kc build</code> to re-optimize the server —
-          a deliberate, slower step</td><td>Just restart the server with new values — fast, routine</td></tr>
-          <tr><td>Why the split exists</td><td>Baking stable, rarely-changed decisions (database vendor,
-          feature set) into the build lets Quarkus pre-compile and optimize far more aggressively than a
-          server that has to stay fully dynamic for everything</td><td>Keeps genuinely environment-specific
-          values (secrets, hostnames) out of the build step entirely, so the same built image can be
-          promoted across dev/stage/prod with only runtime values changing</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 680 300" role="img" aria-labelledby="t1 d1">
-        <title id="t1">Keycloak's Quarkus distribution: build-time vs. runtime configuration</title>
-        <desc id="d1">Two sequential stages. Stage one, labeled "kc build (build-time)", takes inputs
-        such as database vendor, clustering/caching on or off, and enabled features, and produces an
-        optimized server image. Stage two, labeled "kc start / kc start-dev (runtime)", takes that built
-        image plus runtime inputs such as database URL and credentials, hostname, and HTTP port, and
-        produces a running Keycloak server. An arrow loops from the running server back to "kc build" only
-        when a build-time option must change, labeled "rebuild required," while a separate arrow shows
-        restarting with new runtime values looping directly back into stage two without touching stage
-        one.</desc>
-
-        <text x="340" y="26" text-anchor="middle" class="diagram-label" font-weight="700">Two configuration moments, two different costs to change</text>
-
-        <rect x="40" y="60" width="260" height="150" rx="10" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="170" y="86" text-anchor="middle" class="diagram-label" font-weight="700">kc build</text>
-        <text x="170" y="102" text-anchor="middle" class="diagram-label-muted" font-size="11">(build-time configuration)</text>
-        <text x="170" y="126" text-anchor="middle" class="diagram-label-muted" font-size="11">--db vendor</text>
-        <text x="170" y="142" text-anchor="middle" class="diagram-label-muted" font-size="11">clustering/caching on/off</text>
-        <text x="170" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">enabled features</text>
-        <text x="170" y="184" text-anchor="middle" class="diagram-label" font-size="11">&#8594; optimized server image</text>
-
-        <rect x="380" y="60" width="260" height="150" rx="10" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="510" y="86" text-anchor="middle" class="diagram-label" font-weight="700">kc start / kc start-dev</text>
-        <text x="510" y="102" text-anchor="middle" class="diagram-label-muted" font-size="11">(runtime configuration)</text>
-        <text x="510" y="126" text-anchor="middle" class="diagram-label-muted" font-size="11">DB URL + credentials</text>
-        <text x="510" y="142" text-anchor="middle" class="diagram-label-muted" font-size="11">hostname, HTTP(S) port</text>
-        <text x="510" y="158" text-anchor="middle" class="diagram-label-muted" font-size="11">log level</text>
-        <text x="510" y="184" text-anchor="middle" class="diagram-label" font-size="11">&#8594; running server</text>
-
-        <line x1="300" y1="135" x2="380" y2="135" class="diagram-stroke" marker-end="url(#arrow19)"></line>
-        <path d="M 510 220 C 510 250, 170 250, 170 220" class="diagram-stroke" fill="none" marker-end="url(#arrow19)"></path>
-        <text x="340" y="268" text-anchor="middle" class="diagram-label-muted" font-size="11">changing a build-time option means re-running kc build; runtime values just need a restart</text>
-        <defs>
-          <marker id="arrow19" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 19.1 — Keycloak's Quarkus distribution separates rarely-changed, baked-in
-      decisions (build-time) from per-environment values read fresh at startup (runtime).</figcaption>
-    </figure>
-
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall (previewed here, chapter 20 covers it in depth)</div>
-      <p><code>kc start-dev</code> is a development-only convenience mode — it auto-enables an in-memory
-      (<code>dev-file</code>) database, disables HTTPS requirements, and skips several production checks
-      specifically so a first run is frictionless. Running it in production is one of the most common
-      real-world Keycloak misconfigurations: it's fast to reach for during a demo and easy to forget to
-      swap out before going live. Chapter 20's lab uses <code>start-dev</code> deliberately for local
-      learning and says so explicitly, then shows what changes for a production-mode run.</p>
-    </div>
-
-    <h2>Database backends</h2>
-    <p>Keycloak needs a relational database to persist realms, users, credentials, clients, sessions
-    (depending on deployment mode), and everything else an admin configures — it is not a database-free
-    product. Live-checked against Keycloak's own current documentation, the officially supported database
-    vendors as of 26.x are:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>Database backends officially supported by Keycloak 26.x (live-verified against
-        keycloak.org's own server guide)</caption>
-        <thead>
-          <tr><th><code>--db</code> value</th><th>Vendor(s) it covers</th><th>Notes</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><code>postgres</code></td><td>PostgreSQL, EnterpriseDB Advanced, Amazon Aurora
-          PostgreSQL</td><td>This course's own lab environment (chapter 20 onward) uses Postgres 17 — the
-          most common production choice and the one every later chapter's lab assumes.</td></tr>
-          <tr><td><code>mariadb</code></td><td>MariaDB Server</td><td>&nbsp;</td></tr>
-          <tr><td><code>mysql</code></td><td>MySQL</td><td>&nbsp;</td></tr>
-          <tr><td><code>mssql</code></td><td>Microsoft SQL Server, Azure SQL Database, Azure SQL Managed
-          Instance</td><td>&nbsp;</td></tr>
-          <tr><td><code>oracle</code></td><td>Oracle Database</td><td>The Oracle JDBC driver is not bundled
-          with Keycloak and must be installed separately before it can be used.</td></tr>
-          <tr><td><code>dev-file</code></td><td>An embedded file-based database, development only</td>
-          <td>The default when no <code>--db</code> is set. Keycloak's own docs explicitly deprecate
-          relying on this default in production mode — you must name a real vendor explicitly.</td></tr>
-          <tr><td><code>dev-mem</code></td><td>An embedded in-memory database, development only</td>
-          <td>Data does not survive a restart — strictly for quick local experimentation.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p>The database isn't an implementation detail the reader can ignore: it's the system of record for
-    every realm, and (depending on the HA architecture chosen, covered below) it can also become the
-    shared store that lets multiple Keycloak nodes agree on session state. Chapter 43 covers performance
-    tuning and database sizing in depth; this chapter only needs the reader to know which vendors are a
-    legitimate choice and that <code>dev-file</code>/<code>dev-mem</code> are never a legitimate production
-    choice.</p>
-
-    <h2>Standalone, containerized, and Kubernetes: a deployment spectrum</h2>
-    <p>Keycloak can run in three broadly different shapes, and they aren't competing "right answers" — they
-    sit on a spectrum of operational complexity traded for scale and resilience:</p>
-
-    <div class="table-wrap">
-      <table>
-        <caption>The Keycloak deployment spectrum</caption>
-        <thead>
-          <tr><th>Shape</th><th>What it looks like</th><th>Fits</th><th>Where this course covers it</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><strong>Standalone deployment</strong></td><td>A single <code>kc</code> process running
-          directly on a VM or bare host, talking to a database on the same or a nearby host</td><td>Small
-          internal tools, quick evaluation, a single team's low-traffic app</td><td>Mentioned here as the
-          simplest point on the spectrum; not this course's primary lab shape</td></tr>
-          <tr><td><strong>Containerized deployment</strong></td><td>Keycloak and its database each run as a
-          container, wired together by Docker Compose (or a single <code>docker run</code> for the quickest
-          case)</td><td>Local development, this course's own labs, small-to-mid production setups that
-          don't yet need orchestration-level self-healing</td><td><strong>Chapter 20</strong> — this
-          course's own lab environment runs exactly this shape (Keycloak 26.8.2 + PostgreSQL 17 via Docker
-          Compose), and every chapter 20-40 lab builds on it</td></tr>
-          <tr><td><strong>Kubernetes deployment</strong></td><td>Keycloak runs as one or more pods managed
-          by the Keycloak Operator or a Helm chart, with Kubernetes handling scheduling, restarts, and
-          scaling of nodes</td><td>Organizations that need elastic scaling, self-healing, and are already
-          running Kubernetes for everything else — the shape production CIAM traffic at real scale tends to
-          end up in</td><td><strong>Chapter 42</strong> covers this in full (Operator, Helm); this chapter
-          only names it as the far end of the spectrum</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 680 260" role="img" aria-labelledby="t2 d2">
-        <title id="t2">The deployment spectrum: standalone, containerized, Kubernetes</title>
-        <desc id="d2">A horizontal spectrum with three stops, left to right, with an arrow underneath
-        labeled "increasing orchestration and elastic scale, increasing operational complexity." Leftmost
-        stop: standalone, a single box labeled "kc process on a VM/bare host," annotated "simplest, least
-        self-healing." Middle stop: containerized, a box labeled "Keycloak container + Postgres container,
-        wired by Docker Compose," annotated "this course's own lab, chapter 20 onward." Rightmost stop:
-        Kubernetes, a box labeled "Keycloak Operator or Helm chart managing pods across a cluster,"
-        annotated "elastic scaling and self-healing, full depth in chapter 42."</desc>
-
-        <text x="340" y="24" text-anchor="middle" class="diagram-label" font-weight="700">One product, three operational shapes</text>
-
-        <line x1="60" y1="210" x2="620" y2="210" class="diagram-stroke" marker-end="url(#arrow19b)"></line>
-        <text x="340" y="232" text-anchor="middle" class="diagram-label-muted" font-size="11">increasing orchestration, elastic scale, and operational complexity</text>
-
-        <rect x="50" y="60" width="170" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="135" y="90" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Standalone</text>
-        <text x="135" y="112" text-anchor="middle" class="diagram-label-muted" font-size="10">kc process on a</text>
-        <text x="135" y="126" text-anchor="middle" class="diagram-label-muted" font-size="10">VM / bare host</text>
-        <text x="135" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">simplest, least self-healing</text>
-
-        <rect x="255" y="60" width="170" height="100" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
-        <text x="340" y="84" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Containerized</text>
-        <text x="340" y="104" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak + Postgres</text>
-        <text x="340" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">via Docker Compose</text>
-        <text x="340" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">this course's lab, ch. 20+</text>
-
-        <rect x="460" y="60" width="170" height="100" rx="8" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="545" y="84" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">Kubernetes</text>
-        <text x="545" y="104" text-anchor="middle" class="diagram-label-muted" font-size="10">Operator / Helm chart</text>
-        <text x="545" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">managing pods at scale</text>
-        <text x="545" y="140" text-anchor="middle" class="diagram-label-muted" font-size="10">full depth: chapter 42</text>
-        <defs>
-          <marker id="arrow19b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 19.2 — The same Keycloak server runs in three shapes; this course's own labs sit
-      at the containerized stop, with chapter 42 covering the Kubernetes end separately.</figcaption>
-    </figure>
-
-    <h2>Clustering and high availability: Infinispan, briefly</h2>
-    <p>A single Keycloak node is a single point of failure and a hard ceiling on throughput. Keycloak's
-    answer to both problems is to run <strong>multiple nodes as a cluster</strong>, sharing session and
-    authentication-session state so a request can land on any node and still see consistent data. The
-    component that makes this possible is <strong>Infinispan</strong>, a distributed, in-memory data grid
-    Keycloak embeds for exactly this purpose — live-verified against Keycloak's own current high-
-    availability documentation, Infinispan is still the caching layer behind Keycloak 26.x clustering,
-    configured by default through <code>conf/cache-ispn.xml</code>.</p>
-
-    <p>At a conceptual level (full depth in chapter 41, which is where this course actually configures a
-    multi-node setup), Keycloak's own documentation describes more than one way to put nodes together:</p>
-    <ul>
-      <li>A <strong>single-cluster</strong> deployment: nodes in one cluster share an embedded Infinispan
-      cache directly between themselves, with no external dependency beyond the shared database — the
-      simplest HA shape, suited to a single site/region.</li>
-      <li>A <strong>multi-site (multi-cluster)</strong> deployment, for organizations that need resilience
-      across more than one data center or region: Keycloak's own docs describe more than one approach here,
-      including one that relies on a separate external Infinispan cluster per site and a newer approach
-      that leans on the database itself to carry session state across sites instead, trading one kind of
-      operational cost (running extra Infinispan infrastructure) for another (more database load). This is
-      exactly the kind of multi-site trade-off chapter 41 covers in depth; this chapter only needs the
-      reader to recognize that "clustering" and "multi-site HA" are related but distinct problems.</li>
-    </ul>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 680 320" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Keycloak clustering: multiple nodes, a shared Infinispan cache, and a shared database</title>
-        <desc id="d3">A load balancer at the top distributes requests to three Keycloak nodes below it.
-        Each Keycloak node has an embedded Infinispan cache, and the three Infinispan caches are shown
-        connected to each other to indicate they replicate session and authentication-session data amongst
-        themselves. All three Keycloak nodes also connect down to one shared PostgreSQL database, which
-        holds the durable system of record (realms, users, clients, credentials) independent of which node
-        served a given request.</desc>
-
-        <text x="340" y="24" text-anchor="middle" class="diagram-label" font-weight="700">Clustering: any node can serve a request and see the same session state</text>
-
-        <rect x="260" y="45" width="160" height="40" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
-        <text x="340" y="70" text-anchor="middle" class="diagram-label" font-size="12">Load balancer</text>
-
-        <line x1="300" y1="85" x2="140" y2="130" class="diagram-stroke"></line>
-        <line x1="340" y1="85" x2="340" y2="130" class="diagram-stroke"></line>
-        <line x1="380" y1="85" x2="540" y2="130" class="diagram-stroke"></line>
-
-        <rect x="60" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="140" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 1</text>
-        <text x="140" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
-
-        <rect x="260" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="340" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 2</text>
-        <text x="340" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
-
-        <rect x="460" y="130" width="160" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="540" y="155" text-anchor="middle" class="diagram-label" font-size="11">Keycloak node 3</text>
-        <text x="540" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">embedded Infinispan</text>
-
-        <line x1="220" y1="160" x2="260" y2="160" class="diagram-stroke" stroke-dasharray="4,3"></line>
-        <line x1="420" y1="160" x2="460" y2="160" class="diagram-stroke" stroke-dasharray="4,3"></line>
-        <text x="340" y="210" text-anchor="middle" class="diagram-label-muted" font-size="10">Infinispan caches replicate session / auth-session state between nodes</text>
-
-        <rect x="260" y="250" width="160" height="50" rx="8" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="340" y="280" text-anchor="middle" class="diagram-label" font-size="12">Shared PostgreSQL</text>
-
-        <line x1="140" y1="190" x2="300" y2="250" class="diagram-stroke"></line>
-        <line x1="340" y1="190" x2="340" y2="250" class="diagram-stroke"></line>
-        <line x1="540" y1="190" x2="380" y2="250" class="diagram-stroke"></line>
-      </svg>
-      <figcaption>Figure 19.3 — Clustering conceptually: a load balancer spreads requests across nodes,
-      Infinispan keeps session state consistent between them, and the database remains the durable system
-      of record underneath. Full configuration in chapter 41.</figcaption>
-    </figure>
-
-    <h2>A realm is a concrete Authorization Server</h2>
-    <p>Chapter 13's OAuth 2.0 role vocabulary named the Authorization Server abstractly. Inside Keycloak,
-    that role is filled by a <strong>realm</strong> — a completely isolated management namespace within one
-    Keycloak server: its own users, credentials, clients, roles, groups, identity providers, and
-    authentication flows, invisible to and unreachable from every other realm on the same server. One
-    Keycloak installation can host many realms side by side, each independently playing the Authorization
-    Server role for its own set of clients and users. (Keycloak ships with a built-in <code>master</code>
-    realm, reserved for managing the Keycloak server itself — chapter 20 deliberately leaves it alone and
-    creates a separate realm, <code>northwind-apps</code>, for this course's own labs, rather than mixing
-    application realms into the one that administers Keycloak itself.)</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 680 280" role="img" aria-labelledby="t4 d4">
-        <title id="t4">One Keycloak server, multiple realms, each a concrete Authorization Server</title>
-        <desc id="d4">A large outer box labeled "One Keycloak server" contains two separate inner boxes
-        that do not touch or overlap. The first inner box, labeled "master realm," is annotated "reserved
-        for administering Keycloak itself — chapter 20 leaves this alone." The second inner box, labeled
-        "northwind-apps realm," is annotated "this course's own realm, created in chapter 20" and lists its
-        contents: users, clients, roles, groups, identity providers, authentication flows. An arrow labeled
-        "plays the OAuth 2.0 Authorization Server role (chapter 13)" points from the northwind-apps box
-        outward to a small external box labeled "client app," showing the realm issuing tokens to it.</desc>
-
-        <rect x="30" y="40" width="620" height="210" rx="10" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="340" y="30" text-anchor="middle" class="diagram-label" font-weight="700">One Keycloak server</text>
-
-        <rect x="55" y="65" width="190" height="100" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
-        <text x="150" y="90" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">master realm</text>
-        <text x="150" y="112" text-anchor="middle" class="diagram-label-muted" font-size="10">reserved for administering</text>
-        <text x="150" y="126" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak itself</text>
-        <text x="150" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">ch. 20 leaves this alone</text>
-
-        <rect x="280" y="65" width="260" height="165" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
-        <text x="410" y="88" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">northwind-apps realm</text>
-        <text x="410" y="108" text-anchor="middle" class="diagram-label-muted" font-size="10">users &#183; clients &#183; roles &#183; groups</text>
-        <text x="410" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">identity providers &#183; auth flows</text>
-        <text x="410" y="146" text-anchor="middle" class="diagram-label" font-size="11">plays the OAuth 2.0</text>
-        <text x="410" y="162" text-anchor="middle" class="diagram-label" font-size="11">Authorization Server role</text>
-
-        <line x1="540" y1="150" x2="610" y2="150" class="diagram-stroke" marker-end="url(#arrow19c)"></line>
-        <rect x="595" y="120" width="70" height="60" rx="8" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="630" y="155" text-anchor="middle" class="diagram-label" font-size="10">client app</text>
-        <defs>
-          <marker id="arrow19c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" class="diagram-fill-accent-strong"></path>
-          </marker>
-        </defs>
-        <text x="340" y="260" text-anchor="middle" class="diagram-label-muted" font-size="11">Each realm is a fully isolated namespace — a separate, concrete Authorization Server per realm</text>
-      </svg>
-      <figcaption>Figure 19.4 — A Keycloak realm concretely fills chapter 13's Authorization Server role;
-      one server can host many realms, each isolated from the others.</figcaption>
-    </figure>
-
-    <p>This closes a loop that's been open since chapter 13: <code>demo.duendesoftware.com</code> was a
-    real, working Authorization Server, just not one the reader controlled or could inspect from the admin
-    side. Starting chapter 20, the reader creates and administers their own — able to see every setting
-    that produces the tokens their curl commands received, not just the tokens themselves.</p>
-
-    <h2>Case study: which deployment model fits each org?</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study</div>
-      <p><span class="org-chip northwind">Northwind Apps</span> fits the <strong>containerized-to-
-      Kubernetes</strong> end of the spectrum: its CIAM traffic (thousands of end-customer logins across
-      many tenant companies, chapter 12's defining CIAM shape) is bursty and needs to scale elastically
-      with sign-up/login spikes rather than running permanently over-provisioned — exactly the elastic
-      scaling and self-healing a Kubernetes-managed deployment (chapter 42) is built for, once the business
-      outgrows a fixed containerized footprint.</p>
-      <p><span class="org-chip riverside">Riverside Health</span> fits <strong>self-hosted, on-premises
-      standalone or containerized</strong> deployment: chapter 12's HIPAA-driven data-residency reasoning
-      (wanting full control over where identity data physically lives, rather than handing that control to
-      a SaaS vendor or even an external cloud region) pushes toward infrastructure the hospital network
-      directly controls, sized to its own clinician-workforce population rather than consumer-scale
-      traffic.</p>
-      <p><span class="org-chip meridian">Meridian Trust</span> fits <strong>clustered, highly-available</strong>
-      deployment: a retail bank's authentication system going down is a business-stopping, possibly
-      regulator-notifying event, not a minor outage — the uptime expectations chapter 12's PCI-DSS context
-      implies push directly toward the multi-node, Infinispan-backed clustering this chapter previewed and
-      chapter 41 configures in full, rather than accepting a single node as an acceptable risk.</p>
-    </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>Running <code>start-dev</code> in production because it was the fastest way to get a demo
-      working, then forgetting to switch to a real database vendor and production mode before real traffic
-      arrives.</li>
-      <li>Treating "no license fee" (chapter 12) as "no infrastructure decisions required" — standalone vs.
-      containerized vs. Kubernetes, and clustered vs. single-node, are real choices Keycloak doesn't make
-      for you.</li>
-      <li>Assuming a build-time option (like the database vendor) can be changed with a simple restart —
-      it requires re-running <code>kc build</code>, a slower, deliberate step.</li>
-      <li>Confusing "clustering" (multiple nodes sharing session state via Infinispan, for throughput and
-      failover within one site) with "multi-site HA" (resilience across multiple data centers/regions) —
-      they're related but solve different failure scenarios, and chapter 41 treats them as distinct.</li>
-      <li>Picking Kubernetes by default because it sounds more "production-grade," without the operational
-      capacity to run a Kubernetes cluster well — a containerized Docker Compose deployment (this course's
-      own lab shape) is a legitimate, durable production choice for many organizations, not just a toy.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>Keycloak's server runs on Quarkus, a Java framework built for fast startup and a small footprint
-      in containers — it replaced an earlier WildFly-based distribution, with Quarkus becoming fully
-      supported starting Keycloak 17 (December 2021) and the WildFly build phased out over the following
-      releases.</li>
-      <li>The Quarkus distribution splits configuration into build-time (baked in via <code>kc build</code>,
-      needs a rebuild to change) and runtime (read fresh via <code>kc start</code>, just needs a
-      restart) — knowing which bucket a setting falls into changes how expensive it is to change later.</li>
-      <li><code>start-dev</code> mode is a development convenience (in-memory database, relaxed checks) and
-      is never an appropriate production configuration.</li>
-      <li>Keycloak 26.x officially supports PostgreSQL (including EnterpriseDB Advanced and Amazon Aurora
-      PostgreSQL), MariaDB, MySQL, Microsoft SQL Server (including Azure SQL variants), and Oracle Database
-      as production database backends — <code>dev-file</code>/<code>dev-mem</code> are development-only and
-      explicitly deprecated as a production default.</li>
-      <li>Keycloak runs across a deployment spectrum — standalone, containerized, Kubernetes — trading
-      operational complexity for scale and self-healing; this course's own labs (chapter 20 onward) use the
-      containerized point, with Kubernetes covered separately in chapter 42.</li>
-      <li>Infinispan is the distributed, in-memory data grid Keycloak embeds for clustering — multiple
-      nodes share session and authentication-session state through it so a request can land on any node
-      and still see consistent data; full configuration lands in chapter 41.</li>
-      <li>Clustering (multiple nodes, one site) and multi-site high availability (resilience across data
-      centers/regions) are related but distinct problems, with more than one documented architecture for
-      the latter trading an external Infinispan cluster per site against extra database load.</li>
-      <li>A Keycloak realm is the concrete implementation of chapter 13's OAuth 2.0 Authorization Server
-      role — a fully isolated namespace of users, clients, roles, and flows; one server can host many
-      realms side by side, each playing that role independently.</li>
-      <li>The three case-study orgs map onto three different points on the deployment spectrum for
-      different, defensible reasons: Northwind Apps toward containerized/Kubernetes elasticity, Riverside
-      Health toward self-hosted on-premises control, Meridian Trust toward clustered high availability.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Explain, in your own words, why Keycloak's build-time/runtime configuration split exists — what
-      would be lost if every setting were simply read at startup with no distinction?</li>
-      <li>Why is <code>dev-file</code> an acceptable database choice while learning this course's labs but
-      an unacceptable one in any real deployment?</li>
-      <li>Pick one of the three case-study orgs and argue for a <em>different</em> deployment model than
-      this chapter assigned it — what would have to change about that org for your alternative to become
-      the better call?</li>
-      <li>What specifically does Infinispan solve that a single Keycloak node with no cache at all could
-      not? Be precise about what state has to be shared and why.</li>
-      <li>Explain, without looking back at the text, how a Keycloak realm concretely fills the Authorization
-      Server role chapter 13 defined abstractly — what, specifically, does a realm contain that makes it
-      capable of doing that job?</li>
-      <li>Why might an organization deliberately choose a containerized Docker Compose deployment over
-      Kubernetes even if it could run Kubernetes well? What is it trading away, and what is it avoiding?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/server/db">Keycloak Server Administration Guide — Configuring the database</a></li>
-      <li><a href="https://www.keycloak.org/server/configuration">Keycloak Server Administration Guide — Configuring Keycloak (build-time vs. runtime options)</a></li>
-      <li><a href="https://www.keycloak.org/server/caching">Keycloak Server Administration Guide — Configuring distributed caches (Infinispan)</a></li>
-      <li><a href="https://www.keycloak.org/high-availability/introduction">Keycloak High Availability Guide — Introduction and architecture overview</a></li>
-      <li><a href="https://www.keycloak.org/2021/10/keycloak-x-update">Keycloak project blog — "Keycloak.X Update" (the Quarkus/WildFly transition announcement)</a></li>
-      <li><a href="https://www.keycloak.org/server/containers">Keycloak Server Administration Guide — Running Keycloak in a container</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "keycloak-architecture", 15);
+    SlideDeck.init({ chapterSlug: "keycloak-architecture" });
   });
 </script>
 </body>

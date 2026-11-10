@@ -5,108 +5,126 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Installing &amp; Running Keycloak — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "installing-keycloak";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part IV — Keycloak Core Administration</span>
-      <span class="badge minutes">~50 min</span>
-      <span class="badge lab">Hands-on lab</span>
-    </div>
-    <h1>20. Installing &amp; Running Keycloak</h1>
-    <p class="lede">Every chapter before this one has been either vendor-agnostic theory or a lab against
-    someone else's OAuth/OIDC server. This is the chapter where that changes: Keycloak gets installed, for
-    real, on this machine, and every command below was actually run against it — not narrated. By the end
-    you will have brought up a real Keycloak 26.8.2 instance, logged into it, and created the one realm
-    every chapter from here through chapter 26 builds on: <code>northwind-apps</code>.</p>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
 
-    <h2>Why this matters</h2>
-    <p>An IAM specialist's first real task on a new job is rarely glamorous: stand up the identity server,
-    get a clean admin login, and create the first real tenant boundary — correctly, the first time, because
-    everything else gets built on top of it. Getting this wrong (running a dev-mode convenience config in
-    production, or putting application clients into the wrong realm) is the single most common way a
-    Keycloak deployment starts its life already insecure. This chapter is also the first place the course's
-    "no invented facts" rule gets tested against a tool you can run yourself: every command and every line
-    of output below is real, and every claim about the Admin Console's screens that this session's agent
-    could not personally click through is labeled as coming from Keycloak's own current documentation
-    instead.</p>
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IV — Keycloak Core Administration</span>
+          <span class="badge minutes">~50 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>20. Installing &amp; Running Keycloak</h1>
+        <p class="lede">Every chapter before this one has been either vendor-agnostic theory or a lab against
+        someone else's OAuth/OIDC server. This is the chapter where that changes: Keycloak gets installed, for
+        real, on this machine, and every command below was actually run against it — not narrated. By the end
+        you will have brought up a real Keycloak 26.8.2 instance, logged into it, and created the one realm
+        every chapter from here through chapter 26 builds on: <code>northwind-apps</code>.</p>
 
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">Recall before you install it</div>
-      <p>Chapter 19 established that Keycloak 26.8.2 ships as a Quarkus-based distribution and that this
-      course runs it against PostgreSQL rather than its bundled dev database — this chapter is where that
-      stops being an architecture diagram and becomes a running container. Chapter 0 already had you
-      confirm Docker works on this machine as part of environment setup; this chapter is the first time
-      that Docker installation does real IAM work instead of sitting idle. And chapter 2's identity
-      lifecycle, chapter 7's federation/trust vocabulary, and chapter 8's token/session concepts are all
-      about to get a concrete home: a specific realm, inside a specific Keycloak instance, that chapters
-      21-26 will keep building on.</p>
-    </div>
+        <h2>Why this matters</h2>
+        <p>An IAM specialist's first real task on a new job is rarely glamorous: stand up the identity server,
+        get a clean admin login, and create the first real tenant boundary — correctly, the first time, because
+        everything else gets built on top of it. Getting this wrong (running a dev-mode convenience config in
+        production, or putting application clients into the wrong realm) is the single most common way a
+        Keycloak deployment starts its life already insecure. This chapter is also the first place the course's
+        "no invented facts" rule gets tested against a tool you can run yourself: every command and every line
+        of output below is real, and every claim about the Admin Console's screens that this session's agent
+        could not personally click through is labeled as coming from Keycloak's own current documentation
+        instead.</p>
+      </section>
 
-    <h2>The lab environment: bringing the stack up for real</h2>
-    <p>This chapter's lab lives in <code>labs/docker/docker-compose.yml</code> — a two-service stack
-    (Keycloak 26.8.2 + PostgreSQL 17) that every Part IV chapter reuses. It was built and independently
-    confirmed working in an earlier session; this chapter re-ran it from a clean state rather than trusting
-    that confirmation secondhand.</p>
+      <section class="slide" data-slide="concept-recall" data-title="Recall before you install it">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">Recall before you install it</div>
+          <p>Chapter 19 established that Keycloak 26.8.2 ships as a Quarkus-based distribution and that this
+          course runs it against PostgreSQL rather than its bundled dev database — this chapter is where that
+          stops being an architecture diagram and becomes a running container. Chapter 0 already had you
+          confirm Docker works on this machine as part of environment setup; this chapter is the first time
+          that Docker installation does real IAM work instead of sitting idle. And chapter 2's identity
+          lifecycle, chapter 7's federation/trust vocabulary, and chapter 8's token/session concepts are all
+          about to get a concrete home: a specific realm, inside a specific Keycloak instance, that chapters
+          21-26 will keep building on.</p>
+        </div>
+      </section>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 300" role="img" aria-labelledby="t0 d0">
-        <title id="t0">The docker-compose lab stack: Keycloak 26.8.2 and PostgreSQL 17</title>
-        <desc id="d0">Two containers on a shared Docker network. The postgres container runs Postgres 17,
-        stores data in a named volume keycloak_pg_data, and exposes a healthcheck using pg_isready. The
-        keycloak container runs Keycloak 26.8.2 in start-dev mode, depends on the postgres container's
-        healthcheck passing before it starts, reads database connection and bootstrap-admin environment
-        variables, and publishes port 8080 to the host so the Admin Console and Admin REST API are both
-        reachable at http://localhost:8080.</desc>
-        <rect x="60" y="60" width="280" height="160" rx="10" class="diagram-fill-info diagram-stroke"/>
-        <text x="200" y="88" text-anchor="middle" class="diagram-label" font-weight="700">postgres</text>
-        <text x="200" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">postgres:17-alpine</text>
-        <text x="200" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">volume: keycloak_pg_data</text>
-        <text x="200" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">healthcheck: pg_isready</text>
-        <text x="200" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">not exposed to host</text>
+      <section class="slide" data-slide="stack-diagram" data-title="The lab stack">
+        <h2>The lab environment: bringing the stack up for real</h2>
+        <p>This chapter's lab lives in <code>labs/docker/docker-compose.yml</code> — a two-service stack
+        (Keycloak 26.8.2 + PostgreSQL 17) that every Part IV chapter reuses. It was built and independently
+        confirmed working in an earlier session; this chapter re-ran it from a clean state rather than trusting
+        that confirmation secondhand.</p>
 
-        <line x1="340" y1="140" x2="440" y2="140" class="diagram-stroke" marker-end="url(#arrowA)"/>
-        <text x="390" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">depends_on:</text>
-        <text x="390" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">service_healthy</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t0 d0">
+            <title id="t0">The docker-compose lab stack: Keycloak 26.8.2 and PostgreSQL 17</title>
+            <desc id="d0">Two containers on a shared Docker network. The postgres container runs Postgres 17,
+            stores data in a named volume keycloak_pg_data, and exposes a healthcheck using pg_isready. The
+            keycloak container runs Keycloak 26.8.2 in start-dev mode, depends on the postgres container's
+            healthcheck passing before it starts, reads database connection and bootstrap-admin environment
+            variables, and publishes port 8080 to the host so the Admin Console and Admin REST API are both
+            reachable at http://localhost:8080.</desc>
+            <rect x="60" y="60" width="280" height="160" rx="10" class="diagram-fill-info diagram-stroke"/>
+            <text x="200" y="88" text-anchor="middle" class="diagram-label" font-weight="700">postgres</text>
+            <text x="200" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">postgres:17-alpine</text>
+            <text x="200" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">volume: keycloak_pg_data</text>
+            <text x="200" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">healthcheck: pg_isready</text>
+            <text x="200" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">not exposed to host</text>
 
-        <rect x="440" y="60" width="300" height="160" rx="10" class="diagram-fill-accent diagram-stroke"/>
-        <text x="590" y="88" text-anchor="middle" class="diagram-label" font-weight="700">keycloak</text>
-        <text x="590" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">quay.io/keycloak/keycloak:26.8.2</text>
-        <text x="590" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">command: start-dev</text>
-        <text x="590" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">KC_DB_URL, KC_BOOTSTRAP_ADMIN_*</text>
-        <text x="590" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">KC_HEALTH_ENABLED=true</text>
+            <line x1="340" y1="140" x2="440" y2="140" class="diagram-stroke" marker-end="url(#arrowA)"/>
+            <text x="390" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">depends_on:</text>
+            <text x="390" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">service_healthy</text>
 
-        <line x1="640" y1="220" x2="640" y2="260" class="diagram-stroke" marker-end="url(#arrowA)"/>
-        <rect x="500" y="260" width="280" height="30" rx="6" class="diagram-fill-success diagram-stroke"/>
-        <text x="640" y="280" text-anchor="middle" class="diagram-label" font-size="11">host:8080 &#8594; container:8080 (published)</text>
+            <rect x="440" y="60" width="300" height="160" rx="10" class="diagram-fill-accent diagram-stroke"/>
+            <text x="590" y="88" text-anchor="middle" class="diagram-label" font-weight="700">keycloak</text>
+            <text x="590" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">quay.io/keycloak/keycloak:26.8.2</text>
+            <text x="590" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">command: start-dev</text>
+            <text x="590" y="148" text-anchor="middle" class="diagram-label-muted" font-size="11">KC_DB_URL, KC_BOOTSTRAP_ADMIN_*</text>
+            <text x="590" y="168" text-anchor="middle" class="diagram-label-muted" font-size="11">KC_HEALTH_ENABLED=true</text>
 
-        <text x="60" y="250" class="diagram-label-muted" font-size="11">Both containers share one Docker network (docker_default); only Keycloak's port is published to the host.</text>
+            <line x1="640" y1="220" x2="640" y2="260" class="diagram-stroke" marker-end="url(#arrowA)"/>
+            <rect x="500" y="260" width="280" height="30" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="640" y="280" text-anchor="middle" class="diagram-label" font-size="11">host:8080 &#8594; container:8080 (published)</text>
 
-        <defs>
-          <marker id="arrowA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 20.1 — The two-container lab stack this chapter actually brought up and tore
-      down.</figcaption>
-    </figure>
+            <text x="60" y="250" class="diagram-label-muted" font-size="11">Both containers share one Docker network (docker_default); only Keycloak's port is published to the host.</text>
 
-    <ol class="lab-steps">
-      <li><p>Start the stack from <code>labs/docker/</code>:</p>
+            <defs>
+              <marker id="arrowA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 20.1 — The two-container lab stack this chapter actually brought up and tore
+          down.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="stack-lab-steps" data-title="Lab: bring the stack up">
+        <h2>Lab: bring the stack up and confirm it's ready</h2>
+        <ol class="lab-steps">
+          <li><p>Start the stack from <code>labs/docker/</code>:</p>
 <pre><code>cd labs/docker
 docker compose up -d</code></pre>
 <pre><code> Network docker_default Creating
@@ -123,13 +141,13 @@ docker compose up -d</code></pre>
  Container docker-postgres-1 Healthy
  Container docker-keycloak-1 Starting
  Container docker-keycloak-1 Started</code></pre>
-      <p>Note the ordering: Postgres starts first and the compose file's <code>depends_on: condition:
-      service_healthy</code> makes Keycloak wait for Postgres's own healthcheck
-      (<code>pg_isready</code>) before it starts at all — Keycloak never gets a chance to race a database
-      that isn't accepting connections yet.</p></li>
+          <p>Note the ordering: Postgres starts first and the compose file's <code>depends_on: condition:
+          service_healthy</code> makes Keycloak wait for Postgres's own healthcheck
+          (<code>pg_isready</code>) before it starts at all — Keycloak never gets a chance to race a database
+          that isn't accepting connections yet.</p></li>
 
-      <li><p>Poll the realm discovery endpoint until Keycloak answers. In this run it took about 30 seconds
-      from container start to a <code>200</code> — don't assume it's instant:</p>
+          <li><p>Poll the realm discovery endpoint until Keycloak answers. In this run it took about 30 seconds
+          from container start to a <code>200</code> — don't assume it's instant:</p>
 <pre><code>for i in $(seq 1 20); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:8080/realms/master/.well-known/openid-configuration)
@@ -142,214 +160,222 @@ attempt 2: 000
 ...
 attempt 9: 000
 attempt 10: 200</code></pre>
-      <p>Nine attempts of <code>000</code> (connection refused — nothing listening yet) before the tenth
-      attempt gets a real <code>200</code>. The README's "wait 15-20 seconds" guidance is a reasonable
-      estimate, not a guarantee; polling the discovery endpoint until it actually answers is the correct
-      way to know the server is ready, not a fixed sleep.</p></li>
+          <p>Nine attempts of <code>000</code> (connection refused — nothing listening yet) before the tenth
+          attempt gets a real <code>200</code>. The README's "wait 15-20 seconds" guidance is a reasonable
+          estimate, not a guarantee; polling the discovery endpoint until it actually answers is the correct
+          way to know the server is ready, not a fixed sleep.</p></li>
 
-      <li><p>Read the real boot log for the two lines this chapter cares about most:</p>
+          <li><p>Read the real boot log for the two lines this chapter cares about most:</p>
 <pre><code>docker compose logs keycloak | grep -i "temporary admin\|development mode\|started"</code></pre>
 <pre><code>keycloak-1  | Running the server in development mode. DO NOT use this configuration in production.
 keycloak-1  | 2026-11-10 08:06:16,520 INFO  [org.keycloak.services] (main) KC-SERVICES0077: Created temporary admin user with username admin
 keycloak-1  | 2026-11-10 08:06:16,728 INFO  [io.quarkus] (main) Keycloak 26.8.2 on JVM (powered by Quarkus 3.40.1.1) started in 19.441s. Listening on: http://0.0.0.0:8080.</code></pre>
-      <p>Three facts in that log, all load-bearing for the rest of this chapter: the server is explicitly
-      warning you it's in development mode, it created an admin user it itself calls "temporary," and
-      Quarkus's own startup took about 19.4 seconds internally (the extra time before the first
-      <code>200</code> is the container runtime plus the TCP listener coming up around that).</p></li>
-    </ol>
+          <p>Three facts in that log, all load-bearing for the rest of this chapter: the server is explicitly
+          warning you it's in development mode, it created an admin user it itself calls "temporary," and
+          Quarkus's own startup took about 19.4 seconds internally (the extra time before the first
+          <code>200</code> is the container runtime plus the TCP listener coming up around that).</p></li>
+        </ol>
+      </section>
 
-    <h2>The bootstrap admin: what "temporary" actually means</h2>
-    <p>The compose file sets <code>KC_BOOTSTRAP_ADMIN_USERNAME=admin</code> and
-    <code>KC_BOOTSTRAP_ADMIN_PASSWORD=admin_lab_password</code>. Keycloak's own
-    <a href="https://www.keycloak.org/server/bootstrap-admin-recovery">Bootstrapping and recovering an
-    admin account</a> guide (fetched live for this chapter) is specific about what that creates: these
-    options exist "solely for bootstrapping temporary admin accounts," the account is created "only during
-    the initial start" and "only during the initial start... when the master realm doesn't exist yet," and
-    — the key sentence — a bootstrap admin "is temporary" and "should exist only for the duration necessary
-    to perform operations... after that, the account needs to be removed manually."</p>
+      <section class="slide" data-slide="bootstrap-admin" data-title="The bootstrap admin">
+        <h2>The bootstrap admin: what "temporary" actually means</h2>
+        <p>The compose file sets <code>KC_BOOTSTRAP_ADMIN_USERNAME=admin</code> and
+        <code>KC_BOOTSTRAP_ADMIN_PASSWORD=admin_lab_password</code>. Keycloak's own
+        <a href="https://www.keycloak.org/server/bootstrap-admin-recovery">Bootstrapping and recovering an
+        admin account</a> guide (fetched live for this chapter) is specific about what that creates: these
+        options exist "solely for bootstrapping temporary admin accounts," the account is created "only during
+        the initial start" and "only during the initial start... when the master realm doesn't exist yet," and
+        — the key sentence — a bootstrap admin "is temporary" and "should exist only for the duration necessary
+        to perform operations... after that, the account needs to be removed manually."</p>
 
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea</div>
-      <p>"Temporary" here does not mean "limited" or "read-only." It means <em>meant to be replaced before
-      any real use</em> — but fully functional in the meantime. That's exactly why <code>kcadm.sh</code>
-      could log in with it a moment ago in the lab steps above and create a real realm: nothing about the
-      account's privileges is restricted while it exists. The label is a lifecycle/governance signal (this
-      credential should not outlive the setup task it was created for), not a technical limitation —
-      chapter 10's provisioning/deprovisioning vocabulary applies to this account exactly as it does to any
-      other identity: it should be deprovisioned once a real named administrator exists.</p>
-    </div>
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>"Temporary" here does not mean "limited" or "read-only." It means <em>meant to be replaced before
+          any real use</em> — but fully functional in the meantime. That's exactly why <code>kcadm.sh</code>
+          could log in with it a moment ago in the lab steps above and create a real realm: nothing about the
+          account's privileges is restricted while it exists. The label is a lifecycle/governance signal (this
+          credential should not outlive the setup task it was created for), not a technical limitation —
+          chapter 10's provisioning/deprovisioning vocabulary applies to this account exactly as it does to any
+          other identity: it should be deprovisioned once a real named administrator exists.</p>
+        </div>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 220" role="img" aria-labelledby="t2 d2">
-        <title id="t2">The bootstrap admin creation sequence on first start</title>
-        <desc id="d2">A left-to-right timeline of four steps. Step 1: the Keycloak container starts and
-        checks whether the master realm already exists. Step 2: since this is the first-ever start, the
-        master realm does not exist yet, so Keycloak reads the KC_BOOTSTRAP_ADMIN_USERNAME and
-        KC_BOOTSTRAP_ADMIN_PASSWORD environment variables. Step 3: Keycloak creates the master realm and,
-        inside it, a temporary admin user with that username and password, logging KC-SERVICES0077
-        "Created temporary admin user with username admin". Step 4: that account is immediately fully
-        functional for any Admin Console, Admin REST API, or kcadm.sh login, and remains so until an
-        administrator manually removes it, even though it is labeled temporary.</desc>
-        <rect x="20" y="70" width="190" height="80" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="115" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">1. CONTAINER STARTS</text>
-        <text x="115" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">checks: does master</text>
-        <text x="115" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">realm exist yet?</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 220" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The bootstrap admin creation sequence on first start</title>
+            <desc id="d2">A left-to-right timeline of four steps. Step 1: the Keycloak container starts and
+            checks whether the master realm already exists. Step 2: since this is the first-ever start, the
+            master realm does not exist yet, so Keycloak reads the KC_BOOTSTRAP_ADMIN_USERNAME and
+            KC_BOOTSTRAP_ADMIN_PASSWORD environment variables. Step 3: Keycloak creates the master realm and,
+            inside it, a temporary admin user with that username and password, logging KC-SERVICES0077
+            "Created temporary admin user with username admin". Step 4: that account is immediately fully
+            functional for any Admin Console, Admin REST API, or kcadm.sh login, and remains so until an
+            administrator manually removes it, even though it is labeled temporary.</desc>
+            <rect x="20" y="70" width="190" height="80" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="115" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">1. CONTAINER STARTS</text>
+            <text x="115" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">checks: does master</text>
+            <text x="115" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">realm exist yet?</text>
 
-        <line x1="210" y1="110" x2="235" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
+            <line x1="210" y1="110" x2="235" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
 
-        <rect x="235" y="70" width="190" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="330" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">2. NO — FIRST START</text>
-        <text x="330" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">reads KC_BOOTSTRAP_</text>
-        <text x="330" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">ADMIN_USERNAME/PASSWORD</text>
+            <rect x="235" y="70" width="190" height="80" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="330" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">2. NO — FIRST START</text>
+            <text x="330" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">reads KC_BOOTSTRAP_</text>
+            <text x="330" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">ADMIN_USERNAME/PASSWORD</text>
 
-        <line x1="425" y1="110" x2="450" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
+            <line x1="425" y1="110" x2="450" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
 
-        <rect x="450" y="70" width="210" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
-        <text x="555" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">3. ACCOUNT CREATED</text>
-        <text x="555" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">logs KC-SERVICES0077</text>
-        <text x="555" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">"temporary admin user"</text>
+            <rect x="450" y="70" width="210" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="555" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">3. ACCOUNT CREATED</text>
+            <text x="555" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">logs KC-SERVICES0077</text>
+            <text x="555" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">"temporary admin user"</text>
 
-        <line x1="660" y1="110" x2="685" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
+            <line x1="660" y1="110" x2="685" y2="110" class="diagram-stroke" marker-end="url(#arrowB)"/>
 
-        <rect x="685" y="70" width="195" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="782" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">4. FULLY FUNCTIONAL</text>
-        <text x="782" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">Console, REST API,</text>
-        <text x="782" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">kcadm.sh all work now</text>
+            <rect x="685" y="70" width="195" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="782" y="95" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">4. FULLY FUNCTIONAL</text>
+            <text x="782" y="115" text-anchor="middle" class="diagram-label-muted" font-size="11">Console, REST API,</text>
+            <text x="782" y="130" text-anchor="middle" class="diagram-label-muted" font-size="11">kcadm.sh all work now</text>
 
-        <text x="20" y="190" class="diagram-label-muted" font-size="11">On any later restart, step 1 answers "yes" and steps 2-4 never run again — those env vars are then silently ignored.</text>
+            <text x="20" y="190" class="diagram-label-muted" font-size="11">On any later restart, step 1 answers "yes" and steps 2-4 never run again — those env vars are then silently ignored.</text>
 
-        <defs>
-          <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 20.2 — Why the bootstrap admin exists, and why it only ever gets created
-      once.</figcaption>
-    </figure>
+            <defs>
+              <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 20.2 — Why the bootstrap admin exists, and why it only ever gets created
+          once.</figcaption>
+        </figure>
 
-    <p>If the server restarts with the master realm already present, those bootstrap options are silently
-    ignored — the docs are explicit that this only ever fires once, on the realm's very first creation.
-    Keycloak also ships a separate <code>bin/kc.sh bootstrap-admin user</code> command for the case where
-    admin access is lost entirely (every node must be stopped first); this chapter doesn't need it, since
-    the compose file's environment variables did the job on first start, but it's worth knowing it exists
-    for a genuine lockout later in the course.</p>
+        <p>If the server restarts with the master realm already present, those bootstrap options are silently
+        ignored — the docs are explicit that this only ever fires once, on the realm's very first creation.
+        Keycloak also ships a separate <code>bin/kc.sh bootstrap-admin user</code> command for the case where
+        admin access is lost entirely (every node must be stopped first); this chapter doesn't need it, since
+        the compose file's environment variables did the job on first start, but it's worth knowing it exists
+        for a genuine lockout later in the course.</p>
+      </section>
 
-    <h2><code>start-dev</code> vs. production mode</h2>
-    <p>The compose file's <code>command: start-dev</code> is the second log line's real cause. Keycloak's
-    own <a href="https://www.keycloak.org/server/configuration">server configuration guide</a> lists exactly
-    what that command relaxes relative to plain <code>start</code> (production mode) — not a vague "it's
-    less secure," but specific, named relaxations:</p>
+      <section class="slide" data-slide="start-dev-vs-prod" data-title="start-dev vs. production">
+        <h2><code>start-dev</code> vs. production mode</h2>
+        <p>The compose file's <code>command: start-dev</code> is the second log line's real cause. Keycloak's
+        own <a href="https://www.keycloak.org/server/configuration">server configuration guide</a> lists exactly
+        what that command relaxes relative to plain <code>start</code> (production mode) — not a vague "it's
+        less secure," but specific, named relaxations:</p>
 
-    <div class="table-wrap">
-      <table>
-        <caption>What <code>start-dev</code> relaxes, per Keycloak's own configuration guide — not assumed, read from the live doc for this chapter</caption>
-        <thead><tr><th>Area</th><th><code>start-dev</code></th><th>Production (<code>start</code>)</th></tr></thead>
-        <tbody>
-          <tr><td>Hostname checking</td><td>Strict hostname resolution is disabled</td><td>Explicit hostname configuration is expected</td></tr>
-          <tr><td>Transport</td><td>Plain HTTP is enabled</td><td>HTTP is disabled; HTTPS/TLS is required</td></tr>
-          <tr><td>TLS setup</td><td>Not required to start</td><td>Keycloak expects TLS configuration to be available</td></tr>
-          <tr><td>Caching</td><td>Local cache only; no distributed cache for HA</td><td>Clustered/distributed caching supported</td></tr>
-          <tr><td>Theme &amp; template caching</td><td>Disabled (so edits show up without a restart)</td><td>Enabled (performance over live-editing convenience)</td></tr>
-          <tr><td>Startup gate</td><td>Starts with no further configuration at all</td><td>Refuses to start without explicit configuration — "secure by default"</td></tr>
-        </tbody>
-      </table>
-    </div>
+        <div class="table-wrap">
+          <table class="table-compare table-compare--problem-solution">
+            <caption>What <code>start-dev</code> relaxes, per Keycloak's own configuration guide — not assumed, read from the live doc for this chapter</caption>
+            <thead><tr><th>Area</th><th><code>start-dev</code></th><th>Production (<code>start</code>)</th></tr></thead>
+            <tbody>
+              <tr><td>Hostname checking</td><td>Strict hostname resolution is disabled</td><td>Explicit hostname configuration is expected</td></tr>
+              <tr><td>Transport</td><td>Plain HTTP is enabled</td><td>HTTP is disabled; HTTPS/TLS is required</td></tr>
+              <tr><td>TLS setup</td><td>Not required to start</td><td>Keycloak expects TLS configuration to be available</td></tr>
+              <tr><td>Caching</td><td>Local cache only; no distributed cache for HA</td><td>Clustered/distributed caching supported</td></tr>
+              <tr><td>Theme &amp; template caching</td><td>Disabled (so edits show up without a restart)</td><td>Enabled (performance over live-editing convenience)</td></tr>
+              <tr><td>Startup gate</td><td>Starts with no further configuration at all</td><td>Refuses to start without explicit configuration — "secure by default"</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall</div>
-      <p>None of the left column is safe outside a local lab, and the failure mode is specifically that it
-      doesn't <em>look</em> unsafe — the server starts, the Admin Console loads, logins work. Plain HTTP
-      means credentials and tokens cross the network unencrypted; disabled strict hostname checking means
-      Keycloak will build links (password-reset emails, redirect validation) from whatever
-      <code>Host</code> header a request happens to send, which an attacker can manipulate. Production
-      mode's refusal to start without configuration is deliberate friction, not a bug — Keycloak's own docs
-      call this "secure by default" precisely because <code>start-dev</code> exists to remove that friction
-      for exactly one use case: a disposable local lab like this one. Chapter 45 (security hardening) is
-      where the full production checklist — hostname, TLS, reverse proxy placement, database, clustering —
-      gets built out in depth; this chapter is only the first place the distinction matters at all.</p>
-    </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>None of the left column is safe outside a local lab, and the failure mode is specifically that it
+          doesn't <em>look</em> unsafe — the server starts, the Admin Console loads, logins work. Plain HTTP
+          means credentials and tokens cross the network unencrypted; disabled strict hostname checking means
+          Keycloak will build links (password-reset emails, redirect validation) from whatever
+          <code>Host</code> header a request happens to send, which an attacker can manipulate. Production
+          mode's refusal to start without configuration is deliberate friction, not a bug — Keycloak's own docs
+          call this "secure by default" precisely because <code>start-dev</code> exists to remove that friction
+          for exactly one use case: a disposable local lab like this one. Chapter 45 (security hardening) is
+          where the full production checklist — hostname, TLS, reverse proxy placement, database, clustering —
+          gets built out in depth; this chapter is only the first place the distinction matters at all.</p>
+        </div>
+      </section>
 
-    <h2>The Keycloak Admin Console: extending what chapter 1 introduced</h2>
-    <p>Chapter 1 defined "Admin console" in the abstract — any IAM system's administrative UI — and
-    deferred Keycloak's specific one to here. <strong>No browser tool was available to click through it
-    personally in this session</strong>, so what follows about the Console's actual screens is drawn from
-    Keycloak's own current <a href="https://www.keycloak.org/docs/latest/server_admin/">Server
-    Administration Guide</a> (fetched live, version matching 26.8.2), labeled as such rather than presented
-    as a personal observation. What <em>was</em> personally verified is the underlying mechanism every one
-    of those screens is a thin UI layer over: the Admin REST API, exercised directly through
-    <code>kcadm.sh</code> in the lab steps on this page.</p>
+      <section class="slide" data-slide="admin-console" data-title="The Admin Console">
+        <h2>The Keycloak Admin Console: extending what chapter 1 introduced</h2>
+        <p>Chapter 1 defined "Admin console" in the abstract — any IAM system's administrative UI — and
+        deferred Keycloak's specific one to here. <strong>No browser tool was available to click through it
+        personally in this session</strong>, so what follows about the Console's actual screens is drawn from
+        Keycloak's own current <a href="https://www.keycloak.org/docs/latest/server_admin/">Server
+        Administration Guide</a> (fetched live, version matching 26.8.2), labeled as such rather than presented
+        as a personal observation. What <em>was</em> personally verified is the underlying mechanism every one
+        of those screens is a thin UI layer over: the Admin REST API, exercised directly through
+        <code>kcadm.sh</code> in the lab steps on this page.</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 300" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Admin Console navigation to create a realm, per Keycloak's official documentation</title>
-        <desc id="d3">A left-to-right flow of four steps. Step 1: the administrator opens the Admin Console
-        at the /admin path and signs in, landing with "Current realm: master" shown in the top-left realm
-        selector. Step 2: clicking that selector opens a dropdown listing existing realms plus a "Create
-        realm" button. Step 3: clicking "Create realm" opens a form with a single required realm name
-        field, here filled with "northwind-apps". Step 4: clicking "Create" submits the form; the
-        documentation states the newly created realm automatically becomes the current realm, shown in the
-        same top-left selector.</desc>
-        <text x="20" y="24" class="diagram-label" font-weight="700" font-size="12">PER KEYCLOAK'S OFFICIAL SERVER ADMINISTRATION GUIDE (not personally screenshot-verified this chapter)</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Admin Console navigation to create a realm, per Keycloak's official documentation</title>
+            <desc id="d3">A left-to-right flow of four steps. Step 1: the administrator opens the Admin Console
+            at the /admin path and signs in, landing with "Current realm: master" shown in the top-left realm
+            selector. Step 2: clicking that selector opens a dropdown listing existing realms plus a "Create
+            realm" button. Step 3: clicking "Create realm" opens a form with a single required realm name
+            field, here filled with "northwind-apps". Step 4: clicking "Create" submits the form; the
+            documentation states the newly created realm automatically becomes the current realm, shown in the
+            same top-left selector.</desc>
+            <text x="20" y="24" class="diagram-label" font-weight="700" font-size="12">PER KEYCLOAK'S OFFICIAL SERVER ADMINISTRATION GUIDE (not personally screenshot-verified this chapter)</text>
 
-        <rect x="20" y="50" width="190" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
-        <text x="115" y="78" text-anchor="middle" class="diagram-label" font-weight="700">1. SIGN IN</text>
-        <text x="115" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">/admin, bootstrap admin</text>
-        <text x="115" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">Current realm: master</text>
+            <rect x="20" y="50" width="190" height="90" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="115" y="78" text-anchor="middle" class="diagram-label" font-weight="700">1. SIGN IN</text>
+            <text x="115" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">/admin, bootstrap admin</text>
+            <text x="115" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">Current realm: master</text>
 
-        <line x1="210" y1="95" x2="235" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
+            <line x1="210" y1="95" x2="235" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
 
-        <rect x="235" y="50" width="190" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
-        <text x="330" y="78" text-anchor="middle" class="diagram-label" font-weight="700">2. REALM SELECTOR</text>
-        <text x="330" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">click "Current realm"</text>
-        <text x="330" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">dropdown shows "Create realm"</text>
+            <rect x="235" y="50" width="190" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="330" y="78" text-anchor="middle" class="diagram-label" font-weight="700">2. REALM SELECTOR</text>
+            <text x="330" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">click "Current realm"</text>
+            <text x="330" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">dropdown shows "Create realm"</text>
 
-        <line x1="425" y1="95" x2="450" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
+            <line x1="425" y1="95" x2="450" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
 
-        <rect x="450" y="50" width="200" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
-        <text x="550" y="78" text-anchor="middle" class="diagram-label" font-weight="700">3. NAME IT</text>
-        <text x="550" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">realm name field:</text>
-        <text x="550" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">northwind-apps</text>
+            <rect x="450" y="50" width="200" height="90" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="550" y="78" text-anchor="middle" class="diagram-label" font-weight="700">3. NAME IT</text>
+            <text x="550" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">realm name field:</text>
+            <text x="550" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">northwind-apps</text>
 
-        <line x1="650" y1="95" x2="675" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
+            <line x1="650" y1="95" x2="675" y2="95" class="diagram-stroke" marker-end="url(#arrow20)"/>
 
-        <rect x="675" y="50" width="200" height="90" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
-        <text x="775" y="78" text-anchor="middle" class="diagram-label" font-weight="700">4. CREATE</text>
-        <text x="775" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">Current realm switches</text>
-        <text x="775" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">to northwind-apps</text>
+            <rect x="675" y="50" width="200" height="90" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="775" y="78" text-anchor="middle" class="diagram-label" font-weight="700">4. CREATE</text>
+            <text x="775" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">Current realm switches</text>
+            <text x="775" y="114" text-anchor="middle" class="diagram-label-muted" font-size="11">to northwind-apps</text>
 
-        <text x="20" y="190" class="diagram-label-muted" font-size="11">The docs also note a key pair and self-signed certificate are generated automatically for every new realm —</text>
-        <text x="20" y="208" class="diagram-label-muted" font-size="11">this course doesn't inspect that certificate until chapter 16's JWKS material returns in Part V/VI's integration chapters.</text>
+            <text x="20" y="190" class="diagram-label-muted" font-size="11">The docs also note a key pair and self-signed certificate are generated automatically for every new realm —</text>
+            <text x="20" y="208" class="diagram-label-muted" font-size="11">this course doesn't inspect that certificate until chapter 16's JWKS material returns in Part V/VI's integration chapters.</text>
 
-        <defs>
-          <marker id="arrow20" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 20.3 — Creating a realm through the Admin Console, as described by Keycloak's
-      current official documentation.</figcaption>
-    </figure>
+            <defs>
+              <marker id="arrow20" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 20.3 — Creating a realm through the Admin Console, as described by Keycloak's
+          current official documentation.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Creating the <code>northwind-apps</code> realm, for real</h2>
-    <p>This is the chapter's actual deliverable. The command below is the scriptable equivalent of the four
-    UI clicks above, run against the Admin REST API via <code>kcadm.sh</code> — and it is the one this
-    session actually executed, not narrated.</p>
+      <section class="slide" data-slide="realm-creation" data-title="Lab: create the realm">
+        <h2>Creating the <code>northwind-apps</code> realm, for real</h2>
+        <p>This is the chapter's actual deliverable. The command below is the scriptable equivalent of the four
+        UI clicks above, run against the Admin REST API via <code>kcadm.sh</code> — and it is the one this
+        session actually executed, not narrated.</p>
 
-    <ol class="lab-steps">
-      <li><p>Authenticate <code>kcadm.sh</code> as the bootstrap admin:</p>
+        <ol class="lab-steps">
+          <li><p>Authenticate <code>kcadm.sh</code> as the bootstrap admin:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 --realm master --user admin --password admin_lab_password</code></pre>
 <pre><code>Logging into http://localhost:8080 as user admin of realm master</code></pre>
-      <p>Note the <code>--realm master</code> — you always authenticate to the <code>master</code> realm to
-      get an admin session, even though the realm you're about to act on is a different one entirely.</p></li>
+          <p>Note the <code>--realm master</code> — you always authenticate to the <code>master</code> realm to
+          get an admin session, even though the realm you're about to act on is a different one entirely.</p></li>
 
-      <li><p>Create the realm:</p>
+          <li><p>Create the realm:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
   -s realm=northwind-apps -s enabled=true</code></pre>
 <pre><code>Created new realm with id 'northwind-apps'</code></pre></li>
 
-      <li><p>Confirm it exists, independently of the creation command's own success message:</p>
+          <li><p>Confirm it exists, independently of the creation command's own success message:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms --fields realm,enabled</code></pre>
 <pre><code>[ {
   "realm" : "northwind-apps",
@@ -358,176 +384,221 @@ keycloak-1  | 2026-11-10 08:06:16,728 INFO  [io.quarkus] (main) Keycloak 26.8.2 
   "realm" : "master",
   "enabled" : true
 } ]</code></pre>
-      <p>Two realms now exist on this instance: <code>master</code> (created automatically when Keycloak
-      first started) and <code>northwind-apps</code> (created just now). Chapter 27 goes deep on
-      <code>kcadm.sh</code> and the Admin REST API it wraps — here it's used only as a way to prove each
-      step actually worked, exactly the role it plays in every chapter through 26.</p></li>
-    </ol>
+          <p>Two realms now exist on this instance: <code>master</code> (created automatically when Keycloak
+          first started) and <code>northwind-apps</code> (created just now). Chapter 27 goes deep on
+          <code>kcadm.sh</code> and the Admin REST API it wraps — here it's used only as a way to prove each
+          step actually worked, exactly the role it plays in every chapter through 26.</p></li>
+        </ol>
+      </section>
 
-    <h2>Never use <code>master</code> for applications</h2>
-    <p>Keycloak's own getting-started material states the <code>master</code> realm's purpose plainly: use
-    it "only to create and manage the realms in your system" — administrators manage an organization's own
-    users and applications in <em>other</em> realms. This course's seed reference material opens with the
-    same rule in almost the same words: "Never use the master realm for your applications." It's worth
-    restating exactly <em>why</em>, not just repeating the rule: <code>master</code> is where Keycloak's own
-    administrative accounts and realm-management permissions live. Mixing a company's actual customers,
-    employees, and application clients into that realm means a bug or a breach in an ordinary business
-    application now sits one hop away from the account that can create, delete, or reconfigure every other
-    realm on the instance — including <code>master</code> itself. Keeping them apart is the entire reason
-    this chapter created a second realm instead of just using the one Keycloak gave you for free.</p>
+      <section class="slide" data-slide="never-master" data-title="Never use master">
+        <h2>Never use <code>master</code> for applications</h2>
+        <p>Keycloak's own getting-started material states the <code>master</code> realm's purpose plainly: use
+        it "only to create and manage the realms in your system" — administrators manage an organization's own
+        users and applications in <em>other</em> realms. This course's seed reference material opens with the
+        same rule in almost the same words: "Never use the master realm for your applications." It's worth
+        restating exactly <em>why</em>, not just repeating the rule: <code>master</code> is where Keycloak's own
+        administrative accounts and realm-management permissions live. Mixing a company's actual customers,
+        employees, and application clients into that realm means a bug or a breach in an ordinary business
+        application now sits one hop away from the account that can create, delete, or reconfigure every other
+        realm on the instance — including <code>master</code> itself. Keeping them apart is the entire reason
+        this chapter created a second realm instead of just using the one Keycloak gave you for free.</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t4 d4">
-        <title id="t4">Two realms on one Keycloak instance, with a hard boundary between them</title>
-        <desc id="d4">Two side-by-side boxes on the same Keycloak instance. The left box, labeled master,
-        contains only the bootstrap admin account and realm-management permissions, with a caption "manages
-        Keycloak itself — never put application users or clients here." The right box, labeled
-        northwind-apps, is currently empty except for its default settings, with a caption listing what
-        future chapters will add here: users jane.doe and priya.patel in chapter 22, roles and groups in
-        chapter 23, clients in chapter 24. An arrow between the two boxes is crossed out, representing that
-        administrators manage northwind-apps through master's admin account, but northwind-apps's own users
-        and clients never live inside master.</desc>
-        <rect x="40" y="50" width="340" height="170" rx="10" class="diagram-fill-danger diagram-stroke"/>
-        <text x="210" y="78" text-anchor="middle" class="diagram-label" font-weight="700">master realm</text>
-        <text x="210" y="100" text-anchor="middle" class="diagram-label-muted" font-size="11">bootstrap admin account</text>
-        <text x="210" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">realm-management permissions</text>
-        <text x="210" y="150" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Manages Keycloak itself.</text>
-        <text x="210" y="168" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Never put application users</text>
-        <text x="210" y="186" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">or clients here.</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Two realms on one Keycloak instance, with a hard boundary between them</title>
+            <desc id="d4">Two side-by-side boxes on the same Keycloak instance. The left box, labeled master,
+            contains only the bootstrap admin account and realm-management permissions, with a caption "manages
+            Keycloak itself — never put application users or clients here." The right box, labeled
+            northwind-apps, is currently empty except for its default settings, with a caption listing what
+            future chapters will add here: users jane.doe and priya.patel in chapter 22, roles and groups in
+            chapter 23, clients in chapter 24. An arrow between the two boxes is crossed out, representing that
+            administrators manage northwind-apps through master's admin account, but northwind-apps's own users
+            and clients never live inside master.</desc>
+            <rect x="40" y="50" width="340" height="170" rx="10" class="diagram-fill-danger diagram-stroke"/>
+            <text x="210" y="78" text-anchor="middle" class="diagram-label" font-weight="700">master realm</text>
+            <text x="210" y="100" text-anchor="middle" class="diagram-label-muted" font-size="11">bootstrap admin account</text>
+            <text x="210" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">realm-management permissions</text>
+            <text x="210" y="150" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Manages Keycloak itself.</text>
+            <text x="210" y="168" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Never put application users</text>
+            <text x="210" y="186" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">or clients here.</text>
 
-        <rect x="520" y="50" width="340" height="170" rx="10" class="diagram-fill-success diagram-stroke"/>
-        <text x="690" y="78" text-anchor="middle" class="diagram-label" font-weight="700">northwind-apps realm</text>
-        <text x="690" y="100" text-anchor="middle" class="diagram-label-muted" font-size="11">created this chapter — currently empty</text>
-        <text x="690" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">ch21: realm settings &amp; branding</text>
-        <text x="690" y="146" text-anchor="middle" class="diagram-label-muted" font-size="11">ch22: jane.doe, priya.patel</text>
-        <text x="690" y="164" text-anchor="middle" class="diagram-label-muted" font-size="11">ch23: roles &amp; groups</text>
-        <text x="690" y="182" text-anchor="middle" class="diagram-label-muted" font-size="11">ch24: clients &amp; scopes</text>
+            <rect x="520" y="50" width="340" height="170" rx="10" class="diagram-fill-success diagram-stroke"/>
+            <text x="690" y="78" text-anchor="middle" class="diagram-label" font-weight="700">northwind-apps realm</text>
+            <text x="690" y="100" text-anchor="middle" class="diagram-label-muted" font-size="11">created this chapter — currently empty</text>
+            <text x="690" y="128" text-anchor="middle" class="diagram-label-muted" font-size="11">ch21: realm settings &amp; branding</text>
+            <text x="690" y="146" text-anchor="middle" class="diagram-label-muted" font-size="11">ch22: jane.doe, priya.patel</text>
+            <text x="690" y="164" text-anchor="middle" class="diagram-label-muted" font-size="11">ch23: roles &amp; groups</text>
+            <text x="690" y="182" text-anchor="middle" class="diagram-label-muted" font-size="11">ch24: clients &amp; scopes</text>
 
-        <line x1="380" y1="135" x2="520" y2="135" class="diagram-stroke" stroke-dasharray="4 4"/>
-        <text x="450" y="125" text-anchor="middle" class="diagram-label-muted" font-size="10">admin manages &#8594;</text>
-        <text x="450" y="245" text-anchor="middle" class="diagram-label-muted" font-size="11">one Keycloak instance, two realms, a hard tenancy boundary between them</text>
-      </svg>
-      <figcaption>Figure 20.4 — <code>master</code> manages the instance; <code>northwind-apps</code> is
-      where Northwind's own identities and clients will live, starting chapter 22.</figcaption>
-    </figure>
+            <line x1="380" y1="135" x2="520" y2="135" class="diagram-stroke" stroke-dasharray="4 4"/>
+            <text x="450" y="125" text-anchor="middle" class="diagram-label-muted" font-size="10">admin manages &#8594;</text>
+            <text x="450" y="245" text-anchor="middle" class="diagram-label-muted" font-size="11">one Keycloak instance, two realms, a hard tenancy boundary between them</text>
+          </svg>
+          <figcaption>Figure 20.4 — <code>master</code> manages the instance; <code>northwind-apps</code> is
+          where Northwind's own identities and clients will live, starting chapter 22.</figcaption>
+        </figure>
+      </section>
 
-    <h2>Case study: Northwind Apps' first realm</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Northwind Apps</div>
-      <p><span class="org-chip northwind">Northwind Apps</span> is the B2B SaaS company chapter 2
-      introduced — internal staff like Jane Doe and Priya plus thousands of customer-company users who
-      need their own CIAM-style access to the product. Every one of those identities needs somewhere to
-      live that is not <code>master</code>. <code>northwind-apps</code>, created in this chapter, is that
-      somewhere: an empty tenancy boundary today, but the concrete starting point for Northwind's entire
-      IAM program in this course. Chapter 19's "Northwind would likely run this containerized" sketch is no
-      longer hypothetical — Northwind's own engineers, reading this chapter, would run the exact
-      <code>docker compose up -d</code> this chapter ran, then the exact <code>kcadm.sh create realms</code>
-      command, as literally their first production-readiness task before writing a single line of
-      application code against Keycloak. Chapters 21-26 build out this realm's settings, users, roles,
-      clients, auth flows, and branding in that order — each one assuming <code>northwind-apps</code>
-      already exists, not recreating it from scratch.</p>
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps">
+        <h2>Case study: Northwind Apps' first realm</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> is the B2B SaaS company chapter 2
+          introduced — internal staff like Jane Doe and Priya plus thousands of customer-company users who
+          need their own CIAM-style access to the product. Every one of those identities needs somewhere to
+          live that is not <code>master</code>. <code>northwind-apps</code>, created in this chapter, is that
+          somewhere: an empty tenancy boundary today, but the concrete starting point for Northwind's entire
+          IAM program in this course. Chapter 19's "Northwind would likely run this containerized" sketch is no
+          longer hypothetical — Northwind's own engineers, reading this chapter, would run the exact
+          <code>docker compose up -d</code> this chapter ran, then the exact <code>kcadm.sh create realms</code>
+          command, as literally their first production-readiness task before writing a single line of
+          application code against Keycloak. Chapters 21-26 build out this realm's settings, users, roles,
+          clients, auth flows, and branding in that order — each one assuming <code>northwind-apps</code>
+          already exists, not recreating it from scratch.</p>
+          <p>The mechanism generalizes beyond Northwind, too: Riverside Health's clinician/patient IAM program
+          would start from the identical two commands, just with <code>riverside-health</code> in place of
+          <code>northwind-apps</code>, and Meridian Trust's PCI-DSS-scoped banking realm would be
+          <code>meridian-trust</code> created the same way. Nothing about this chapter's lab is
+          Northwind-specific — the realm name is the only thing that changes per organization; the boundary it
+          creates (one tenant, isolated from <code>master</code> and from every other org's realm) is the same
+          for all three running case studies.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see a reader run <code>docker compose up</code> and immediately try to log in, the cause is
+          skipping the readiness check — Keycloak's own startup (about 19 seconds of Quarkus boot in this run,
+          plus container-runtime overhead) means the first several seconds of requests will fail with a
+          connection error, not a meaningful HTTP error code.</li>
+          <li>If you see someone treat the "Created temporary admin user" log line as a warning to ignore, the
+          cause is misreading "temporary" as "degraded" — it's a fully functional admin account; "temporary"
+          describes how long it should be <em>kept</em>, not how well it works.</li>
+          <li>If you see <code>start-dev</code> running against a database or network reachable from outside a
+          single developer's machine, the cause is treating a convenience flag as a deployment mode — it is
+          explicitly documented as unsafe for anything beyond a local lab.</li>
+          <li>If you see application users or OAuth clients registered inside the <code>master</code> realm, the
+          cause is not realizing a new Keycloak instance ships with exactly one realm and assuming that's "the"
+          realm to use — it's reserved for managing Keycloak itself.</li>
+          <li>If you see a reader authenticate <code>kcadm.sh</code> with <code>--realm northwind-apps</code>
+          instead of <code>--realm master</code>, the cause is confusing which realm you authenticate <em>to</em>
+          (always <code>master</code>, for an admin session) with which realm you're acting <em>on</em> (the
+          <code>-s realm=...</code> argument, or whichever realm a later command targets).</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>This chapter's lab ran against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
+          <code>labs/docker/docker-compose.yml</code> — every command and output shown was actually executed,
+          not narrated.</li>
+          <li>Keycloak's own boot log explicitly says "Running the server in development mode. DO NOT use this
+          configuration in production" — the warning is printed on every single <code>start-dev</code> boot, not
+          a one-time notice.</li>
+          <li>The bootstrap admin created by <code>KC_BOOTSTRAP_ADMIN_USERNAME</code>/<code>_PASSWORD</code> is
+          labeled "temporary" because it's meant to be removed once a real administrator exists, not because it
+          has reduced privileges — it is fully functional, which is exactly why <code>kcadm.sh</code> could use
+          it to create a real realm.</li>
+          <li>That bootstrap creation only ever fires once, when the <code>master</code> realm doesn't exist
+          yet — restarting a Keycloak instance that already has <code>master</code> silently ignores those
+          environment variables.</li>
+          <li><code>start-dev</code> relaxes specific, named things — strict hostname checking, TLS/HTTPS
+          enforcement, distributed caching, and the startup gate that otherwise refuses to run without explicit
+          configuration — each one a real production requirement, not generic "insecure defaults" hand-waving.</li>
+          <li>The <code>northwind-apps</code> realm was created with
+          <code>kcadm.sh create realms -s realm=northwind-apps -s enabled=true</code> and independently
+          confirmed with a separate <code>get realms</code> call — two different commands agreeing, not one
+          command's own success message taken on faith.</li>
+          <li>The Admin Console's "Create realm" button, the realm-name field, and the realm selector
+          auto-switching to the new realm are described from Keycloak's current official Server Administration
+          Guide, clearly separated in this chapter from what was personally verified via <code>kcadm.sh</code> —
+          because no browser tool was available to click through the Console directly.</li>
+          <li><code>master</code> exists only to manage Keycloak itself (create/manage other realms); every
+          application's users, roles, and clients belong in a realm created for that purpose — mixing them in
+          puts ordinary application risk one hop away from instance-wide administrative control.</li>
+          <li>The Docker image's lack of a <code>curl</code>/<code>wget</code> binary inside the Keycloak
+          container is itself a real, independently confirmed fact from this chapter's lab run — the official
+          health-check docs independently note the same limitation for exactly this reason.</li>
+          <li>The realm-creation mechanism is organization-agnostic: Riverside Health and Meridian Trust would
+          run the identical two <code>kcadm.sh</code> commands with their own realm name in place of
+          <code>northwind-apps</code> to get the same isolated tenant boundary.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain, in your own words, why "temporary admin user" is a lifecycle label rather than a technical restriction — what specifically should happen to that account, and when?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>"Temporary" describes how long the account should exist, not how capable it is — it's a fully functional admin account the moment it's created, with no reduced privileges. Keycloak's own docs say it should exist only for the duration needed to perform initial setup operations, and then be removed manually once a real, named administrator account exists. The label is a governance/lifecycle signal (this credential should not outlive the bootstrap task), the same way chapter 10's joiner-mover-leaver vocabulary treats any identity that was only ever meant to be provisioned for a limited purpose.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does <code>kcadm.sh config credentials</code> always target <code>--realm master</code>, even when the command you're about to run acts on <code>northwind-apps</code>?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Authenticating is about which realm grants you an admin session, not which realm you intend to modify — and administrative accounts with realm-management permissions live in <code>master</code>. The realm you're acting <em>on</em> is a separate parameter supplied per command (for example <code>-s realm=northwind-apps</code> on the <code>create realms</code> call). Mixing these two up is exactly the mistake called out in this chapter's common-mistakes list: confusing "which realm do I log into" with "which realm does this specific command target."</p>
+          </details></li>
+          <li><details>
+            <summary>Pick two of the six relaxations in this chapter's <code>start-dev</code> table and explain, for each, a concrete attack or failure that becomes possible once that relaxation is in place on a publicly reachable instance.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Plain HTTP being enabled means every credential, token, and session cookie travels the network unencrypted — anyone positioned to observe the traffic (a shared network, a compromised router, a man-in-the-middle) can read or replay them directly. Disabled strict hostname checking means Keycloak builds links such as password-reset emails and validates redirects using whatever <code>Host</code> header the incoming request supplies; an attacker can send a request with a forged <code>Host</code> header and get Keycloak to generate a password-reset link pointing at an attacker-controlled domain, turning a routine password-reset flow into a credential-theft vector.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter could not personally verify the Admin Console's "Create realm" button through a browser. What specifically was verified instead, and why does that substitute meaningfully (not perfectly) for a visual check?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>What was personally verified is the mechanism the Console's screens are a thin UI layer over: the Admin REST API, exercised directly through <code>kcadm.sh</code> to authenticate, create the <code>northwind-apps</code> realm, and independently confirm it exists via a separate <code>get realms</code> call. That substitutes meaningfully because the Console doesn't do anything the REST API can't do — it's a UI on top of the same operations — so proving the underlying operation works end-to-end is strong evidence the feature works. It's not a perfect substitute because it says nothing about whether the Console's specific buttons, labels, or form fields match what Keycloak's documentation describes; that part is reported as documentation, not personal observation.</p>
+          </details></li>
+          <li><details>
+            <summary>If a colleague registered a new internal tool's OAuth client inside the <code>master</code> realm because "it was already open," what's the concrete risk you'd point to, and what would you tell them to do instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The concrete risk: <code>master</code> holds the realm-management permissions that can create, delete, or reconfigure every realm on the instance, including <code>master</code> itself. A vulnerability or misconfiguration in that internal tool's client (an overly permissive redirect URI, a leaked client secret) now sits one hop away from instance-wide administrative control, instead of being contained to one application's own realm. I'd tell them to create (or use) a dedicated realm for that organization's applications — exactly what this chapter did by creating <code>northwind-apps</code> rather than registering anything inside <code>master</code>.</p>
+          </details></li>
+          <li><details>
+            <summary>Why did this chapter poll the discovery endpoint in a loop instead of just sleeping for a fixed 15-20 seconds and assuming Keycloak was ready?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because a fixed sleep is a guess, and the actual run showed the guess would have been wrong in either direction depending on machine load — it took about 30 seconds from container start to the first real <code>200</code>, with nine prior attempts returning <code>000</code> (connection refused). Polling the discovery endpoint and checking for an actual <code>200</code> response measures the real condition you care about — "is Keycloak actually answering requests" — instead of assuming a specific duration will always be enough, which is the same "test, don't trust a confirmation secondhand" discipline this chapter applies throughout.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/server/bootstrap-admin-recovery">Keycloak docs — Bootstrapping and recovering an admin account</a></li>
+          <li><a href="https://www.keycloak.org/server/configuration">Keycloak docs — Configuring Keycloak (start vs. start-dev)</a></li>
+          <li><a href="https://www.keycloak.org/server/configuration-production">Keycloak docs — Configuring Keycloak for production</a></li>
+          <li><a href="https://www.keycloak.org/observability/health">Keycloak docs — Health checks</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/">Keycloak docs — Server Administration Guide (realms)</a></li>
+        </ul>
+      </section>
+
     </div>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see a reader run <code>docker compose up</code> and immediately try to log in, the cause is
-      skipping the readiness check — Keycloak's own startup (about 19 seconds of Quarkus boot in this run,
-      plus container-runtime overhead) means the first several seconds of requests will fail with a
-      connection error, not a meaningful HTTP error code.</li>
-      <li>If you see someone treat the "Created temporary admin user" log line as a warning to ignore, the
-      cause is misreading "temporary" as "degraded" — it's a fully functional admin account; "temporary"
-      describes how long it should be <em>kept</em>, not how well it works.</li>
-      <li>If you see <code>start-dev</code> running against a database or network reachable from outside a
-      single developer's machine, the cause is treating a convenience flag as a deployment mode — it is
-      explicitly documented as unsafe for anything beyond a local lab.</li>
-      <li>If you see application users or OAuth clients registered inside the <code>master</code> realm, the
-      cause is not realizing a new Keycloak instance ships with exactly one realm and assuming that's "the"
-      realm to use — it's reserved for managing Keycloak itself.</li>
-      <li>If you see a reader authenticate <code>kcadm.sh</code> with <code>--realm northwind-apps</code>
-      instead of <code>--realm master</code>, the cause is confusing which realm you authenticate <em>to</em>
-      (always <code>master</code>, for an admin session) with which realm you're acting <em>on</em> (the
-      <code>-s realm=...</code> argument, or whichever realm a later command targets).</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>This chapter's lab ran against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-      <code>labs/docker/docker-compose.yml</code> — every command and output shown was actually executed,
-      not narrated.</li>
-      <li>Keycloak's own boot log explicitly says "Running the server in development mode. DO NOT use this
-      configuration in production" — the warning is printed on every single <code>start-dev</code> boot, not
-      a one-time notice.</li>
-      <li>The bootstrap admin created by <code>KC_BOOTSTRAP_ADMIN_USERNAME</code>/<code>_PASSWORD</code> is
-      labeled "temporary" because it's meant to be removed once a real administrator exists, not because it
-      has reduced privileges — it is fully functional, which is exactly why <code>kcadm.sh</code> could use
-      it to create a real realm.</li>
-      <li>That bootstrap creation only ever fires once, when the <code>master</code> realm doesn't exist
-      yet — restarting a Keycloak instance that already has <code>master</code> silently ignores those
-      environment variables.</li>
-      <li><code>start-dev</code> relaxes specific, named things — strict hostname checking, TLS/HTTPS
-      enforcement, distributed caching, and the startup gate that otherwise refuses to run without explicit
-      configuration — each one a real production requirement, not generic "insecure defaults" hand-waving.</li>
-      <li>The <code>northwind-apps</code> realm was created with
-      <code>kcadm.sh create realms -s realm=northwind-apps -s enabled=true</code> and independently
-      confirmed with a separate <code>get realms</code> call — two different commands agreeing, not one
-      command's own success message taken on faith.</li>
-      <li>The Admin Console's "Create realm" button, the realm-name field, and the realm selector
-      auto-switching to the new realm are described from Keycloak's current official Server Administration
-      Guide, clearly separated in this chapter from what was personally verified via <code>kcadm.sh</code> —
-      because no browser tool was available to click through the Console directly.</li>
-      <li><code>master</code> exists only to manage Keycloak itself (create/manage other realms); every
-      application's users, roles, and clients belong in a realm created for that purpose — mixing them in
-      puts ordinary application risk one hop away from instance-wide administrative control.</li>
-      <li>The Docker image's lack of a <code>curl</code>/<code>wget</code> binary inside the Keycloak
-      container is itself a real, independently confirmed fact from this chapter's lab run — the official
-      health-check docs independently note the same limitation for exactly this reason.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Explain, in your own words, why "temporary admin user" is a lifecycle label rather than a
-      technical restriction — what specifically should happen to that account, and when?</li>
-      <li>Why does <code>kcadm.sh config credentials</code> always target <code>--realm master</code>, even
-      when the command you're about to run acts on <code>northwind-apps</code>?</li>
-      <li>Pick two of the six relaxations in this chapter's <code>start-dev</code> table and explain, for
-      each, a concrete attack or failure that becomes possible once that relaxation is in place on a
-      publicly reachable instance.</li>
-      <li>This chapter could not personally verify the Admin Console's "Create realm" button through a
-      browser. What specifically was verified instead, and why does that substitute meaningfully (not
-      perfectly) for a visual check?</li>
-      <li>If a colleague registered a new internal tool's OAuth client inside the <code>master</code> realm
-      because "it was already open," what's the concrete risk you'd point to, and what would you tell them
-      to do instead?</li>
-      <li>Why did this chapter poll the discovery endpoint in a loop instead of just sleeping for a fixed
-      15-20 seconds and assuming Keycloak was ready?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/server/bootstrap-admin-recovery">Keycloak docs — Bootstrapping and recovering an admin account</a></li>
-      <li><a href="https://www.keycloak.org/server/configuration">Keycloak docs — Configuring Keycloak (start vs. start-dev)</a></li>
-      <li><a href="https://www.keycloak.org/server/configuration-production">Keycloak docs — Configuring Keycloak for production</a></li>
-      <li><a href="https://www.keycloak.org/observability/health">Keycloak docs — Health checks</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/">Keycloak docs — Server Administration Guide (realms)</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "installing-keycloak", 15);
+    SlideDeck.init({ chapterSlug: "installing-keycloak" });
   });
 </script>
 </body>

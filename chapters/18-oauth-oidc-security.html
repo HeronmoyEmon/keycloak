@@ -5,487 +5,540 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OAuth/OIDC Security Best Practices — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "oauth-oidc-security";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part III — Protocols</span>
-      <span class="badge minutes">~35 min</span>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part III — Protocols</span>
+          <span class="badge minutes">~35 min</span>
+        </div>
+        <h1>18. OAuth/OIDC Security Best Practices</h1>
+        <p class="lede">Chapters 13-17 taught OAuth 2.0 and OpenID Connect as mechanisms — roles, grants,
+        tokens, assertions — the way the specs define them. This chapter asks the harder question a real
+        deployment has to answer: given that a client talks to a real browser, a real network, and sometimes
+        more than one authorization server, where specifically does the mechanism break, and what closes each
+        gap? This is also Part III's answer to a debt chapter 9 opened: it forward-pointed token theft,
+        token replay, and session hijacking to "chapter 18" without saying what chapter 18 actually does about
+        them. This chapter pays that off.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist who can draw the authorization code flow from memory but can't explain why PKCE
+        is now recommended for confidential clients too, or what a mix-up attack even is, will configure a
+        client correctly against the spec and still ship something exploitable — because the spec text alone
+        doesn't flag which of its own optional protections are the ones that matter in practice. The guidance
+        in this chapter comes from a single, consolidated, current IETF document written specifically to close
+        that gap: it exists because real deployments kept making the same mistakes, and the working group wrote
+        down the fix once instead of leaving every implementer to rediscover it.</p>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>As of this writing (confirmed live, 2026-11-10), the OAuth 2.0 Security Best Current Practice is
+          a <strong>published, final RFC</strong>, not a draft: <strong>RFC 9700</strong>, also catalogued as
+          <strong>BCP 240</strong>, published January 2025 by the IETF OAuth working group. It formally
+          updates the threat model and advice that used to be spread across RFC 6749 (OAuth 2.0 core), RFC
+          6750 (bearer token usage), and RFC 6819 (an earlier, now-superseded OAuth threat model), consolidating
+          years of real-world attack research into one normative document. Everything this chapter calls "the
+          BCP" or "the security BCP" refers to RFC 9700 specifically, not to a work-in-progress draft — it's
+          safe to cite it by RFC number in an interview or a design review.</p>
+        </div>
+
+        <p>RFC 9700 doesn't only apply to browser-based authorization-code flows. A second, newer document
+        specifically for single-page applications and other browser-based OAuth clients — <strong>RFC 10017
+        / BCP 212, "OAuth 2.0 for Browser-Based Applications"</strong> — reached final RFC status even more
+        recently (August 2026, confirmed live). This chapter's token-storage section draws on it directly,
+        since it's the document that actually works through where a browser app can and can't safely keep a
+        token.</p>
+      </section>
+
+      <section class="slide" data-slide="pkce-everywhere" data-title="PKCE, everywhere">
+        <h2>PKCE, everywhere — not just for public clients</h2>
+        <p>Chapter 13 introduced PKCE (Proof Key for Code Exchange) as the mechanism a public client (one that
+        can't hold a secret, like a mobile app or SPA) uses to stop an attacker who intercepts its authorization
+        code from redeeming it: the client generates a random <code>code_verifier</code>, sends its hashed form
+        (<code>code_challenge</code>) with the authorization request, and must later present the original
+        <code>code_verifier</code> at the token endpoint — a value only the real client ever had. That's the
+        mechanics. This chapter adds the current <em>policy</em> point on top of it, which is a distinct thing
+        to know, not a restatement: <strong>RFC 9700 §2.1.1 says public clients MUST use PKCE, and goes further
+        to say PKCE is RECOMMENDED for confidential clients too</strong> — this course calls that second half
+        "PKCE-everywhere."</p>
+
+        <p>Why would a confidential client — one that <em>does</em> hold a client secret, like Northwind Apps'
+        own server-side backend — need PKCE at all? Because the client secret protects the token endpoint
+        exchange (proving "I am the registered client"); it does nothing to stop someone from intercepting the
+        <em>authorization code itself</em> before it ever reaches that exchange. An authorization code can leak
+        through channels that have nothing to do with whether the client is confidential: a referrer header
+        leaking a code-bearing URL to a third-party script, a malicious app on a shared device registering the
+        same custom URI scheme a confidential native client uses for its redirect, a misconfigured proxy or log
+        aggregator capturing full request URLs. In every one of those cases, the attacker who grabs the code
+        still can't redeem it without also having generated the original <code>code_verifier</code> — which
+        never left the legitimate client. PKCE closes a gap at the authorization-code layer that a client
+        secret, which only matters one step later, was never positioned to close.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 320" role="img" aria-labelledby="t1 d1">
+            <title id="t1">An authorization code interception attempt against a confidential client, blocked by PKCE</title>
+            <desc id="d1">A browser completes an authorization request and receives an authorization code
+            in its redirect. Two paths split from there. In the top path, with no PKCE, an attacker who
+            intercepts the code (for example via a leaked referrer header) sends it straight to the token
+            endpoint with the confidential client's secret, obtained separately, and succeeds in exchanging
+            it for tokens. In the bottom path, with PKCE in use, the same intercepted code is sent to the
+            token endpoint, but the attacker has no code_verifier matching the original code_challenge, and
+            the authorization server rejects the exchange.</desc>
+
+            <rect x="20" y="20" width="200" height="50" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="120" y="50" text-anchor="middle" class="diagram-label" font-size="11">Browser receives</text>
+            <text x="120" y="50" text-anchor="middle" class="diagram-label" font-size="11" dy="14">authorization code</text>
+
+            <defs>
+              <marker id="arrowPkce" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <line x1="220" y1="45" x2="260" y2="45" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
+
+            <rect x="260" y="20" width="220" height="50" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="370" y="50" text-anchor="middle" class="diagram-label" font-size="11">Code intercepted</text>
+            <text x="370" y="50" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">(e.g. leaked referrer header)</text>
+
+            <line x1="370" y1="70" x2="250" y2="130" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
+            <line x1="370" y1="70" x2="490" y2="130" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
+
+            <text x="250" y="110" text-anchor="middle" class="diagram-label-muted" font-size="10">no PKCE</text>
+            <text x="490" y="110" text-anchor="middle" class="diagram-label-muted" font-size="10">PKCE in use</text>
+
+            <rect x="110" y="135" width="280" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="250" y="158" text-anchor="middle" class="diagram-label" font-size="11">Attacker redeems code</text>
+            <text x="250" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">with client secret alone — succeeds</text>
+
+            <rect x="430" y="135" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="580" y="158" text-anchor="middle" class="diagram-label" font-size="11">Attacker redeems code</text>
+            <text x="580" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">missing code_verifier — rejected</text>
+
+            <line x1="250" y1="190" x2="250" y2="225" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
+            <rect x="110" y="228" width="280" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="250" y="251" text-anchor="middle" class="diagram-label" font-size="11">Tokens issued to attacker</text>
+            <text x="250" y="251" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">despite the client being confidential</text>
+
+            <line x1="580" y1="190" x2="580" y2="225" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
+            <rect x="430" y="228" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="580" y="251" text-anchor="middle" class="diagram-label" font-size="11">Attack stopped</text>
+            <text x="580" y="251" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">code is useless without the verifier</text>
+          </svg>
+          <figcaption>Figure 18.1 — A client secret protects the token endpoint exchange; it never protected
+          the authorization code in flight. PKCE closes that gap regardless of whether the client is public
+          or confidential.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>A client's <em>Advanced</em> settings tab carries a <strong>"Proof Key for Code Exchange Code
+          Challenge Method"</strong> field (S256 or plain) that can be set for any client, confidential or
+          public — turning PKCE-everywhere from a policy recommendation into an enforced setting. Full
+          walkthrough in chapter 24.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="mix-up-attacks" data-title="Mix-up attacks">
+        <h2>Mix-up attacks: when a client talks to more than one authorization server</h2>
+        <p>A mix-up attack targets a client that's configured to work with <em>more than one</em> authorization
+        server — not an unusual setup: Northwind Apps might let a customer sign in either through Northwind's
+        own realm or through that customer's own corporate identity provider, brokered side by side. The attack
+        works by getting the client confused about <em>which</em> authorization server a given authorization
+        response actually came from.</p>
+        <p>Concretely: an attacker who controls (or has compromised) one of the authorization servers the client
+        trusts can redirect the user's browser to start a flow against the <em>honest</em> authorization
+        server, but arrange for the client to believe the resulting code or token came from the
+        <em>attacker's</em> server instead — or the reverse. If the client doesn't verify which server actually
+        issued what it received, it can end up sending a legitimate authorization code, or even a client
+        credential, to the wrong authorization server, or accepting a token that didn't come from where it
+        thinks it did. RFC 9700 §2.1 and §4.4 treat this as a required defense, not an edge case, specifically
+        because the harm (credential/code disclosure to an attacker-controlled server) is serious and the root
+        cause — a client with more than one trusted AS and no way to tell them apart from the response alone —
+        is common.</p>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>The preferred defense, per RFC 9700 §2.1 pointing at <strong>RFC 9207</strong>, is for the
+          authorization server to include an <code>iss</code> parameter in every authorization response
+          (including error responses) stating its own issuer identifier, and for the client to compare that
+          value against the issuer it expected <em>before</em> doing anything else with the response — and
+          abort the flow entirely on any mismatch. This is <strong>`iss` validation</strong>. Where a given
+          authorization server doesn't support the <code>iss</code> parameter, RFC 9700 §4.4.2.2 describes a
+          weaker fallback: giving each trusted authorization server its own distinct, dedicated redirect URI,
+          so the client can infer which AS a response is for from which URI it arrived at — explicitly framed
+          as a "should only be used if other options are not available" fallback, not the preferred mechanism.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 800 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">A mix-up attack against a client configured with two authorization servers</title>
+            <desc id="d2">A client trusts two authorization servers: an honest one and an attacker-controlled
+            one. The browser is redirected to the honest authorization server and authenticates successfully
+            there, but the attacker manipulates the flow so the client believes the resulting response came
+            from the attacker's own server. Without iss validation, the client sends the real authorization
+            code to the attacker's token endpoint. With iss validation, the client checks the iss value in the
+            response against which authorization server it actually started the flow with, detects the
+            mismatch, and aborts before sending anything.</desc>
+
+            <rect x="20" y="20" width="180" height="50" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="110" y="50" text-anchor="middle" class="diagram-label" font-size="11">Client trusts 2 ASes</text>
+
+            <rect x="260" y="20" width="200" height="50" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="360" y="45" text-anchor="middle" class="diagram-label" font-size="11">Honest AS</text>
+            <text x="360" y="45" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">issues real code</text>
+
+            <rect x="520" y="20" width="220" height="50" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="630" y="45" text-anchor="middle" class="diagram-label" font-size="11">Attacker-controlled AS</text>
+            <text x="630" y="45" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">claims the response is "from" it</text>
+
+            <defs>
+              <marker id="arrowMix" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <line x1="200" y1="45" x2="258" y2="45" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
+            <line x1="360" y1="70" x2="630" y2="110" class="diagram-stroke" stroke-dasharray="4,3" marker-end="url(#arrowMix)"></line>
+            <text x="500" y="95" text-anchor="middle" class="diagram-label-muted" font-size="10">attacker relabels the response</text>
+
+            <line x1="360" y1="70" x2="300" y2="150" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
+            <text x="260" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">without iss check</text>
+            <rect x="150" y="155" width="300" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="300" y="178" text-anchor="middle" class="diagram-label" font-size="11">Client sends real code to</text>
+            <text x="300" y="178" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">attacker's token endpoint — code stolen</text>
+
+            <line x1="630" y1="110" x2="580" y2="150" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
+            <text x="610" y="135" text-anchor="middle" class="diagram-label-muted" font-size="10">with iss check</text>
+            <rect x="450" y="155" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="600" y="178" text-anchor="middle" class="diagram-label" font-size="11">Client compares iss, mismatch</text>
+            <text x="600" y="178" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">detected — flow aborted</text>
+
+            <rect x="250" y="235" width="400" height="55" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="450" y="259" text-anchor="middle" class="diagram-label" font-size="11">RFC 9207's `iss` parameter</text>
+            <text x="450" y="275" text-anchor="middle" class="diagram-label" font-size="11">is what makes this check possible at all</text>
+          </svg>
+          <figcaption>Figure 18.2 — A mix-up attack succeeds only if the client takes "which AS is this response
+          from" on faith. `iss` validation makes that an explicit, checkable comparison.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="csrf-defense" data-title="CSRF defense: state">
+        <h2>CSRF defense: what the <code>state</code> parameter actually does</h2>
+        <p>The authorization code flow's redirect-based handshake is itself a target for cross-site request
+        forgery: an attacker can start their <em>own</em> legitimate authorization flow (logging in as the
+        attacker, or linking the attacker's own account), capture the resulting callback URL, and trick a
+        victim's browser into completing <em>that</em> callback instead of one the victim actually initiated.
+        If the client doesn't check anything, the victim's browser session ends up linked to the attacker's
+        identity — a forged callback masquerading as a normal login completion.</p>
+        <p>The <code>state</code> parameter defends against exactly this: the client generates a random,
+        unguessable value before redirecting to the authorization server, stores it tied to the browser
+        session that's initiating the request (e.g. in a server-side session or a cookie the client set), and
+        requires the callback to echo that same value back. A forged callback — one started by the attacker's
+        own flow, not the victim's browser — carries the attacker's <code>state</code> value, not one bound
+        to the victim's session, so the client's comparison fails and the flow is rejected. RFC 9700 §2.1
+        states this plainly: clients MUST prevent CSRF, either by relying on PKCE (when the authorization
+        server supports it, since the <code>code_verifier</code> itself provides equivalent protection) or by
+        using a one-time CSRF token carried in <code>state</code> that is securely bound to the user agent. The
+        value should be single-use — invalidated by the client immediately after the callback is checked, per
+        RFC 9700 §4.2.4 — so a captured callback URL can't be replayed a second time either.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Treating <code>state</code> as "just an opaque echo value the server sends and gets back" misses
+          the actual security property. The protection isn't that <code>state</code> survived the round trip —
+          it's that the value was generated for, and bound to, <em>this specific browser session</em> before
+          the redirect happened. If a client generates <code>state</code> but never actually ties it to the
+          session that initiated the request (for example, storing it only client-side where any page can read
+          or guess it), the CSRF defense is decorative — present in the request, doing nothing.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="token-storage" data-title="Token storage">
+        <h2>Token storage: where a browser-based client keeps what it's given</h2>
+        <p>Chapter 9 named the failure mode without naming the fix: a bearer token (ch. 8) is usable by whoever
+        holds it, and cross-site scripting (ch. 9) is exactly how an attacker gets to <em>hold</em> one it was
+        never issued to them. The missing piece is: where should a browser-based client actually keep its
+        tokens, given that the browser is the thing XSS runs inside of?</p>
+        <ul>
+          <li><strong><code>localStorage</code> / <code>sessionStorage</code></strong> — plain JavaScript-
+          accessible, origin-scoped storage. Convenient (any script on the page can read and write it directly,
+          no server round-trip needed) and exactly that: <em>any</em> script running on the page, including
+          one an attacker injected via an XSS flaw, can read it too. There is no way to mark a value in either
+          store as off-limits to JavaScript — the access model doesn't support it. RFC 10017 (the "OAuth 2.0
+          for Browser-Based Applications" BCP, confirmed live, published August 2026) names this directly:
+          malicious code from an XSS attack "has the same privileges as the legitimate application code" and
+          can "steal data from origin-based storage mechanisms."</li>
+          <li><strong>httpOnly cookies</strong> — a cookie attribute that makes the cookie's value invisible to
+          JavaScript entirely (<code>document.cookie</code> simply never returns it); only the browser itself
+          attaches it to outgoing requests, and only the server reads it. This closes the specific XSS-reads-
+          the-token exposure completely — stolen page script has nothing to read. It doesn't make the cookie
+          immune to everything: a cookie the browser attaches automatically is exactly the thing CSRF existed
+          to exploit before <code>state</code>/<code>SameSite</code> existed to stop it, so an httpOnly,
+          cookie-based session needs its own CSRF defense (a <code>SameSite</code> attribute, a CSRF token, or
+          both) — it trades one risk for a different, better-understood one, not a risk for nothing.</li>
+        </ul>
+        <p>RFC 10017 goes a step further than just "pick a safer storage API": its most strongly recommended
+        pattern is a <strong>Backend-for-Frontend (BFF)</strong> — a server-side component that holds the
+        actual OAuth tokens itself and gives the browser only an httpOnly, <code>Secure</code>,
+        <code>SameSite</code> session cookie, so the token never reaches browser-readable storage, or even
+        browser-visible JavaScript, at all. The RFC calls this pattern "strongly recommended for business
+        applications" specifically because it removes the token-in-the-browser exposure as a category, rather
+        than hardening the place the token sits.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 800 300" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Comparing where a browser-based client can keep an access token</title>
+            <desc id="d3">Three columns compare token storage options. Column one, localStorage or
+            sessionStorage: JavaScript-readable, so an XSS flaw can read the token directly; marked as the
+            highest XSS exposure. Column two, an httpOnly cookie managed directly by the browser app: not
+            JavaScript-readable, so XSS can't read the token directly, but the cookie is attached
+            automatically by the browser, so it needs its own CSRF defense. Column three, a backend-for-
+            frontend holding the token server-side and giving the browser only a session cookie: the token
+            never reaches the browser at all, removing the XSS-reads-the-token exposure as a category, at the
+            cost of operating an extra backend component.</desc>
+
+            <rect x="20" y="20" width="230" height="40" rx="6" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="135" y="45" text-anchor="middle" class="diagram-label" font-size="11">localStorage / sessionStorage</text>
+
+            <rect x="285" y="20" width="230" height="40" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="400" y="45" text-anchor="middle" class="diagram-label" font-size="11">httpOnly cookie (browser app)</text>
+
+            <rect x="550" y="20" width="230" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="665" y="45" text-anchor="middle" class="diagram-label" font-size="11">BFF-held token (RFC 10017)</text>
+
+            <rect x="20" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="135" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: yes</text>
+            <text x="135" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">XSS reads the token directly</text>
+
+            <rect x="285" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="400" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: no</text>
+            <text x="400" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">needs its own CSRF defense</text>
+
+            <rect x="550" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="665" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: n/a</text>
+            <text x="665" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">token never reaches the browser</text>
+
+            <rect x="20" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="135" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: none added</text>
+            <text x="135" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">(not auto-attached by the browser)</text>
+
+            <rect x="285" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="400" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: real</text>
+            <text x="400" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">mitigated by SameSite / CSRF token</text>
+
+            <rect x="550" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="665" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: real</text>
+            <text x="665" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">same cookie defenses apply</text>
+
+            <rect x="20" y="240" width="760" height="45" rx="6" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="400" y="267" text-anchor="middle" class="diagram-label" font-size="11">No option is "safe" in isolation — each trades one exposure for a different, better-understood one</text>
+          </svg>
+          <figcaption>Figure 18.3 — Token storage is a trade-off between exposure categories, not a single
+          right answer; RFC 10017's BFF pattern is the option that removes the browser-JS-readable-token
+          exposure entirely, at the cost of an extra backend component.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Keycloak doesn't control how a client-side application stores the tokens it's handed — that's
+          the application's own architecture decision, which is exactly why this chapter's guidance exists
+          independent of any specific IAM vendor. What Keycloak does control: short default access-token
+          lifetimes (shrinking how long a stolen token stays useful regardless of where it was stolen from) and
+          per-session revocation, both covered in chapter 29; and a client confidential/public distinction and
+          PKCE enforcement, covered in chapter 24.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind">
+        <h2>Case study: Northwind Apps' token theft, revisited</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> — recall chapter 9's incident: a Northwind
+          enterprise customer built its own browser-based integration against Northwind's API, that
+          integration had an XSS flaw in code Northwind never wrote, and an attacker who exploited it could
+          read whatever the browser session was holding — including the bearer token Northwind issued for API
+          access. Chapter 9 could only say the damage was bounded by the token's scope and lifetime, because
+          chapter 9 came before this chapter's defenses existed in the course. Looking at the same incident
+          now: the proximate cause of the theft wasn't the XSS flaw alone — XSS flaws happen, and no IAM
+          provider can prevent a customer's own code from having one. The proximate cause of <em>the token
+          being readable once the flaw existed</em> was the customer's integration keeping that bearer token
+          somewhere JavaScript-accessible, almost certainly <code>localStorage</code> or a plain in-memory
+          variable exposed to the page. If that same token had instead been held behind an httpOnly cookie —
+          or, better, never reached the browser at all because the integration used a BFF — the XSS flaw would
+          still exist, but the attacker's injected script would have had nothing to read. The vulnerability and
+          the exposure are two different things, and this chapter's token-storage guidance is specifically
+          about shrinking the second one even when the first one is outside your control. Northwind's own token
+          scope and short lifetime (ch. 9's actual mitigation) still mattered and still limited the blast
+          radius once the token was stolen — but "the token should not have been stealable in the first place"
+          is the best-current-practice answer chapter 9 was waiting for this chapter to supply.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="threat-map" data-title="Threat-to-defense map">
+        <h2>Threat-to-defense map: closing the loop with chapter 9</h2>
+        <p>Chapter 9 named five threats and pointed most of them at "chapter 18" without saying what chapter 18
+        actually does. Here's the specific mechanism, by name, for each OAuth/OIDC-relevant row.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>OAuth/OIDC-specific mechanisms answering chapter 9's threats, plus two attack surfaces unique to the protocol layer</caption>
+            <thead>
+              <tr><th>Threat / attack surface</th><th>Specific OAuth/OIDC mechanism</th><th>Where it's built on</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Forged authorization callback (CSRF against the login flow)</td><td><code>state</code> parameter, bound to the initiating browser session and single-use</td><td>RFC 9700 §2.1, §4.7.1, §4.2.4</td></tr>
+              <tr><td>Client confused about which authorization server issued a response (mix-up attack)</td><td><code>iss</code> validation (RFC 9207) on every authorization response; distinct redirect URIs as a fallback</td><td>RFC 9700 §2.1, §4.4; RFC 9207</td></tr>
+              <tr><td>Authorization code interception, even against a confidential client</td><td>PKCE for all client types ("PKCE-everywhere"), not only public clients</td><td>RFC 9700 §2.1.1, §4.5.3.1; ch. 13's PKCE mechanics</td></tr>
+              <tr><td>Token theft via XSS (ch. 9), token replay (ch. 8/9)</td><td>Token storage choice (avoid JS-readable storage; httpOnly cookie or BFF); short token lifetimes; sender-constrained tokens as a further hardening step</td><td>RFC 10017; ch. 8's token lifetime/revocation-problem framing; ch. 24/25 forward-pointer</td></tr>
+              <tr><td>Session hijacking (ch. 9) when the session itself is cookie-based</td><td><code>SameSite</code> cookie attribute plus a CSRF defense, since an httpOnly cookie removes XSS exposure but is still auto-attached by the browser</td><td>RFC 10017 §6.1.3.2; ch. 29's session mechanics</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <ul class="common-mistakes">
+          <li>If a confidential (server-side, secret-holding) client skips PKCE on the theory that "the secret
+          already protects it," the cause is confusing what the secret protects (the token-endpoint exchange)
+          with what PKCE protects (the authorization code in flight before that exchange) — see "PKCE,
+          everywhere" above.</li>
+          <li>If a client trusts more than one authorization server and takes the incoming response's identity
+          on faith, the cause is missing `iss` validation, not an unavoidable risk of multi-IdP setups — see
+          "Mix-up attacks" above.</li>
+          <li>If a client generates and checks a <code>state</code> value but the CSRF protection still fails
+          in review, the cause is usually that the value was never actually bound to the initiating browser
+          session (e.g. stored somewhere any page can read), not that <code>state</code> doesn't work.</li>
+          <li>If an SPA keeps its access token in <code>localStorage</code> "because it's simpler than cookies,"
+          the cause is treating convenience as equivalent to security review, when the two storage choices have
+          categorically different exposure to the same XSS flaw.</li>
+          <li>If a team believes moving a token into an httpOnly cookie "fixes" its security posture
+          completely, the cause is forgetting that an httpOnly cookie reintroduces CSRF exposure that
+          <code>localStorage</code> never had — it's a trade, not a strict improvement with no new cost.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>The OAuth 2.0 Security Best Current Practice is a published, final RFC — RFC 9700 / BCP 240,
+          January 2025 — consolidating threat-model advice that used to be scattered across RFC 6749, 6750,
+          and the now-superseded RFC 6819.</li>
+          <li>PKCE is no longer "the public-client thing" — RFC 9700 recommends it for confidential clients
+          too, because it protects the authorization code in flight, a layer a client secret never covered.</li>
+          <li>A mix-up attack exploits a client that trusts more than one authorization server and has no way
+          to verify which one actually issued a given response.</li>
+          <li>`iss` validation (RFC 9207) is the preferred mix-up defense: the authorization server states its
+          own identity in the response, and the client compares it before doing anything else.</li>
+          <li>The `state` parameter's security property comes from being bound to the specific browser session
+          that initiated the request — not merely from surviving the round trip unchanged.</li>
+          <li>`localStorage`/`sessionStorage` are JavaScript-readable by design, which means any XSS flaw on
+          the page can read a token kept there directly — this is the mechanism behind chapter 9's Northwind
+          Apps token-theft incident, named explicitly for the first time in this chapter.</li>
+          <li>An httpOnly cookie removes the JS-readable-token exposure entirely, but reintroduces CSRF
+          exposure that needs its own defense (`SameSite`, a CSRF token, or both) — no storage choice is free
+          of trade-offs.</li>
+          <li>RFC 10017's Backend-for-Frontend (BFF) pattern goes further than picking a safer storage API: it
+          keeps the token out of the browser altogether, which is why the RFC calls it "strongly recommended"
+          for real applications rather than merely one more option.</li>
+          <li>Revisiting chapter 9's Northwind incident: the XSS flaw and the token's readability were two
+          separate failures, and this chapter's guidance targets the second one even when the first is outside
+          an IAM specialist's control.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain, in your own words, why a client secret and PKCE protect two different points in the authorization code flow rather than the same point twice.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A client secret only protects the token-endpoint exchange — proving to the authorization server that the caller really is the registered client once it arrives there. It does nothing to protect the authorization code itself while it's still in flight between the authorization endpoint and the token endpoint; a code can leak via a referrer header, a shared-device URI scheme collision, or a misconfigured log/proxy regardless of whether the client eventually uses a secret. PKCE closes that earlier gap: the code is useless to anyone without the original code_verifier, which never leaves the legitimate client. The two mechanisms protect sequential, not overlapping, stages of the flow — the code in flight, then the exchange itself.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through a mix-up attack scenario step by step and identify the exact moment `iss` validation would have caught it.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Step through: (1) a client trusts two authorization servers, honest and attacker-controlled; (2) the browser is redirected to and authenticates against the honest AS; (3) the attacker manipulates the response so the client believes it came from the attacker's AS instead (or vice versa); (4) without any check, the client sends the real authorization code (or a credential) to the attacker's token endpoint, believing that's the AS it's supposed to talk to. `iss` validation would catch this at step 3→4: the moment the client receives the authorization response, it must compare the `iss` value the authorization server actually included against the issuer it expected for the flow it started — and abort immediately on mismatch, before ever using the code or credential. That comparison, made before any further action, is the exact checkpoint that stops the attack.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does the security value of the `state` parameter depend on how it's stored, not just on whether the server generated it randomly?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A random, unguessable value only defends against someone forging a callback if that specific value is tied to the one browser session that initiated the request — otherwise an attacker's own flow produces its own valid-looking, random `state` that has nothing to do with the victim. If the client generates `state` randomly but stores it somewhere any script or page can read (e.g., purely client-side), the binding to "this session, this request" is broken, and the CSRF defense becomes decorative — present but not actually preventing a forged callback from being accepted, since the comparison it's meant to enable never genuinely verifies the session.</p>
+          </details></li>
+          <li><details>
+            <summary>If you were advising a team building a new browser-based client today, would you recommend `localStorage`, an httpOnly cookie, or a BFF — and what would make you change that recommendation for a different team?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Default recommendation: a Backend-for-Frontend, per RFC 10017's "strongly recommended" guidance, since it removes the token-in-the-browser exposure as a category rather than just hardening where the token sits — the token never becomes readable by any page script, XSS or not. That softens to an httpOnly cookie (with `SameSite` and a CSRF defense) for a team that genuinely can't operate an extra backend component, accepting the CSRF trade-off as the lesser, better-understood risk. `localStorage` isn't recommended for a new build; it's the option with no inherent XSS defense at all. What changes the recommendation: team size/ops capacity (a BFF is an extra service to run and secure), whether the client is a thin SPA talking directly to a third-party API with no existing backend, or compliance pressure — Meridian Trust's PCI-DSS context, for instance, would push hard toward the BFF regardless of team size.</p>
+          </details></li>
+          <li><details>
+            <summary>Revisit chapter 9's Northwind Apps case study and argue which single change — token storage, token lifetime, or token scope — would have reduced the incident's damage the most, and why the other two still matter even if you pick one as "most important."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Token storage is the change that would have reduced damage the most, because it addresses the proximate cause directly: the XSS flaw existed regardless, but if the token had been behind an httpOnly cookie or never reached the browser at all (BFF), the attacker's injected script would have had nothing to read — the theft itself wouldn't have happened. Token lifetime and scope still matter because they bound the damage once a theft does happen (from a different flaw, a different app, a future incident) — a short-lived, narrowly scoped token limits what any successfully stolen token can do and for how long, which storage choice alone can't guarantee for every future vulnerability. Defense in depth, not a single fix, is the real answer; storage happens to be the layer that would have prevented this specific incident.</p>
+          </details></li>
+          <li><details>
+            <summary>RFC 9700 recommends, rather than requires, PKCE for confidential clients. What does that "RECOMMENDED, not MUST" distinction tell you about how to read IETF normative language in general?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>RFC 2119-style keywords encode how much flexibility implementers are given, not how important something is in absolute terms. "MUST" (public clients + PKCE) means there's essentially no valid reason to skip it, and conforming implementations are judged non-compliant if they do. "RECOMMENDED" (confidential clients + PKCE) means the working group considers it the right default and expects most implementers to follow it, but acknowledges specific, understood circumstances where an implementer might reasonably choose otherwise after weighing the trade-offs themselves. Reading IETF documents well means tracking which keyword attaches to which requirement rather than treating a whole document as uniformly mandatory — a "SHOULD"/"RECOMMENDED" is still a strong signal to follow it by default, just not an unconditional one.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9700.html">RFC 9700 / BCP 240 — "Best Current Practice for OAuth 2.0 Security"</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc9207.html">RFC 9207 — "OAuth 2.0 Authorization Server Issuer Identification" (the `iss` parameter)</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc10017.html">RFC 10017 / BCP 212 — "OAuth 2.0 for Browser-Based Applications"</a></li>
+          <li><a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636 — "Proof Key for Code Exchange by OAuth Public Clients" (PKCE's original mechanics)</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc6749.html#section-10.12">RFC 6749 §10.12 — "Cross-Site Request Forgery" (the original `state` rationale)</a></li>
+          <li><a href="https://oauth.net/2/oauth-best-practice/">OAuth.net — "OAuth 2.0 Security Best Current Practice" (plain-language summary with links back to RFC 9700)</a></li>
+          <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP Cheat Sheet Series — "Cross-Site Request Forgery Prevention Cheat Sheet"</a></li>
+        </ul>
+      </section>
+
     </div>
-    <h1>18. OAuth/OIDC Security Best Practices</h1>
-    <p class="lede">Chapters 13-17 taught OAuth 2.0 and OpenID Connect as mechanisms — roles, grants,
-    tokens, assertions — the way the specs define them. This chapter asks the harder question a real
-    deployment has to answer: given that a client talks to a real browser, a real network, and sometimes
-    more than one authorization server, where specifically does the mechanism break, and what closes each
-    gap? This is also Part III's answer to a debt chapter 9 opened: it forward-pointed token theft,
-    token replay, and session hijacking to "chapter 18" without saying what chapter 18 actually does about
-    them. This chapter pays that off.</p>
-
-    <h2>Why this matters</h2>
-    <p>An IAM specialist who can draw the authorization code flow from memory but can't explain why PKCE
-    is now recommended for confidential clients too, or what a mix-up attack even is, will configure a
-    client correctly against the spec and still ship something exploitable — because the spec text alone
-    doesn't flag which of its own optional protections are the ones that matter in practice. The guidance
-    in this chapter comes from a single, consolidated, current IETF document written specifically to close
-    that gap: it exists because real deployments kept making the same mistakes, and the working group wrote
-    down the fix once instead of leaving every implementer to rediscover it.</p>
-
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea</div>
-      <p>As of this writing (confirmed live, 2026-11-10), the OAuth 2.0 Security Best Current Practice is
-      a <strong>published, final RFC</strong>, not a draft: <strong>RFC 9700</strong>, also catalogued as
-      <strong>BCP 240</strong>, published January 2025 by the IETF OAuth working group. It formally
-      updates the threat model and advice that used to be spread across RFC 6749 (OAuth 2.0 core), RFC
-      6750 (bearer token usage), and RFC 6819 (an earlier, now-superseded OAuth threat model), consolidating
-      years of real-world attack research into one normative document. Everything this chapter calls "the
-      BCP" or "the security BCP" refers to RFC 9700 specifically, not to a work-in-progress draft — it's
-      safe to cite it by RFC number in an interview or a design review.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <p>RFC 9700 doesn't only apply to browser-based authorization-code flows. A second, newer document
-    specifically for single-page applications and other browser-based OAuth clients — <strong>RFC 10017
-    / BCP 212, "OAuth 2.0 for Browser-Based Applications"</strong> — reached final RFC status even more
-    recently (August 2026, confirmed live). This chapter's token-storage section draws on it directly,
-    since it's the document that actually works through where a browser app can and can't safely keep a
-    token.</p>
-
-    <h2>PKCE, everywhere — not just for public clients</h2>
-    <p>Chapter 13 introduced PKCE (Proof Key for Code Exchange) as the mechanism a public client (one that
-    can't hold a secret, like a mobile app or SPA) uses to stop an attacker who intercepts its authorization
-    code from redeeming it: the client generates a random <code>code_verifier</code>, sends its hashed form
-    (<code>code_challenge</code>) with the authorization request, and must later present the original
-    <code>code_verifier</code> at the token endpoint — a value only the real client ever had. That's the
-    mechanics. This chapter adds the current <em>policy</em> point on top of it, which is a distinct thing
-    to know, not a restatement: <strong>RFC 9700 §2.1.1 says public clients MUST use PKCE, and goes further
-    to say PKCE is RECOMMENDED for confidential clients too</strong> — this course calls that second half
-    "PKCE-everywhere."</p>
-
-    <p>Why would a confidential client — one that <em>does</em> hold a client secret, like Northwind Apps'
-    own server-side backend — need PKCE at all? Because the client secret protects the token endpoint
-    exchange (proving "I am the registered client"); it does nothing to stop someone from intercepting the
-    <em>authorization code itself</em> before it ever reaches that exchange. An authorization code can leak
-    through channels that have nothing to do with whether the client is confidential: a referrer header
-    leaking a code-bearing URL to a third-party script, a malicious app on a shared device registering the
-    same custom URI scheme a confidential native client uses for its redirect, a misconfigured proxy or log
-    aggregator capturing full request URLs. In every one of those cases, the attacker who grabs the code
-    still can't redeem it without also having generated the original <code>code_verifier</code> — which
-    never left the legitimate client. PKCE closes a gap at the authorization-code layer that a client
-    secret, which only matters one step later, was never positioned to close.</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 820 320" role="img" aria-labelledby="t1 d1">
-        <title id="t1">An authorization code interception attempt against a confidential client, blocked by PKCE</title>
-        <desc id="d1">A browser completes an authorization request and receives an authorization code
-        in its redirect. Two paths split from there. In the top path, with no PKCE, an attacker who
-        intercepts the code (for example via a leaked referrer header) sends it straight to the token
-        endpoint with the confidential client's secret, obtained separately, and succeeds in exchanging
-        it for tokens. In the bottom path, with PKCE in use, the same intercepted code is sent to the
-        token endpoint, but the attacker has no code_verifier matching the original code_challenge, and
-        the authorization server rejects the exchange.</desc>
-
-        <rect x="20" y="20" width="200" height="50" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="120" y="50" text-anchor="middle" class="diagram-label" font-size="11">Browser receives</text>
-        <text x="120" y="50" text-anchor="middle" class="diagram-label" font-size="11" dy="14">authorization code</text>
-
-        <defs>
-          <marker id="arrowPkce" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
-          </marker>
-        </defs>
-        <line x1="220" y1="45" x2="260" y2="45" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
-
-        <rect x="260" y="20" width="220" height="50" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
-        <text x="370" y="50" text-anchor="middle" class="diagram-label" font-size="11">Code intercepted</text>
-        <text x="370" y="50" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">(e.g. leaked referrer header)</text>
-
-        <line x1="370" y1="70" x2="250" y2="130" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
-        <line x1="370" y1="70" x2="490" y2="130" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
-
-        <text x="250" y="110" text-anchor="middle" class="diagram-label-muted" font-size="10">no PKCE</text>
-        <text x="490" y="110" text-anchor="middle" class="diagram-label-muted" font-size="10">PKCE in use</text>
-
-        <rect x="110" y="135" width="280" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
-        <text x="250" y="158" text-anchor="middle" class="diagram-label" font-size="11">Attacker redeems code</text>
-        <text x="250" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">with client secret alone — succeeds</text>
-
-        <rect x="430" y="135" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="580" y="158" text-anchor="middle" class="diagram-label" font-size="11">Attacker redeems code</text>
-        <text x="580" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">missing code_verifier — rejected</text>
-
-        <line x1="250" y1="190" x2="250" y2="225" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
-        <rect x="110" y="228" width="280" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
-        <text x="250" y="251" text-anchor="middle" class="diagram-label" font-size="11">Tokens issued to attacker</text>
-        <text x="250" y="251" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">despite the client being confidential</text>
-
-        <line x1="580" y1="190" x2="580" y2="225" class="diagram-stroke" marker-end="url(#arrowPkce)"></line>
-        <rect x="430" y="228" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="580" y="251" text-anchor="middle" class="diagram-label" font-size="11">Attack stopped</text>
-        <text x="580" y="251" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">code is useless without the verifier</text>
-      </svg>
-      <figcaption>Figure 18.1 — A client secret protects the token endpoint exchange; it never protected
-      the authorization code in flight. PKCE closes that gap regardless of whether the client is public
-      or confidential.</figcaption>
-    </figure>
-
-    <div class="callout callout--in-keycloak">
-      <div class="callout-label">In Keycloak</div>
-      <p>A client's <em>Advanced</em> settings tab carries a <strong>"Proof Key for Code Exchange Code
-      Challenge Method"</strong> field (S256 or plain) that can be set for any client, confidential or
-      public — turning PKCE-everywhere from a policy recommendation into an enforced setting. Full
-      walkthrough in chapter 24.</p>
-    </div>
-
-    <h2>Mix-up attacks: when a client talks to more than one authorization server</h2>
-    <p>A mix-up attack targets a client that's configured to work with <em>more than one</em> authorization
-    server — not an unusual setup: Northwind Apps might let a customer sign in either through Northwind's
-    own realm or through that customer's own corporate identity provider, brokered side by side. The attack
-    works by getting the client confused about <em>which</em> authorization server a given authorization
-    response actually came from.</p>
-    <p>Concretely: an attacker who controls (or has compromised) one of the authorization servers the client
-    trusts can redirect the user's browser to start a flow against the <em>honest</em> authorization
-    server, but arrange for the client to believe the resulting code or token came from the
-    <em>attacker's</em> server instead — or the reverse. If the client doesn't verify which server actually
-    issued what it received, it can end up sending a legitimate authorization code, or even a client
-    credential, to the wrong authorization server, or accepting a token that didn't come from where it
-    thinks it did. RFC 9700 §2.1 and §4.4 treat this as a required defense, not an edge case, specifically
-    because the harm (credential/code disclosure to an attacker-controlled server) is serious and the root
-    cause — a client with more than one trusted AS and no way to tell them apart from the response alone —
-    is common.</p>
-
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea</div>
-      <p>The preferred defense, per RFC 9700 §2.1 pointing at <strong>RFC 9207</strong>, is for the
-      authorization server to include an <code>iss</code> parameter in every authorization response
-      (including error responses) stating its own issuer identifier, and for the client to compare that
-      value against the issuer it expected <em>before</em> doing anything else with the response — and
-      abort the flow entirely on any mismatch. This is <strong>`iss` validation</strong>. Where a given
-      authorization server doesn't support the <code>iss</code> parameter, RFC 9700 §4.4.2.2 describes a
-      weaker fallback: giving each trusted authorization server its own distinct, dedicated redirect URI,
-      so the client can infer which AS a response is for from which URI it arrived at — explicitly framed
-      as a "should only be used if other options are not available" fallback, not the preferred mechanism.</p>
-    </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 800 300" role="img" aria-labelledby="t2 d2">
-        <title id="t2">A mix-up attack against a client configured with two authorization servers</title>
-        <desc id="d2">A client trusts two authorization servers: an honest one and an attacker-controlled
-        one. The browser is redirected to the honest authorization server and authenticates successfully
-        there, but the attacker manipulates the flow so the client believes the resulting response came
-        from the attacker's own server. Without iss validation, the client sends the real authorization
-        code to the attacker's token endpoint. With iss validation, the client checks the iss value in the
-        response against which authorization server it actually started the flow with, detects the
-        mismatch, and aborts before sending anything.</desc>
-
-        <rect x="20" y="20" width="180" height="50" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="110" y="50" text-anchor="middle" class="diagram-label" font-size="11">Client trusts 2 ASes</text>
-
-        <rect x="260" y="20" width="200" height="50" rx="7" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="360" y="45" text-anchor="middle" class="diagram-label" font-size="11">Honest AS</text>
-        <text x="360" y="45" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">issues real code</text>
-
-        <rect x="520" y="20" width="220" height="50" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
-        <text x="630" y="45" text-anchor="middle" class="diagram-label" font-size="11">Attacker-controlled AS</text>
-        <text x="630" y="45" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="14">claims the response is "from" it</text>
-
-        <defs>
-          <marker id="arrowMix" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
-          </marker>
-        </defs>
-        <line x1="200" y1="45" x2="258" y2="45" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
-        <line x1="360" y1="70" x2="630" y2="110" class="diagram-stroke" stroke-dasharray="4,3" marker-end="url(#arrowMix)"></line>
-        <text x="500" y="95" text-anchor="middle" class="diagram-label-muted" font-size="10">attacker relabels the response</text>
-
-        <line x1="360" y1="70" x2="300" y2="150" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
-        <text x="260" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">without iss check</text>
-        <rect x="150" y="155" width="300" height="55" rx="7" class="diagram-fill-danger diagram-stroke"></rect>
-        <text x="300" y="178" text-anchor="middle" class="diagram-label" font-size="11">Client sends real code to</text>
-        <text x="300" y="178" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">attacker's token endpoint — code stolen</text>
-
-        <line x1="630" y1="110" x2="580" y2="150" class="diagram-stroke" marker-end="url(#arrowMix)"></line>
-        <text x="610" y="135" text-anchor="middle" class="diagram-label-muted" font-size="10">with iss check</text>
-        <rect x="450" y="155" width="300" height="55" rx="7" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="600" y="178" text-anchor="middle" class="diagram-label" font-size="11">Client compares iss, mismatch</text>
-        <text x="600" y="178" text-anchor="middle" class="diagram-label-muted" font-size="10" dy="16">detected — flow aborted</text>
-
-        <rect x="250" y="235" width="400" height="55" rx="7" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="450" y="259" text-anchor="middle" class="diagram-label" font-size="11">RFC 9207's `iss` parameter</text>
-        <text x="450" y="275" text-anchor="middle" class="diagram-label" font-size="11">is what makes this check possible at all</text>
-      </svg>
-      <figcaption>Figure 18.2 — A mix-up attack succeeds only if the client takes "which AS is this response
-      from" on faith. `iss` validation makes that an explicit, checkable comparison.</figcaption>
-    </figure>
-
-    <h2>CSRF defense: what the <code>state</code> parameter actually does</h2>
-    <p>The authorization code flow's redirect-based handshake is itself a target for cross-site request
-    forgery: an attacker can start their <em>own</em> legitimate authorization flow (logging in as the
-    attacker, or linking the attacker's own account), capture the resulting callback URL, and trick a
-    victim's browser into completing <em>that</em> callback instead of one the victim actually initiated.
-    If the client doesn't check anything, the victim's browser session ends up linked to the attacker's
-    identity — a forged callback masquerading as a normal login completion.</p>
-    <p>The <code>state</code> parameter defends against exactly this: the client generates a random,
-    unguessable value before redirecting to the authorization server, stores it tied to the browser
-    session that's initiating the request (e.g. in a server-side session or a cookie the client set), and
-    requires the callback to echo that same value back. A forged callback — one started by the attacker's
-    own flow, not the victim's browser — carries the attacker's <code>state</code> value, not one bound
-    to the victim's session, so the client's comparison fails and the flow is rejected. RFC 9700 §2.1
-    states this plainly: clients MUST prevent CSRF, either by relying on PKCE (when the authorization
-    server supports it, since the <code>code_verifier</code> itself provides equivalent protection) or by
-    using a one-time CSRF token carried in <code>state</code> that is securely bound to the user agent. The
-    value should be single-use — invalidated by the client immediately after the callback is checked, per
-    RFC 9700 §4.2.4 — so a captured callback URL can't be replayed a second time either.</p>
-
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall</div>
-      <p>Treating <code>state</code> as "just an opaque echo value the server sends and gets back" misses
-      the actual security property. The protection isn't that <code>state</code> survived the round trip —
-      it's that the value was generated for, and bound to, <em>this specific browser session</em> before
-      the redirect happened. If a client generates <code>state</code> but never actually ties it to the
-      session that initiated the request (for example, storing it only client-side where any page can read
-      or guess it), the CSRF defense is decorative — present in the request, doing nothing.</p>
-    </div>
-
-    <h2>Token storage: where a browser-based client keeps what it's given</h2>
-    <p>Chapter 9 named the failure mode without naming the fix: a bearer token (ch. 8) is usable by whoever
-    holds it, and cross-site scripting (ch. 9) is exactly how an attacker gets to <em>hold</em> one it was
-    never issued to them. The missing piece is: where should a browser-based client actually keep its
-    tokens, given that the browser is the thing XSS runs inside of?</p>
-    <ul>
-      <li><strong><code>localStorage</code> / <code>sessionStorage</code></strong> — plain JavaScript-
-      accessible, origin-scoped storage. Convenient (any script on the page can read and write it directly,
-      no server round-trip needed) and exactly that: <em>any</em> script running on the page, including
-      one an attacker injected via an XSS flaw, can read it too. There is no way to mark a value in either
-      store as off-limits to JavaScript — the access model doesn't support it. RFC 10017 (the "OAuth 2.0
-      for Browser-Based Applications" BCP, confirmed live, published August 2026) names this directly:
-      malicious code from an XSS attack "has the same privileges as the legitimate application code" and
-      can "steal data from origin-based storage mechanisms."</li>
-      <li><strong>httpOnly cookies</strong> — a cookie attribute that makes the cookie's value invisible to
-      JavaScript entirely (<code>document.cookie</code> simply never returns it); only the browser itself
-      attaches it to outgoing requests, and only the server reads it. This closes the specific XSS-reads-
-      the-token exposure completely — stolen page script has nothing to read. It doesn't make the cookie
-      immune to everything: a cookie the browser attaches automatically is exactly the thing CSRF existed
-      to exploit before <code>state</code>/<code>SameSite</code> existed to stop it, so an httpOnly,
-      cookie-based session needs its own CSRF defense (a <code>SameSite</code> attribute, a CSRF token, or
-      both) — it trades one risk for a different, better-understood one, not a risk for nothing.</li>
-    </ul>
-    <p>RFC 10017 goes a step further than just "pick a safer storage API": its most strongly recommended
-    pattern is a <strong>Backend-for-Frontend (BFF)</strong> — a server-side component that holds the
-    actual OAuth tokens itself and gives the browser only an httpOnly, <code>Secure</code>,
-    <code>SameSite</code> session cookie, so the token never reaches browser-readable storage, or even
-    browser-visible JavaScript, at all. The RFC calls this pattern "strongly recommended for business
-    applications" specifically because it removes the token-in-the-browser exposure as a category, rather
-    than hardening the place the token sits.</p>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 800 300" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Comparing where a browser-based client can keep an access token</title>
-        <desc id="d3">Three columns compare token storage options. Column one, localStorage or
-        sessionStorage: JavaScript-readable, so an XSS flaw can read the token directly; marked as the
-        highest XSS exposure. Column two, an httpOnly cookie managed directly by the browser app: not
-        JavaScript-readable, so XSS can't read the token directly, but the cookie is attached
-        automatically by the browser, so it needs its own CSRF defense. Column three, a backend-for-
-        frontend holding the token server-side and giving the browser only a session cookie: the token
-        never reaches the browser at all, removing the XSS-reads-the-token exposure as a category, at the
-        cost of operating an extra backend component.</desc>
-
-        <rect x="20" y="20" width="230" height="40" rx="6" class="diagram-fill-danger diagram-stroke"></rect>
-        <text x="135" y="45" text-anchor="middle" class="diagram-label" font-size="11">localStorage / sessionStorage</text>
-
-        <rect x="285" y="20" width="230" height="40" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
-        <text x="400" y="45" text-anchor="middle" class="diagram-label" font-size="11">httpOnly cookie (browser app)</text>
-
-        <rect x="550" y="20" width="230" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
-        <text x="665" y="45" text-anchor="middle" class="diagram-label" font-size="11">BFF-held token (RFC 10017)</text>
-
-        <rect x="20" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="135" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: yes</text>
-        <text x="135" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">XSS reads the token directly</text>
-
-        <rect x="285" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="400" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: no</text>
-        <text x="400" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">needs its own CSRF defense</text>
-
-        <rect x="550" y="80" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="665" y="105" text-anchor="middle" class="diagram-label" font-size="10">JS-readable: n/a</text>
-        <text x="665" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">token never reaches the browser</text>
-
-        <rect x="20" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="135" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: none added</text>
-        <text x="135" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">(not auto-attached by the browser)</text>
-
-        <rect x="285" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="400" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: real</text>
-        <text x="400" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">mitigated by SameSite / CSRF token</text>
-
-        <rect x="550" y="160" width="230" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
-        <text x="665" y="183" text-anchor="middle" class="diagram-label" font-size="10">CSRF exposure: real</text>
-        <text x="665" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">same cookie defenses apply</text>
-
-        <rect x="20" y="240" width="760" height="45" rx="6" class="diagram-fill-info diagram-stroke"></rect>
-        <text x="400" y="267" text-anchor="middle" class="diagram-label" font-size="11">No option is "safe" in isolation — each trades one exposure for a different, better-understood one</text>
-      </svg>
-      <figcaption>Figure 18.3 — Token storage is a trade-off between exposure categories, not a single
-      right answer; RFC 10017's BFF pattern is the option that removes the browser-JS-readable-token
-      exposure entirely, at the cost of an extra backend component.</figcaption>
-    </figure>
-
-    <div class="callout callout--in-keycloak">
-      <div class="callout-label">In Keycloak</div>
-      <p>Keycloak doesn't control how a client-side application stores the tokens it's handed — that's
-      the application's own architecture decision, which is exactly why this chapter's guidance exists
-      independent of any specific IAM vendor. What Keycloak does control: short default access-token
-      lifetimes (shrinking how long a stolen token stays useful regardless of where it was stolen from) and
-      per-session revocation, both covered in chapter 29; and a client confidential/public distinction and
-      PKCE enforcement, covered in chapter 24.</p>
-    </div>
-
-    <h2>Case study: Northwind Apps' token theft, revisited</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study</div>
-      <p><span class="org-chip northwind">Northwind Apps</span> — recall chapter 9's incident: a Northwind
-      enterprise customer built its own browser-based integration against Northwind's API, that
-      integration had an XSS flaw in code Northwind never wrote, and an attacker who exploited it could
-      read whatever the browser session was holding — including the bearer token Northwind issued for API
-      access. Chapter 9 could only say the damage was bounded by the token's scope and lifetime, because
-      chapter 9 came before this chapter's defenses existed in the course. Looking at the same incident
-      now: the proximate cause of the theft wasn't the XSS flaw alone — XSS flaws happen, and no IAM
-      provider can prevent a customer's own code from having one. The proximate cause of <em>the token
-      being readable once the flaw existed</em> was the customer's integration keeping that bearer token
-      somewhere JavaScript-accessible, almost certainly <code>localStorage</code> or a plain in-memory
-      variable exposed to the page. If that same token had instead been held behind an httpOnly cookie —
-      or, better, never reached the browser at all because the integration used a BFF — the XSS flaw would
-      still exist, but the attacker's injected script would have had nothing to read. The vulnerability and
-      the exposure are two different things, and this chapter's token-storage guidance is specifically
-      about shrinking the second one even when the first one is outside your control. Northwind's own token
-      scope and short lifetime (ch. 9's actual mitigation) still mattered and still limited the blast
-      radius once the token was stolen — but "the token should not have been stealable in the first place"
-      is the best-current-practice answer chapter 9 was waiting for this chapter to supply.</p>
-    </div>
-
-    <h2>Threat-to-defense map: closing the loop with chapter 9</h2>
-    <p>Chapter 9 named five threats and pointed most of them at "chapter 18" without saying what chapter 18
-    actually does. Here's the specific mechanism, by name, for each OAuth/OIDC-relevant row.</p>
-    <div class="table-wrap">
-      <table>
-        <caption>OAuth/OIDC-specific mechanisms answering chapter 9's threats, plus two attack surfaces unique to the protocol layer</caption>
-        <thead>
-          <tr><th>Threat / attack surface</th><th>Specific OAuth/OIDC mechanism</th><th>Where it's built on</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Forged authorization callback (CSRF against the login flow)</td><td><code>state</code> parameter, bound to the initiating browser session and single-use</td><td>RFC 9700 §2.1, §4.7.1, §4.2.4</td></tr>
-          <tr><td>Client confused about which authorization server issued a response (mix-up attack)</td><td><code>iss</code> validation (RFC 9207) on every authorization response; distinct redirect URIs as a fallback</td><td>RFC 9700 §2.1, §4.4; RFC 9207</td></tr>
-          <tr><td>Authorization code interception, even against a confidential client</td><td>PKCE for all client types ("PKCE-everywhere"), not only public clients</td><td>RFC 9700 §2.1.1, §4.5.3.1; ch. 13's PKCE mechanics</td></tr>
-          <tr><td>Token theft via XSS (ch. 9), token replay (ch. 8/9)</td><td>Token storage choice (avoid JS-readable storage; httpOnly cookie or BFF); short token lifetimes; sender-constrained tokens as a further hardening step</td><td>RFC 10017; ch. 8's token lifetime/revocation-problem framing; ch. 24/25 forward-pointer</td></tr>
-          <tr><td>Session hijacking (ch. 9) when the session itself is cookie-based</td><td><code>SameSite</code> cookie attribute plus a CSRF defense, since an httpOnly cookie removes XSS exposure but is still auto-attached by the browser</td><td>RFC 10017 §6.1.3.2; ch. 29's session mechanics</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <ul class="common-mistakes">
-      <li>If a confidential (server-side, secret-holding) client skips PKCE on the theory that "the secret
-      already protects it," the cause is confusing what the secret protects (the token-endpoint exchange)
-      with what PKCE protects (the authorization code in flight before that exchange) — see "PKCE,
-      everywhere" above.</li>
-      <li>If a client trusts more than one authorization server and takes the incoming response's identity
-      on faith, the cause is missing `iss` validation, not an unavoidable risk of multi-IdP setups — see
-      "Mix-up attacks" above.</li>
-      <li>If a client generates and checks a <code>state</code> value but the CSRF protection still fails
-      in review, the cause is usually that the value was never actually bound to the initiating browser
-      session (e.g. stored somewhere any page can read), not that <code>state</code> doesn't work.</li>
-      <li>If an SPA keeps its access token in <code>localStorage</code> "because it's simpler than cookies,"
-      the cause is treating convenience as equivalent to security review, when the two storage choices have
-      categorically different exposure to the same XSS flaw.</li>
-      <li>If a team believes moving a token into an httpOnly cookie "fixes" its security posture
-      completely, the cause is forgetting that an httpOnly cookie reintroduces CSRF exposure that
-      <code>localStorage</code> never had — it's a trade, not a strict improvement with no new cost.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>The OAuth 2.0 Security Best Current Practice is a published, final RFC — RFC 9700 / BCP 240,
-      January 2025 — consolidating threat-model advice that used to be scattered across RFC 6749, 6750,
-      and the now-superseded RFC 6819.</li>
-      <li>PKCE is no longer "the public-client thing" — RFC 9700 recommends it for confidential clients
-      too, because it protects the authorization code in flight, a layer a client secret never covered.</li>
-      <li>A mix-up attack exploits a client that trusts more than one authorization server and has no way
-      to verify which one actually issued a given response.</li>
-      <li>`iss` validation (RFC 9207) is the preferred mix-up defense: the authorization server states its
-      own identity in the response, and the client compares it before doing anything else.</li>
-      <li>The `state` parameter's security property comes from being bound to the specific browser session
-      that initiated the request — not merely from surviving the round trip unchanged.</li>
-      <li>`localStorage`/`sessionStorage` are JavaScript-readable by design, which means any XSS flaw on
-      the page can read a token kept there directly — this is the mechanism behind chapter 9's Northwind
-      Apps token-theft incident, named explicitly for the first time in this chapter.</li>
-      <li>An httpOnly cookie removes the JS-readable-token exposure entirely, but reintroduces CSRF
-      exposure that needs its own defense (`SameSite`, a CSRF token, or both) — no storage choice is free
-      of trade-offs.</li>
-      <li>RFC 10017's Backend-for-Frontend (BFF) pattern goes further than picking a safer storage API: it
-      keeps the token out of the browser altogether, which is why the RFC calls it "strongly recommended"
-      for real applications rather than merely one more option.</li>
-      <li>Revisiting chapter 9's Northwind incident: the XSS flaw and the token's readability were two
-      separate failures, and this chapter's guidance targets the second one even when the first is outside
-      an IAM specialist's control.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Explain, in your own words, why a client secret and PKCE protect two different points in the
-      authorization code flow rather than the same point twice.</li>
-      <li>Walk through a mix-up attack scenario step by step and identify the exact moment `iss`
-      validation would have caught it.</li>
-      <li>Why does the security value of the `state` parameter depend on how it's stored, not just on
-      whether the server generated it randomly?</li>
-      <li>If you were advising a team building a new browser-based client today, would you recommend
-      `localStorage`, an httpOnly cookie, or a BFF — and what would make you change that recommendation for
-      a different team?</li>
-      <li>Revisit chapter 9's Northwind Apps case study and argue which single change — token storage,
-      token lifetime, or token scope — would have reduced the incident's damage the most, and why the other
-      two still matter even if you pick one as "most important."</li>
-      <li>RFC 9700 recommends, rather than requires, PKCE for confidential clients. What does that
-      "RECOMMENDED, not MUST" distinction tell you about how to read IETF normative language in general?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc9700.html">RFC 9700 / BCP 240 — "Best Current Practice for OAuth 2.0 Security"</a></li>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc9207.html">RFC 9207 — "OAuth 2.0 Authorization Server Issuer Identification" (the `iss` parameter)</a></li>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc10017.html">RFC 10017 / BCP 212 — "OAuth 2.0 for Browser-Based Applications"</a></li>
-      <li><a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636 — "Proof Key for Code Exchange by OAuth Public Clients" (PKCE's original mechanics)</a></li>
-      <li><a href="https://www.rfc-editor.org/rfc/rfc6749.html#section-10.12">RFC 6749 §10.12 — "Cross-Site Request Forgery" (the original `state` rationale)</a></li>
-      <li><a href="https://oauth.net/2/oauth-best-practice/">OAuth.net — "OAuth 2.0 Security Best Current Practice" (plain-language summary with links back to RFC 9700)</a></li>
-      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP Cheat Sheet Series — "Cross-Site Request Forgery Prevention Cheat Sheet"</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "oauth-oidc-security", 15);
+    SlideDeck.init({ chapterSlug: "oauth-oidc-security" });
   });
 </script>
 </body>

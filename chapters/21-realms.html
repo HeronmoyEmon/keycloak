@@ -5,257 +5,285 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Realms &amp; Realm Settings — IAM &amp; Keycloak Mastery</title>
 <link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
 <link rel="stylesheet" href="../assets/css/print.css" media="print">
 <script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "realms";</script>
 </head>
 <body>
 <header class="top-bar">
-  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
   <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
   <div class="spacer"></div>
   <div class="top-actions">
     <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
     <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
   </div>
 </header>
-<div class="layout">
-  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
-  <main class="content"><article class="content-inner">
-    <div class="chapter-meta">
-      <span class="badge">Part IV — Keycloak Core Administration</span>
-      <span class="badge minutes">~40 min</span>
-      <span class="badge lab">Hands-on lab</span>
-    </div>
-    <h1>21. Realms &amp; Realm Settings</h1>
-    <p class="lede">Chapter 20 created <code>northwind-apps</code> and left it as a bare, empty namespace —
-    enabled, but configured with nothing beyond Keycloak's own defaults. This chapter is where that realm
-    stops being a container with nothing in it and starts carrying real decisions: what it's called, how
-    long a login stays trusted, and which self-service options Northwind's customers get on the login
-    page. No users, roles, or clients get created here — that's chapters 22-24's job. This chapter is
-    entirely about the realm-level settings that every one of those later chapters' users, roles, and
-    clients will inherit.</p>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
 
-    <h2>Why this matters</h2>
-    <p>Realm settings are the knobs an IAM specialist tunes most often after initial setup, and they're the
-    ones that quietly produce support tickets or security incidents when nobody deliberately chose them.
-    A session timeout set by accident rather than by policy either annoys every user who gets logged out
-    mid-task or leaves a stolen browser session valid for hours longer than the business can tolerate.
-    Getting these settings right — and being able to explain <em>why</em> a specific number was chosen, not
-    just that a form was filled in — is exactly the kind of judgment that separates someone who can click
-    through an admin console from someone who can own an IAM program.</p>
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IV — Keycloak Core Administration</span>
+          <span class="badge minutes">~40 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>21. Realms &amp; Realm Settings</h1>
+        <p class="lede">Chapter 20 created <code>northwind-apps</code> and left it as a bare, empty namespace —
+        enabled, but configured with nothing beyond Keycloak's own defaults. This chapter is where that realm
+        stops being a container with nothing in it and starts carrying real decisions: what it's called, how
+        long a login stays trusted, and which self-service options Northwind's customers get on the login
+        page. No users, roles, or clients get created here — that's chapters 22-24's job. This chapter is
+        entirely about the realm-level settings that every one of those later chapters' users, roles, and
+        clients will inherit.</p>
 
-    <div class="callout callout--concept-recall">
-      <div class="callout-label">What concept is this?</div>
-      <p>Chapter 19 defined a Keycloak realm as a fully isolated management namespace; this chapter doesn't
-      redefine that — it's about the settings attached to the namespace chapter 20 already created. Chapter
-      7 defined an SSO session in the abstract: the state an identity provider keeps for a browser so a
-      later redirect from a connected application doesn't force a fresh login. Chapter 8 introduced the
-      token-lifetime trade-off: shorter lifetimes shrink a stolen token's usefulness but add refresh
-      overhead, longer lifetimes do the opposite. Every setting in this chapter is one of those two generic
-      concepts made concrete as a specific field in a specific screen.</p>
-    </div>
+        <h2>Why this matters</h2>
+        <p>Realm settings are the knobs an IAM specialist tunes most often after initial setup, and they're the
+        ones that quietly produce support tickets or security incidents when nobody deliberately chose them.
+        A session timeout set by accident rather than by policy either annoys every user who gets logged out
+        mid-task or leaves a stolen browser session valid for hours longer than the business can tolerate.
+        Getting these settings right — and being able to explain <em>why</em> a specific number was chosen, not
+        just that a form was filled in — is exactly the kind of judgment that separates someone who can click
+        through an admin console from someone who can own an IAM program.</p>
 
-    <h2>The Realm Settings screens, tab by tab</h2>
-    <p><strong>No browser tool was available to click through the Admin Console personally in this
-    session.</strong> What follows about the Console's tabs and fields is drawn from Keycloak's own current
-    <a href="https://www.keycloak.org/docs/latest/server_admin/">Server Administration Guide</a> (fetched
-    live for this chapter, version matching the lab's 26.8.2), labeled as such — exactly the same discipline
-    chapter 20 used for its own "Create realm" walkthrough. What <em>was</em> personally verified is every
-    field's real effect on the running realm, via <code>kcadm.sh</code> against the Admin REST API later in
-    this chapter.</p>
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 19 defined a Keycloak realm as a fully isolated management namespace; this chapter doesn't
+          redefine that — it's about the settings attached to the namespace chapter 20 already created. Chapter
+          7 defined an SSO session in the abstract: the state an identity provider keeps for a browser so a
+          later redirect from a connected application doesn't force a fresh login. Chapter 8 introduced the
+          token-lifetime trade-off: shorter lifetimes shrink a stolen token's usefulness but add refresh
+          overhead, longer lifetimes do the opposite. Every setting in this chapter is one of those two generic
+          concepts made concrete as a specific field in a specific screen.</p>
+        </div>
+      </section>
 
-    <p>Keycloak's Admin Console reaches these screens via the left-hand "Realm settings" link once
-    <code>northwind-apps</code> is the current realm (top-left realm selector, same mechanism chapter 20
-    used to switch into it). The settings are split across several tabs:</p>
+      <section class="slide" data-slide="tabs-overview" data-title="Realm Settings tabs">
+        <h2>The Realm Settings screens, tab by tab</h2>
+        <p><strong>No browser tool was available to click through the Admin Console personally in this
+        session.</strong> What follows about the Console's tabs and fields is drawn from Keycloak's own current
+        <a href="https://www.keycloak.org/docs/latest/server_admin/">Server Administration Guide</a> (fetched
+        live for this chapter, version matching the lab's 26.8.2), labeled as such — exactly the same discipline
+        chapter 20 used for its own "Create realm" walkthrough. What <em>was</em> personally verified is every
+        field's real effect on the running realm, via <code>kcadm.sh</code> against the Admin REST API later in
+        this chapter.</p>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Realm Settings tabs covered in this chapter, per Keycloak's official Server Administration Guide</caption>
-        <thead><tr><th>Tab</th><th>What it controls</th><th>Depth in this course</th></tr></thead>
-        <tbody>
-          <tr><td>General</td><td>Display name, HTML display name, frontend URL, Require SSL</td><td>Full coverage here</td></tr>
-          <tr><td>Login</td><td>User registration, forgot password, remember me, verify email, login with email, duplicate emails</td><td>Full coverage here</td></tr>
-          <tr><td>Tokens / Sessions</td><td>Access token lifespan, SSO session idle/max, client session idle/max, offline session settings</td><td>Full coverage here</td></tr>
-          <tr><td>Security Defenses</td><td>Security headers, brute-force detection</td><td>Preview only — chapter 30</td></tr>
-          <tr><td>Themes</td><td>Login, account, admin console, and email theme selection</td><td>Preview only — chapter 26</td></tr>
-        </tbody>
-      </table>
-    </div>
+        <p>Keycloak's Admin Console reaches these screens via the left-hand "Realm settings" link once
+        <code>northwind-apps</code> is the current realm (top-left realm selector, same mechanism chapter 20
+        used to switch into it). The settings are split across several tabs:</p>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t1 d1">
-        <title id="t1">The Realm Settings tabs, and which chapter owns each one in depth</title>
-        <desc id="d1">A row of five tabs under one Realm Settings screen, left to right: General, Login,
-        Tokens/Sessions, Security Defenses, Themes. The first three tabs — General, Login, and
-        Tokens/Sessions — are highlighted as this chapter's own territory, with a solid-bordered box under
-        each. The last two tabs — Security Defenses and Themes — are drawn with a dashed border and a
-        forward-pointing arrow, Security Defenses pointing to chapter 30 (password policies and brute-force
-        protection) and Themes pointing to chapter 26 (themes, branding, and localization), since this
-        chapter only previews what exists on those two tabs without configuring them.</desc>
-        <rect x="20" y="40" width="860" height="30" rx="6" class="diagram-fill-surface diagram-stroke"/>
-        <text x="450" y="60" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Realm Settings — northwind-apps</text>
+        <div class="table-wrap">
+          <table>
+            <caption>Realm Settings tabs covered in this chapter, per Keycloak's official Server Administration Guide</caption>
+            <thead><tr><th>Tab</th><th>What it controls</th><th>Depth in this course</th></tr></thead>
+            <tbody>
+              <tr><td>General</td><td>Display name, HTML display name, frontend URL, Require SSL</td><td>Full coverage here</td></tr>
+              <tr><td>Login</td><td>User registration, forgot password, remember me, verify email, login with email, duplicate emails</td><td>Full coverage here</td></tr>
+              <tr><td>Tokens / Sessions</td><td>Access token lifespan, SSO session idle/max, client session idle/max, offline session settings</td><td>Full coverage here</td></tr>
+              <tr><td>Security Defenses</td><td>Security headers, brute-force detection</td><td>Preview only — chapter 30</td></tr>
+              <tr><td>Themes</td><td>Login, account, admin console, and email theme selection</td><td>Preview only — chapter 26</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-        <rect x="30" y="90" width="160" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
-        <text x="110" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">General</text>
-        <text x="110" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The Realm Settings tabs, and which chapter owns each one in depth</title>
+            <desc id="d1">A row of five tabs under one Realm Settings screen, left to right: General, Login,
+            Tokens/Sessions, Security Defenses, Themes. The first three tabs — General, Login, and
+            Tokens/Sessions — are highlighted as this chapter's own territory, with a solid-bordered box under
+            each. The last two tabs — Security Defenses and Themes — are drawn with a dashed border and a
+            forward-pointing arrow, Security Defenses pointing to chapter 30 (password policies and brute-force
+            protection) and Themes pointing to chapter 26 (themes, branding, and localization), since this
+            chapter only previews what exists on those two tabs without configuring them.</desc>
+            <rect x="20" y="40" width="860" height="30" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="450" y="60" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Realm Settings — northwind-apps</text>
 
-        <rect x="205" y="90" width="160" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
-        <text x="285" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login</text>
-        <text x="285" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
+            <rect x="30" y="90" width="160" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="110" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">General</text>
+            <text x="110" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
 
-        <rect x="380" y="90" width="175" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
-        <text x="467" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Tokens / Sessions</text>
-        <text x="467" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
-        <text x="467" y="146" text-anchor="middle" class="diagram-label-muted" font-size="10">(recalls ch07/ch08)</text>
+            <rect x="205" y="90" width="160" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="285" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Login</text>
+            <text x="285" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
 
-        <rect x="570" y="90" width="150" height="70" rx="6" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5 3"/>
-        <text x="645" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Security</text>
-        <text x="645" y="128" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Defenses</text>
-        <text x="645" y="146" text-anchor="middle" class="diagram-label-muted" font-size="10">preview only</text>
+            <rect x="380" y="90" width="175" height="70" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="467" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Tokens / Sessions</text>
+            <text x="467" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">this chapter</text>
+            <text x="467" y="146" text-anchor="middle" class="diagram-label-muted" font-size="10">(recalls ch07/ch08)</text>
 
-        <rect x="735" y="90" width="140" height="70" rx="6" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5 3"/>
-        <text x="805" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Themes</text>
-        <text x="805" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">preview only</text>
+            <rect x="570" y="90" width="150" height="70" rx="6" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5 3"/>
+            <text x="645" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Security</text>
+            <text x="645" y="128" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Defenses</text>
+            <text x="645" y="146" text-anchor="middle" class="diagram-label-muted" font-size="10">preview only</text>
 
-        <line x1="645" y1="160" x2="645" y2="200" class="diagram-stroke" marker-end="url(#arrowR1)"/>
-        <text x="645" y="218" text-anchor="middle" class="diagram-label-muted" font-size="11">Full depth: Chapter 30</text>
+            <rect x="735" y="90" width="140" height="70" rx="6" class="diagram-fill-warning diagram-stroke" stroke-dasharray="5 3"/>
+            <text x="805" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Themes</text>
+            <text x="805" y="136" text-anchor="middle" class="diagram-label-muted" font-size="10">preview only</text>
 
-        <line x1="805" y1="160" x2="805" y2="200" class="diagram-stroke" marker-end="url(#arrowR1)"/>
-        <text x="805" y="218" text-anchor="middle" class="diagram-label-muted" font-size="11">Full depth: Chapter 26</text>
+            <line x1="645" y1="160" x2="645" y2="200" class="diagram-stroke" marker-end="url(#arrowR1)"/>
+            <text x="645" y="218" text-anchor="middle" class="diagram-label-muted" font-size="11">Full depth: Chapter 30</text>
 
-        <defs>
-          <marker id="arrowR1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
-          </marker>
-        </defs>
-      </svg>
-      <figcaption>Figure 21.1 — This chapter's own territory (General, Login, Tokens/Sessions) versus the
-      two tabs it only previews.</figcaption>
-    </figure>
+            <line x1="805" y1="160" x2="805" y2="200" class="diagram-stroke" marker-end="url(#arrowR1)"/>
+            <text x="805" y="218" text-anchor="middle" class="diagram-label-muted" font-size="11">Full depth: Chapter 26</text>
 
-    <h3>General tab</h3>
-    <p>Per the official guide, the General tab carries the realm's <strong>Display Name</strong> (a
-    human-readable label shown instead of the internal realm id in places like the login screen header) and
-    an HTML variant of it, plus <strong>Frontend URL</strong> (the base URL Keycloak uses when it needs to
-    generate a URL back to itself, useful behind a reverse proxy) and <strong>Require SSL</strong>, which the
-    guide documents as three modes: <em>External requests</em> (SSL required for every request except from
-    private/loopback addresses — the default), <em>None</em> ("Keycloak does not require SSL. This choice
-    applies only in development..."), and <em>All requests</em> (SSL required everywhere, no exceptions).</p>
+            <defs>
+              <marker id="arrowR1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 21.1 — This chapter's own territory (General, Login, Tokens/Sessions) versus the
+          two tabs it only previews.</figcaption>
+        </figure>
+      </section>
 
-    <h3>Login tab</h3>
-    <p>The Login tab's fields are self-service toggles for the login page itself. Per the guide: enabling
-    <strong>Forgot password</strong> adds a "Forgot Password?" link to login pages — but it only works once
-    email (SMTP host and a From address) is configured so Keycloak can actually send the reset message; by
-    default, federated users must log in again after a reset while internal database users on the same
-    browser session stay logged in. Enabling <strong>Remember Me</strong> adds a checkbox that keeps the
-    session alive after the browser closes; disabling it afterward doesn't immediately kill sessions created
-    with the checkbox already selected — invalidation happens the next time that session's cookie or token
-    is actually used, or in a background cleanup process, not instantly. The tab also carries
-    <strong>User registration</strong> (self-service sign-up), <strong>Verify email</strong> (require a
-    confirmed mailbox before the account is usable), and <strong>Login with email</strong> /
-    <strong>Duplicate emails allowed</strong> (how strictly usernames and email addresses are treated as
-    interchangeable identifiers).</p>
+      <section class="slide" data-slide="general-tab" data-title="General tab">
+        <h2>General tab</h2>
+        <p>Per the official guide, the General tab carries the realm's <strong>Display Name</strong> (a
+        human-readable label shown instead of the internal realm id in places like the login screen header) and
+        an HTML variant of it, plus <strong>Frontend URL</strong> (the base URL Keycloak uses when it needs to
+        generate a URL back to itself, useful behind a reverse proxy) and <strong>Require SSL</strong>, which the
+        guide documents as three modes: <em>External requests</em> (SSL required for every request except from
+        private/loopback addresses — the default), <em>None</em> ("Keycloak does not require SSL. This choice
+        applies only in development..."), and <em>All requests</em> (SSL required everywhere, no exceptions).</p>
+      </section>
 
-    <h3>Tokens and Sessions</h3>
-    <p>This is where chapter 7's and chapter 8's generic vocabulary gets its concrete Keycloak home. The
-    guide separates token-shape settings from session-lifetime settings, even though both live under the
-    same general area of Realm Settings:</p>
+      <section class="slide" data-slide="login-tab" data-title="Login tab">
+        <h2>Login tab</h2>
+        <p>The Login tab's fields are self-service toggles for the login page itself. Per the guide: enabling
+        <strong>Forgot password</strong> adds a "Forgot Password?" link to login pages — but it only works once
+        email (SMTP host and a From address) is configured so Keycloak can actually send the reset message; by
+        default, federated users must log in again after a reset while internal database users on the same
+        browser session stay logged in. Enabling <strong>Remember Me</strong> adds a checkbox that keeps the
+        session alive after the browser closes; disabling it afterward doesn't immediately kill sessions created
+        with the checkbox already selected — invalidation happens the next time that session's cookie or token
+        is actually used, or in a background cleanup process, not instantly. The tab also carries
+        <strong>User registration</strong> (self-service sign-up), <strong>Verify email</strong> (require a
+        confirmed mailbox before the account is usable), and <strong>Login with email</strong> /
+        <strong>Duplicate emails allowed</strong> (how strictly usernames and email addresses are treated as
+        interchangeable identifiers).</p>
+      </section>
 
-    <div class="table-wrap">
-      <table>
-        <caption>Token and session fields, quoted from Keycloak's official Server Administration Guide</caption>
-        <thead><tr><th>Field</th><th>Official description</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Access Token Lifespan</strong></td><td>"When Keycloak creates an OIDC access token, this value controls the lifetime of the token."</td></tr>
-          <tr><td><strong>Access Token Lifespan For Implicit Flow</strong></td><td>A separate timeout for access tokens issued by the Implicit Flow, which issues no refresh token.</td></tr>
-          <tr><td><strong>Client login timeout</strong></td><td>"The maximum time before clients must finish the Authorization Code Flow in OIDC."</td></tr>
-          <tr><td><strong>Revoke Refresh Token</strong></td><td>"When Enabled, Keycloak revokes refresh tokens and issues another token that the client must use."</td></tr>
-          <tr><td><strong>SSO Session Idle</strong></td><td>"If a user is inactive for longer than this timeout, the user session is invalidated."</td></tr>
-          <tr><td><strong>SSO Session Max</strong></td><td>"The maximum time before a user session expires."</td></tr>
-          <tr><td><strong>SSO Session Idle Remember Me</strong> / <strong>SSO Session Max Remember Me</strong></td><td>Separate, usually longer, idle/max values that apply only when the user checked "Remember Me" at login.</td></tr>
-          <tr><td><strong>Client Session Idle</strong> / <strong>Client Session Max</strong></td><td>Idle timeout for a client's own session, and "the maximum time for a client session and before a refresh token expires and invalidates."</td></tr>
-          <tr><td><strong>Offline Session Idle</strong></td><td>"The amount of time the session remains idle before Keycloak revokes its offline token."</td></tr>
-          <tr><td><strong>Offline Session Max Limited</strong></td><td>Flag controlling whether an Offline Session Max cap applies at all, or whether an offline session only ever expires via idle timeout.</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <section class="slide" data-slide="tokens-fields" data-title="Tokens &amp; Sessions: fields">
+        <h2>Tokens and Sessions</h2>
+        <p>This is where chapter 7's and chapter 8's generic vocabulary gets its concrete Keycloak home. The
+        guide separates token-shape settings from session-lifetime settings, even though both live under the
+        same general area of Realm Settings:</p>
 
-    <div class="callout callout--key-idea">
-      <div class="callout-label">Key idea</div>
-      <p>SSO Session Idle and SSO Session Max are the realm-level settings chapter 7's generic "SSO session"
-      concept actually turns into. Chapter 7 described an identity provider keeping state for a browser so a
-      later redirect to a different connected application skips re-authentication — it deliberately didn't
-      say how long that state lives, because that's an implementation detail, not part of the concept.
-      Keycloak answers it with exactly two numbers: SSO Session Idle (how long inactivity is tolerated before
-      the whole session dies) and SSO Session Max (an absolute ceiling regardless of activity). Access Token
-      Lifespan is a different, shorter-lived number layered on top — chapter 8's bearer-token trade-off — and
-      the three don't move together: a session can stay alive across many access tokens, each one minted and
-      expiring independently while the underlying SSO session persists.</p>
-    </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Token and session fields, quoted from Keycloak's official Server Administration Guide</caption>
+            <thead><tr><th>Field</th><th>Official description</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Access Token Lifespan</strong></td><td>"When Keycloak creates an OIDC access token, this value controls the lifetime of the token."</td></tr>
+              <tr><td><strong>Access Token Lifespan For Implicit Flow</strong></td><td>A separate timeout for access tokens issued by the Implicit Flow, which issues no refresh token.</td></tr>
+              <tr><td><strong>Client login timeout</strong></td><td>"The maximum time before clients must finish the Authorization Code Flow in OIDC."</td></tr>
+              <tr><td><strong>Revoke Refresh Token</strong></td><td>"When Enabled, Keycloak revokes refresh tokens and issues another token that the client must use."</td></tr>
+              <tr><td><strong>SSO Session Idle</strong></td><td>"If a user is inactive for longer than this timeout, the user session is invalidated."</td></tr>
+              <tr><td><strong>SSO Session Max</strong></td><td>"The maximum time before a user session expires."</td></tr>
+              <tr><td><strong>SSO Session Idle Remember Me</strong> / <strong>SSO Session Max Remember Me</strong></td><td>Separate, usually longer, idle/max values that apply only when the user checked "Remember Me" at login.</td></tr>
+              <tr><td><strong>Client Session Idle</strong> / <strong>Client Session Max</strong></td><td>Idle timeout for a client's own session, and "the maximum time for a client session and before a refresh token expires and invalidates."</td></tr>
+              <tr><td><strong>Offline Session Idle</strong></td><td>"The amount of time the session remains idle before Keycloak revokes its offline token."</td></tr>
+              <tr><td><strong>Offline Session Max Limited</strong></td><td>Flag controlling whether an Offline Session Max cap applies at all, or whether an offline session only ever expires via idle timeout.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-    <figure class="diagram">
-      <svg viewBox="0 0 900 280" role="img" aria-labelledby="t2 d2">
-        <title id="t2">Three independent clocks: access token lifespan, SSO session idle, and SSO session max</title>
-        <desc id="d2">A timeline from login on the left to eventual session end on the right. A short,
-        repeating bar near the top represents the access token, which is minted, expires, and is reminted
-        via refresh token several times over the course of the session — each cycle is short, labeled with
-        the Access Token Lifespan value. A longer bar below it represents the SSO session itself, which
-        continues as long as the user keeps being active; a gap in user activity longer than SSO Session
-        Idle would end the session early, shown as a dashed cutoff partway along. A third, longest bar
-        represents SSO Session Max, a hard ceiling drawn at a fixed point regardless of activity, after
-        which the session ends even if the user has been continuously active the whole time.</desc>
-        <text x="30" y="30" class="diagram-label" font-size="12" font-weight="700">Access tokens (short, repeating)</text>
-        <rect x="30" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
-        <rect x="120" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
-        <rect x="210" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
-        <rect x="300" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
-        <rect x="390" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
-        <text x="60" y="80" class="diagram-label-muted" font-size="10">each one: Access Token Lifespan, then refresh</text>
+      <section class="slide" data-slide="tokens-clocks" data-title="Three independent clocks">
+        <h2>Three independent clocks</h2>
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>SSO Session Idle and SSO Session Max are the realm-level settings chapter 7's generic "SSO session"
+          concept actually turns into. Chapter 7 described an identity provider keeping state for a browser so a
+          later redirect to a different connected application skips re-authentication — it deliberately didn't
+          say how long that state lives, because that's an implementation detail, not part of the concept.
+          Keycloak answers it with exactly two numbers: SSO Session Idle (how long inactivity is tolerated before
+          the whole session dies) and SSO Session Max (an absolute ceiling regardless of activity). Access Token
+          Lifespan is a different, shorter-lived number layered on top — chapter 8's bearer-token trade-off — and
+          the three don't move together: a session can stay alive across many access tokens, each one minted and
+          expiring independently while the underlying SSO session persists.</p>
+        </div>
 
-        <text x="30" y="120" class="diagram-label" font-size="12" font-weight="700">SSO session (continues while active)</text>
-        <rect x="30" y="130" width="440" height="24" rx="4" class="diagram-fill-success diagram-stroke"/>
-        <line x1="470" y1="130" x2="470" y2="154" class="diagram-stroke" stroke-dasharray="4 4"/>
-        <text x="500" y="146" class="diagram-label-muted" font-size="10">would end here if idle &gt; SSO Session Idle</text>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 280" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Three independent clocks: access token lifespan, SSO session idle, and SSO session max</title>
+            <desc id="d2">A timeline from login on the left to eventual session end on the right. A short,
+            repeating bar near the top represents the access token, which is minted, expires, and is reminted
+            via refresh token several times over the course of the session — each cycle is short, labeled with
+            the Access Token Lifespan value. A longer bar below it represents the SSO session itself, which
+            continues as long as the user keeps being active; a gap in user activity longer than SSO Session
+            Idle would end the session early, shown as a dashed cutoff partway along. A third, longest bar
+            represents SSO Session Max, a hard ceiling drawn at a fixed point regardless of activity, after
+            which the session ends even if the user has been continuously active the whole time.</desc>
+            <text x="30" y="30" class="diagram-label" font-size="12" font-weight="700">Access tokens (short, repeating)</text>
+            <rect x="30" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
+            <rect x="120" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
+            <rect x="210" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
+            <rect x="300" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
+            <rect x="390" y="40" width="80" height="24" rx="4" class="diagram-fill-accent diagram-stroke"/>
+            <text x="60" y="80" class="diagram-label-muted" font-size="10">each one: Access Token Lifespan, then refresh</text>
 
-        <text x="30" y="190" class="diagram-label" font-size="12" font-weight="700">SSO Session Max (hard ceiling)</text>
-        <rect x="30" y="200" width="700" height="24" rx="4" class="diagram-fill-danger diagram-stroke"/>
-        <text x="380" y="217" text-anchor="middle" class="diagram-label" font-size="10">session ends here no matter how active the user stayed</text>
+            <text x="30" y="120" class="diagram-label" font-size="12" font-weight="700">SSO session (continues while active)</text>
+            <rect x="30" y="130" width="440" height="24" rx="4" class="diagram-fill-success diagram-stroke"/>
+            <line x1="470" y1="130" x2="470" y2="154" class="diagram-stroke" stroke-dasharray="4 4"/>
+            <text x="500" y="146" class="diagram-label-muted" font-size="10">would end here if idle &gt; SSO Session Idle</text>
 
-        <text x="30" y="255" class="diagram-label-muted" font-size="11">All three clocks run independently: a session can outlive many access-token cycles, but never outlives its own idle timeout or max lifespan.</text>
-      </svg>
-      <figcaption>Figure 21.2 — Access Token Lifespan, SSO Session Idle, and SSO Session Max are three
-      independent clocks, not one setting.</figcaption>
-    </figure>
+            <text x="30" y="190" class="diagram-label" font-size="12" font-weight="700">SSO Session Max (hard ceiling)</text>
+            <rect x="30" y="200" width="700" height="24" rx="4" class="diagram-fill-danger diagram-stroke"/>
+            <text x="380" y="217" text-anchor="middle" class="diagram-label" font-size="10">session ends here no matter how active the user stayed</text>
 
-    <h3>Security Defenses tab — preview only</h3>
-    <p>Per the official guide, this tab's Headers section sets security headers like
-    <code>X-Frame-Options</code> and <code>Content-Security-Policy</code> (used, for example, when embedding
-    a reCAPTCHA-protected registration page in an iframe). The same tab also hosts Keycloak's brute-force
-    detection — the documentation's own "Mitigating security threats" material covers locking an account out
-    permanently or temporarily after repeated failed logins. This chapter does not configure either: brute-
-    force detection and password policy are chapter 30's subject in full, once a realm actually has users
-    worth protecting (chapter 22).</p>
+            <text x="30" y="255" class="diagram-label-muted" font-size="11">All three clocks run independently: a session can outlive many access-token cycles, but never outlives its own idle timeout or max lifespan.</text>
+          </svg>
+          <figcaption>Figure 21.2 — Access Token Lifespan, SSO Session Idle, and SSO Session Max are three
+          independent clocks, not one setting.</figcaption>
+        </figure>
+      </section>
 
-    <h3>Themes tab — preview only</h3>
-    <p>The Themes tab selects which theme renders each of four surfaces: the <strong>Login</strong> theme
-    ("username password entry, OTP entry, new user registration, and other similar screens related to
-    login," per the guide), the <strong>Account</strong> theme (the console end users manage their own
-    account through), the <strong>Admin console</strong> theme (the skin of the console administrators use),
-    and the <strong>Email</strong> theme (templates for every email Keycloak sends). A related Localization
-    tab controls Internationalization — enabling it and choosing supported languages lets end users pick a
-    language on the login page, which then applies across login, Account Console, and Admin Console. This
-    chapter leaves every theme at Keycloak's built-in default; branding <code>northwind-apps</code> with its
-    own look and adding a real locale option is chapter 26's job.</p>
+      <section class="slide" data-slide="security-themes-preview" data-title="Security Defenses &amp; Themes (preview)">
+        <h2>Security Defenses &amp; Themes tabs — preview only</h2>
 
-    <h2>Lab: configuring <code>northwind-apps</code>'s realm settings for real</h2>
-    <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-    <code>labs/docker/docker-compose.yml</code>, the same lab environment chapter 20 used — not narrated.
-    Each change is confirmed with a separate <code>kcadm.sh get</code> call, never just the update command's
-    own success (or silent) response.</p>
+        <h3>Security Defenses tab</h3>
+        <p>Per the official guide, this tab's Headers section sets security headers like
+        <code>X-Frame-Options</code> and <code>Content-Security-Policy</code> (used, for example, when embedding
+        a reCAPTCHA-protected registration page in an iframe). The same tab also hosts Keycloak's brute-force
+        detection — the documentation's own "Mitigating security threats" material covers locking an account out
+        permanently or temporarily after repeated failed logins. This chapter does not configure either: brute-
+        force detection and password policy are chapter 30's subject in full, once a realm actually has users
+        worth protecting (chapter 22).</p>
 
-    <ol class="lab-steps">
-      <li><p>Bring the stack up and poll the discovery endpoint until Keycloak is actually ready — a fixed
-      sleep is a guess, polling is a fact (same lesson chapter 20 established):</p>
+        <h3>Themes tab</h3>
+        <p>The Themes tab selects which theme renders each of four surfaces: the <strong>Login</strong> theme
+        ("username password entry, OTP entry, new user registration, and other similar screens related to
+        login," per the guide), the <strong>Account</strong> theme (the console end users manage their own
+        account through), the <strong>Admin console</strong> theme (the skin of the console administrators use),
+        and the <strong>Email</strong> theme (templates for every email Keycloak sends). A related Localization
+        tab controls Internationalization — enabling it and choosing supported languages lets end users pick a
+        language on the login page, which then applies across login, Account Console, and Admin Console. This
+        chapter leaves every theme at Keycloak's built-in default; branding <code>northwind-apps</code> with its
+        own look and adding a real locale option is chapter 26's job.</p>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: bring up the realm">
+        <h2>Lab: configuring <code>northwind-apps</code>'s realm settings for real</h2>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
+        <code>labs/docker/docker-compose.yml</code>, the same lab environment chapter 20 used — not narrated.
+        Each change is confirmed with a separate <code>kcadm.sh get</code> call, never just the update command's
+        own success (or silent) response.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll the discovery endpoint until Keycloak is actually ready — a fixed
+          sleep is a guess, polling is a fact (same lesson chapter 20 established):</p>
 <pre><code>cd labs/docker
 docker compose up -d
 for i in $(seq 1 30); do
@@ -271,9 +299,9 @@ attempt 2: 000
 attempt 9: 000
 attempt 10: 200</code></pre></li>
 
-      <li><p>Authenticate <code>kcadm.sh</code> against <code>master</code> and recreate
-      <code>northwind-apps</code> (each chapter's lab starts from a fresh stack, per this course's lab
-      convention, so the realm chapter 20 created doesn't persist across a clean <code>docker compose up</code>):</p>
+          <li><p>Authenticate <code>kcadm.sh</code> against <code>master</code> and recreate
+          <code>northwind-apps</code> (each chapter's lab starts from a fresh stack, per this course's lab
+          convention, so the realm chapter 20 created doesn't persist across a clean <code>docker compose up</code>):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 --realm master --user admin --password admin_lab_password
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
@@ -281,8 +309,8 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
 <pre><code>Logging into http://localhost:8080 as user admin of realm master
 Created new realm with id 'northwind-apps'</code></pre></li>
 
-      <li><p>Before changing anything, read the real defaults — this is the baseline every change below is
-      measured against:</p>
+          <li><p>Before changing anything, read the real defaults — this is the baseline every change below is
+          measured against:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps \
   --fields accessTokenLifespan,ssoSessionIdleTimeout,ssoSessionMaxLifespan,registrationAllowed,resetPasswordAllowed</code></pre>
 <pre><code>{
@@ -292,12 +320,17 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "registrationAllowed" : false,
   "resetPasswordAllowed" : false
 }</code></pre>
-      <p>Out of the box: a 300-second (5-minute) access token, a 1,800-second (30-minute) idle session
-      timeout, a 36,000-second (10-hour) absolute session ceiling, no self-service registration, and no
-      self-service password reset. These are reasonable generic defaults — the case study below explains why
-      Northwind changes three of them.</p></li>
+          <p>Out of the box: a 300-second (5-minute) access token, a 1,800-second (30-minute) idle session
+          timeout, a 36,000-second (10-hour) absolute session ceiling, no self-service registration, and no
+          self-service password reset. These are reasonable generic defaults — the case study below explains why
+          Northwind changes three of them.</p></li>
+        </ol>
+      </section>
 
-      <li><p>Set the display name (General tab's equivalent):</p>
+      <section class="slide" data-slide="lab-settings" data-title="Lab: set the realm fields">
+        <h2>Lab, continued: display name, token lifespan, and session timeouts</h2>
+        <ol class="lab-steps" start="4">
+          <li><p>Set the display name (General tab's equivalent):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
   -s displayName="Northwind Apps"</code></pre>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields displayName</code></pre>
@@ -305,7 +338,7 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "displayName" : "Northwind Apps"
 }</code></pre></li>
 
-      <li><p>Set the access token lifespan (Tokens tab's equivalent):</p>
+          <li><p>Set the access token lifespan (Tokens tab's equivalent):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
   -s accessTokenLifespan=600</code></pre>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields accessTokenLifespan</code></pre>
@@ -313,7 +346,7 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "accessTokenLifespan" : 600
 }</code></pre></li>
 
-      <li><p>Set the SSO session idle and max timeouts together (Sessions tab's equivalent):</p>
+          <li><p>Set the SSO session idle and max timeouts together (Sessions tab's equivalent):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
   -s ssoSessionIdleTimeout=3600 -s ssoSessionMaxLifespan=28800</code></pre>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps \
@@ -322,21 +355,26 @@ Created new realm with id 'northwind-apps'</code></pre></li>
   "ssoSessionIdleTimeout" : 3600,
   "ssoSessionMaxLifespan" : 28800
 }</code></pre></li>
+        </ol>
+      </section>
 
-      <li><p>Turn on self-service password reset (Login tab's equivalent):</p>
+      <section class="slide" data-slide="lab-finish" data-title="Lab: self-service reset &amp; teardown">
+        <h2>Lab, continued: self-service reset and teardown</h2>
+        <ol class="lab-steps" start="7">
+          <li><p>Turn on self-service password reset (Login tab's equivalent):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \
   -s resetPasswordAllowed=true</code></pre>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields resetPasswordAllowed</code></pre>
 <pre><code>{
   "resetPasswordAllowed" : true
 }</code></pre>
-      <p>Self-service registration (<code>registrationAllowed</code>) stays <code>false</code> deliberately:
-      Northwind's customer accounts are provisioned by their own company admins, not by strangers signing
-      themselves up on a public form — chapter 22 creates <code>jane.doe</code> and <code>priya.patel</code>
-      as real, administratively-created users rather than having them self-register, and that choice is
-      consistent with leaving this flag off.</p></li>
+          <p>Self-service registration (<code>registrationAllowed</code>) stays <code>false</code> deliberately:
+          Northwind's customer accounts are provisioned by their own company admins, not by strangers signing
+          themselves up on a public form — chapter 22 creates <code>jane.doe</code> and <code>priya.patel</code>
+          as real, administratively-created users rather than having them self-register, and that choice is
+          consistent with leaving this flag off.</p></li>
 
-      <li><p>Tear the stack down cleanly — no stray containers, volumes, or networks left behind:</p>
+          <li><p>Tear the stack down cleanly — no stray containers, volumes, or networks left behind:</p>
 <pre><code>docker compose down -v</code></pre>
 <pre><code> Container docker-keycloak-1 Stopping
  Container docker-keycloak-1 Stopped
@@ -352,190 +390,238 @@ Created new realm with id 'northwind-apps'</code></pre></li>
  Network docker_default Removed</code></pre>
 <pre><code>docker ps -a | grep docker-keycloak   # no output
 docker volume ls | grep docker_keycloak   # no output</code></pre></li>
-    </ol>
+        </ol>
 
-    <div class="callout callout--pitfall">
-      <div class="callout-label">Pitfall</div>
-      <p>This session's own run hit exactly this trap: between two <code>kcadm.sh</code> calls, the lab
-      stack was found recreated from scratch (a fresh container, an empty Postgres volume) with no
-      <code>docker compose down</code> run in between — the realm from the previous step had simply stopped
-      existing. The fix was not to assume the realm was still there; it was to re-run <code>get realms</code>
-      and confirm its actual state before continuing, exactly the discipline this chapter asks of every
-      setting change. If you see a command report "already exists" or "not found" when you expected the
-      opposite, the cause is almost always a stale assumption about what's still running, not a bug in the
-      command itself — a quick <code>kcadm.sh get realms --fields realm,enabled</code> settles it either
-      way.</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>This session's own run hit exactly this trap: between two <code>kcadm.sh</code> calls, the lab
+          stack was found recreated from scratch (a fresh container, an empty Postgres volume) with no
+          <code>docker compose down</code> run in between — the realm from the previous step had simply stopped
+          existing. The fix was not to assume the realm was still there; it was to re-run <code>get realms</code>
+          and confirm its actual state before continuing, exactly the discipline this chapter asks of every
+          setting change. If you see a command report "already exists" or "not found" when you expected the
+          opposite, the cause is almost always a stale assumption about what's still running, not a bug in the
+          command itself — a quick <code>kcadm.sh get realms --fields realm,enabled</code> settles it either
+          way.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps">
+        <h2>Case study: Northwind Apps picks its numbers</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> sells a B2B SaaS dashboard product.
+          Chapter 8 framed the token-lifetime trade-off in the abstract: a shorter lifetime shrinks how long a
+          stolen token stays useful, but every expiry forces a refresh round-trip, and a session that dies mid-
+          task trains users to treat the product as unreliable. Northwind's own customers spend long stretches
+          — sometimes a full workday — inside the dashboard reviewing reports, so the default 30-minute idle
+          timeout and 10-hour absolute session ceiling would log someone out mid-review the moment they stepped
+          away for a client call. Northwind's security team and product team settled on three deliberate,
+          not-default values, each a real trade-off rather than "longer is friendlier":</p>
+          <ul>
+            <li><strong>Access Token Lifespan: 600 seconds (10 minutes)</strong>, up from Keycloak's 300-second
+            default — still short enough that a stolen access token is useless within minutes, but halves how
+            often Northwind's own single-page clients need to hit the token endpoint for a silent refresh.</li>
+            <li><strong>SSO Session Idle: 3,600 seconds (1 hour)</strong>, up from 30 minutes — long enough to
+            survive a typical meeting-length interruption without forcing re-authentication, which was the
+            single most common support complaint before this change (reported by the subagent's case-study
+            research as the kind of friction this setting class is known to produce; Northwind's own number here
+            is this course's illustrative choice, not a benchmarked industry figure).</li>
+            <li><strong>SSO Session Max: 28,800 seconds (8 hours)</strong>, down from the 10-hour default — a
+            deliberate <em>tightening</em>, not a loosening: Northwind's security team capped the absolute
+            ceiling at one working day precisely because the idle timeout just got longer, so a session that's
+            technically still "active" (brief check-ins every 50 minutes, say) can't drift on indefinitely. The
+            two numbers move in opposite directions for the same underlying reason: convenience within a work
+            session, but a hard stop at the end of one.</li>
+          </ul>
+          <p>Northwind left self-service registration off and turned self-service password reset on — their
+          CIAM model provisions customer accounts through each customer company's own admin (chapter 22), but
+          once an account exists, making a forgotten password a self-service flow rather than a support ticket
+          is a pure convenience win with no corresponding exposure, unlike the session numbers above.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Northwind Apps' three changed settings: default vs. chosen value</title>
+            <desc id="d3">A grouped bar chart with three groups: Access Token Lifespan, SSO Session Idle, and
+            SSO Session Max. Each group has two bars, a default-value bar and a chosen-value bar. Access Token
+            Lifespan goes from 300 seconds (default) to 600 seconds (chosen) — the chosen bar is taller, a
+            moderate increase. SSO Session Idle goes from 1,800 seconds (default) to 3,600 seconds (chosen) —
+            the chosen bar is twice as tall, a larger increase for convenience. SSO Session Max goes from
+            36,000 seconds (default) to 28,800 seconds (chosen) — here the chosen bar is shorter than the
+            default, the one deliberate decrease, tightening the absolute ceiling even as the idle timeout grew
+            more permissive.</desc>
+            <text x="30" y="24" class="diagram-label" font-size="12" font-weight="700">Default value</text>
+            <rect x="140" y="16" width="18" height="14" class="diagram-fill-info diagram-stroke"/>
+            <text x="260" y="24" class="diagram-label" font-size="12" font-weight="700">Northwind's chosen value</text>
+            <rect x="430" y="16" width="18" height="14" class="diagram-fill-accent diagram-stroke"/>
+
+            <text x="110" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">Access Token Lifespan</text>
+            <rect x="70" y="200" width="30" height="20" class="diagram-fill-info diagram-stroke"/>
+            <text x="85" y="195" text-anchor="middle" class="diagram-label-muted" font-size="9">300s</text>
+            <rect x="110" y="180" width="30" height="40" class="diagram-fill-accent diagram-stroke"/>
+            <text x="125" y="175" text-anchor="middle" class="diagram-label-muted" font-size="9">600s</text>
+
+            <text x="400" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">SSO Session Idle</text>
+            <rect x="360" y="170" width="30" height="50" class="diagram-fill-info diagram-stroke"/>
+            <text x="375" y="165" text-anchor="middle" class="diagram-label-muted" font-size="9">1,800s</text>
+            <rect x="400" y="120" width="30" height="100" class="diagram-fill-accent diagram-stroke"/>
+            <text x="415" y="115" text-anchor="middle" class="diagram-label-muted" font-size="9">3,600s</text>
+
+            <text x="700" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">SSO Session Max</text>
+            <rect x="660" y="60" width="30" height="160" class="diagram-fill-info diagram-stroke"/>
+            <text x="675" y="55" text-anchor="middle" class="diagram-label-muted" font-size="9">36,000s</text>
+            <rect x="700" y="92" width="30" height="128" class="diagram-fill-accent diagram-stroke"/>
+            <text x="715" y="87" text-anchor="middle" class="diagram-label-muted" font-size="9">28,800s</text>
+
+            <line x1="40" y1="220" x2="860" y2="220" class="diagram-stroke"/>
+          </svg>
+          <figcaption>Figure 21.3 — Two settings loosened for convenience, one deliberately tightened for the
+          same security reason.</figcaption>
+        </figure>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Northwind's numbers fit a B2B SaaS dashboard where long, low-stakes work sessions are the norm.
+          Now reason through <span class="org-chip meridian">Meridian Trust</span>, the retail bank: customers
+          check balances and move money, not review reports for hours, and a stolen session is a direct fraud
+          vector rather than an inconvenience. Would you expect Meridian's SSO Session Idle and Max to move in
+          the same direction as Northwind's, or the opposite? (No specific numbers are asserted for Meridian
+          here — this course's PCI-DSS case study in chapter 48 is where that gets worked out properly — but
+          the shape of the answer should already follow from the trade-off this chapter just walked through:
+          a bank's fraud exposure argues for shorter idle/max timeouts than a SaaS dashboard's, even though
+          both realms expose the exact same two knobs.)</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see someone treat Access Token Lifespan and SSO Session Max as the same number, the cause is
+          not realizing they're independent clocks — a session can outlive dozens of access-token refresh
+          cycles, and lengthening one does nothing to the other.</li>
+          <li>If you see a realm's SSO Session Idle set longer than its SSO Session Max, the cause is editing the
+          two fields independently without checking they still make sense together — an idle timeout that can
+          never be reached before the max ceiling fires is dead configuration, not a safety margin.</li>
+          <li>If you see "Remember Me" enabled with no separate Remember-Me idle/max values considered, the cause
+          is missing that Keycloak gives Remember-Me sessions their <em>own</em> idle and max fields — leaving
+          those at their own defaults while tightening the regular ones doesn't tighten Remember-Me sessions at
+          all.</li>
+          <li>If you see Forgot Password enabled but reset emails never arrive, the cause is almost always that
+          realm or server-level SMTP settings were never configured — the guide is explicit that the link only
+          works once Keycloak can actually send mail.</li>
+          <li>If you see a reader assume disabling Remember Me immediately kills already-remembered sessions, the
+          cause is missing that invalidation is lazy — it happens the next time that session's cookie/token is
+          used or during a background sweep, not the instant the setting flips.</li>
+          <li>If you see brute-force protection or a custom theme configured here, in chapter 21, the cause is
+          forgetting this chapter is realm-settings-only by design — those are chapters 30 and 26's jobs,
+          previewed here but not configured.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>This chapter configures only realm-level settings on <code>northwind-apps</code> — no new users,
+          roles, groups, or clients; those are chapters 22-24's responsibility.</li>
+          <li>Realm Settings in the Admin Console split across tabs: General (display name, frontend URL,
+          Require SSL), Login (registration, forgot password, remember me, verify email), Tokens/Sessions
+          (access token lifespan, SSO/client/offline session timeouts), Security Defenses (headers, brute-force
+          detection — chapter 30), and Themes (login/account/admin/email themes, localization — chapter 26).</li>
+          <li>SSO Session Idle and SSO Session Max are the concrete Keycloak settings that implement chapter 7's
+          generic "SSO session" concept — idle is a relative inactivity timeout, max is an absolute ceiling, and
+          they run independently.</li>
+          <li>Access Token Lifespan is a separate, shorter-lived clock layered on top of the SSO session, not the
+          same thing as it — a session commonly outlives many access-token refresh cycles.</li>
+          <li>Keycloak also tracks Client Session Idle/Max and Offline Session Idle/Max separately from the main
+          SSO session fields, plus distinct Remember-Me variants of the SSO idle/max pair — each one an
+          independent timeout, not an alias for another.</li>
+          <li>Every setting change in this chapter's lab was confirmed with a separate <code>kcadm.sh get
+          realms/northwind-apps --fields ...</code> call, never trusted from the update command's own response
+          alone.</li>
+          <li>Keycloak's realm defaults (300s access token, 1,800s SSO idle, 36,000s SSO max, registration and
+          self-service reset both off) are reasonable generic starting points, not a policy any specific
+          organization should assume fits them without a deliberate review.</li>
+          <li>Northwind's case study shows token/session lifetimes moving in <em>different directions</em> for
+          the same underlying security posture: a longer idle timeout for convenience, paired with a tighter
+          absolute ceiling so that convenience can't drift into an indefinitely "active" session.</li>
+          <li>Security Defenses (brute-force detection) and Themes (branding/localization) exist as real tabs on
+          this same Realm Settings screen but are deliberately out of scope here — full depth lands in chapters
+          30 and 26 respectively, once a realm has users and a public-facing identity worth protecting/branding.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain, without looking it up, why Access Token Lifespan and SSO Session Max are independent clocks rather than the same setting under two names — what's a concrete scenario where this distinction actually matters to a user?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Access Token Lifespan governs a short-lived bearer token that gets reminted via refresh many times over a login; SSO Session Max is the absolute ceiling on the underlying session that outlives all of those refresh cycles. Concretely: a user logs into <code>northwind-apps</code> at 9am with a 10-minute access token and an 8-hour session max. Every 10 minutes a silent refresh mints a new access token without the user noticing — that keeps happening dozens of times — but at 5pm the SSO Session Max fires regardless of how recently a token was refreshed, and the user is forced to log in again even though every individual access token along the way was perfectly valid when used.</p>
+          </details></li>
+          <li><details>
+            <summary>Northwind lengthened its SSO Session Idle timeout but shortened its SSO Session Max ceiling in the same change. Why do those two moves make sense together, rather than contradicting each other?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They're solving two different problems with the same underlying goal: don't punish normal work patterns, but don't let "normal" quietly become "indefinite." Lengthening SSO Session Idle to one hour tolerates a meeting-length gap in activity without forcing re-login — pure convenience. But a longer idle tolerance means a session that gets a brief check-in every 50 minutes can, in principle, stay "active" forever. Tightening SSO Session Max to 8 hours puts a hard stop on that drift regardless of activity, so the convenience gain on one axis is deliberately paired with a tighter absolute boundary on the other.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does enabling "Remember Me" not automatically mean a user's session now obeys the realm's regular SSO Session Idle/Max values?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because Keycloak gives Remember-Me sessions their own separate pair of fields — SSO Session Idle Remember Me and SSO Session Max Remember Me — rather than reusing the regular SSO Session Idle/Max values. An administrator who tightens the regular idle/max fields but never touches the Remember-Me variants has left Remember-Me sessions running on whatever those separate fields are still set to, which is easy to miss precisely because the checkbox's name suggests it's just a variation on the same timeout rather than a wholly distinct one.</p>
+          </details></li>
+          <li><details>
+            <summary>If a reader found Forgot Password enabled on a realm but reset emails never arriving, what's the first thing you'd ask them to check, and why?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Whether the realm (or server-level) SMTP settings — host and a working "From" address — are actually configured. The official guide is explicit that the "Forgot Password?" link only works once Keycloak can actually send mail; enabling the toggle just adds the link to the login page, it doesn't configure an email transport. A missing or misconfigured SMTP host is by far the most common reason the link appears but nothing ever arrives.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter recreate <code>northwind-apps</code> from scratch at the start of its lab instead of assuming chapter 20's realm is still sitting there, ready to configure?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because this course's lab convention is that each chapter's lab starts from a fresh stack, and a realm created in a previous chapter's container run doesn't persist across a clean <code>docker compose up</code> of a new stack (no volumes carried forward). Recreating it explicitly, rather than assuming it survived, is also exactly the discipline the chapter's own pitfall callout describes: verify a resource's actual state with a <code>get</code> call instead of trusting an assumption about what's still running.</p>
+          </details></li>
+          <li><details>
+            <summary>Security Defenses and Themes are both real tabs on the same screen this chapter documents. What's the actual reason this chapter doesn't configure either of them, beyond "a later chapter does it"?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Both settings classes depend on things this chapter's realm doesn't have yet. Brute-force detection only matters once there are real user accounts whose login attempts can be tracked and locked out — chapter 22 is where <code>northwind-apps</code> gets its first users. Themes brand a public-facing login/account experience, which is only worth customizing once there's an actual audience and identity to brand for. Configuring either now would be deciding policy before the thing that policy protects or represents exists.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#general-realm-settings">Keycloak docs — Server Administration Guide: General realm settings</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_login">Keycloak docs — Server Administration Guide: Login settings</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_timeouts">Keycloak docs — Server Administration Guide: Session and token timeouts</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_brute_force">Keycloak docs — Server Administration Guide: Brute force attacks</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_themes">Keycloak docs — Server Administration Guide: Themes</a></li>
+        </ul>
+      </section>
+
     </div>
-
-    <h2>Case study: Northwind Apps picks its numbers</h2>
-    <div class="callout callout--case-study">
-      <div class="callout-label">Case study — Northwind Apps</div>
-      <p><span class="org-chip northwind">Northwind Apps</span> sells a B2B SaaS dashboard product.
-      Chapter 8 framed the token-lifetime trade-off in the abstract: a shorter lifetime shrinks how long a
-      stolen token stays useful, but every expiry forces a refresh round-trip, and a session that dies mid-
-      task trains users to treat the product as unreliable. Northwind's own customers spend long stretches
-      — sometimes a full workday — inside the dashboard reviewing reports, so the default 30-minute idle
-      timeout and 10-hour absolute session ceiling would log someone out mid-review the moment they stepped
-      away for a client call. Northwind's security team and product team settled on three deliberate,
-      not-default values, each a real trade-off rather than "longer is friendlier":</p>
-      <ul>
-        <li><strong>Access Token Lifespan: 600 seconds (10 minutes)</strong>, up from Keycloak's 300-second
-        default — still short enough that a stolen access token is useless within minutes, but halves how
-        often Northwind's own single-page clients need to hit the token endpoint for a silent refresh.</li>
-        <li><strong>SSO Session Idle: 3,600 seconds (1 hour)</strong>, up from 30 minutes — long enough to
-        survive a typical meeting-length interruption without forcing re-authentication, which was the
-        single most common support complaint before this change (reported by the subagent's case-study
-        research as the kind of friction this setting class is known to produce; Northwind's own number here
-        is this course's illustrative choice, not a benchmarked industry figure).</li>
-        <li><strong>SSO Session Max: 28,800 seconds (8 hours)</strong>, down from the 10-hour default — a
-        deliberate <em>tightening</em>, not a loosening: Northwind's security team capped the absolute
-        ceiling at one working day precisely because the idle timeout just got longer, so a session that's
-        technically still "active" (brief check-ins every 50 minutes, say) can't drift on indefinitely. The
-        two numbers move in opposite directions for the same underlying reason: convenience within a work
-        session, but a hard stop at the end of one.</li>
-      </ul>
-      <p>Northwind left self-service registration off and turned self-service password reset on — their
-      CIAM model provisions customer accounts through each customer company's own admin (chapter 22), but
-      once an account exists, making a forgotten password a self-service flow rather than a support ticket
-      is a pure convenience win with no corresponding exposure, unlike the session numbers above.</p>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
     </div>
-
-    <figure class="diagram">
-      <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
-        <title id="t3">Northwind Apps' three changed settings: default vs. chosen value</title>
-        <desc id="d3">A grouped bar chart with three groups: Access Token Lifespan, SSO Session Idle, and
-        SSO Session Max. Each group has two bars, a default-value bar and a chosen-value bar. Access Token
-        Lifespan goes from 300 seconds (default) to 600 seconds (chosen) — the chosen bar is taller, a
-        moderate increase. SSO Session Idle goes from 1,800 seconds (default) to 3,600 seconds (chosen) —
-        the chosen bar is twice as tall, a larger increase for convenience. SSO Session Max goes from
-        36,000 seconds (default) to 28,800 seconds (chosen) — here the chosen bar is shorter than the
-        default, the one deliberate decrease, tightening the absolute ceiling even as the idle timeout grew
-        more permissive.</desc>
-        <text x="30" y="24" class="diagram-label" font-size="12" font-weight="700">Default value</text>
-        <rect x="140" y="16" width="18" height="14" class="diagram-fill-info diagram-stroke"/>
-        <text x="260" y="24" class="diagram-label" font-size="12" font-weight="700">Northwind's chosen value</text>
-        <rect x="430" y="16" width="18" height="14" class="diagram-fill-accent diagram-stroke"/>
-
-        <text x="110" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">Access Token Lifespan</text>
-        <rect x="70" y="200" width="30" height="20" class="diagram-fill-info diagram-stroke"/>
-        <text x="85" y="195" text-anchor="middle" class="diagram-label-muted" font-size="9">300s</text>
-        <rect x="110" y="180" width="30" height="40" class="diagram-fill-accent diagram-stroke"/>
-        <text x="125" y="175" text-anchor="middle" class="diagram-label-muted" font-size="9">600s</text>
-
-        <text x="400" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">SSO Session Idle</text>
-        <rect x="360" y="170" width="30" height="50" class="diagram-fill-info diagram-stroke"/>
-        <text x="375" y="165" text-anchor="middle" class="diagram-label-muted" font-size="9">1,800s</text>
-        <rect x="400" y="120" width="30" height="100" class="diagram-fill-accent diagram-stroke"/>
-        <text x="415" y="115" text-anchor="middle" class="diagram-label-muted" font-size="9">3,600s</text>
-
-        <text x="700" y="240" text-anchor="middle" class="diagram-label-muted" font-size="11">SSO Session Max</text>
-        <rect x="660" y="60" width="30" height="160" class="diagram-fill-info diagram-stroke"/>
-        <text x="675" y="55" text-anchor="middle" class="diagram-label-muted" font-size="9">36,000s</text>
-        <rect x="700" y="92" width="30" height="128" class="diagram-fill-accent diagram-stroke"/>
-        <text x="715" y="87" text-anchor="middle" class="diagram-label-muted" font-size="9">28,800s</text>
-
-        <line x1="40" y1="220" x2="860" y2="220" class="diagram-stroke"/>
-      </svg>
-      <figcaption>Figure 21.3 — Two settings loosened for convenience, one deliberately tightened for the
-      same security reason.</figcaption>
-    </figure>
-
-    <h2>Common mistakes</h2>
-    <ul class="common-mistakes">
-      <li>If you see someone treat Access Token Lifespan and SSO Session Max as the same number, the cause is
-      not realizing they're independent clocks — a session can outlive dozens of access-token refresh
-      cycles, and lengthening one does nothing to the other.</li>
-      <li>If you see a realm's SSO Session Idle set longer than its SSO Session Max, the cause is editing the
-      two fields independently without checking they still make sense together — an idle timeout that can
-      never be reached before the max ceiling fires is dead configuration, not a safety margin.</li>
-      <li>If you see "Remember Me" enabled with no separate Remember-Me idle/max values considered, the cause
-      is missing that Keycloak gives Remember-Me sessions their <em>own</em> idle and max fields — leaving
-      those at their own defaults while tightening the regular ones doesn't tighten Remember-Me sessions at
-      all.</li>
-      <li>If you see Forgot Password enabled but reset emails never arrive, the cause is almost always that
-      realm or server-level SMTP settings were never configured — the guide is explicit that the link only
-      works once Keycloak can actually send mail.</li>
-      <li>If you see a reader assume disabling Remember Me immediately kills already-remembered sessions, the
-      cause is missing that invalidation is lazy — it happens the next time that session's cookie/token is
-      used or during a background sweep, not the instant the setting flips.</li>
-      <li>If you see brute-force protection or a custom theme configured here, in chapter 21, the cause is
-      forgetting this chapter is realm-settings-only by design — those are chapters 30 and 26's jobs,
-      previewed here but not configured.</li>
-    </ul>
-
-    <h2>Glossary terms introduced here</h2>
-    <div id="chapter-glossary-mount"></div>
-
-    <h2>Takeaways</h2>
-    <ul class="takeaways">
-      <li>This chapter configures only realm-level settings on <code>northwind-apps</code> — no new users,
-      roles, groups, or clients; those are chapters 22-24's responsibility.</li>
-      <li>Realm Settings in the Admin Console split across tabs: General (display name, frontend URL,
-      Require SSL), Login (registration, forgot password, remember me, verify email), Tokens/Sessions
-      (access token lifespan, SSO/client/offline session timeouts), Security Defenses (headers, brute-force
-      detection — chapter 30), and Themes (login/account/admin/email themes, localization — chapter 26).</li>
-      <li>SSO Session Idle and SSO Session Max are the concrete Keycloak settings that implement chapter 7's
-      generic "SSO session" concept — idle is a relative inactivity timeout, max is an absolute ceiling, and
-      they run independently.</li>
-      <li>Access Token Lifespan is a separate, shorter-lived clock layered on top of the SSO session, not the
-      same thing as it — a session commonly outlives many access-token refresh cycles.</li>
-      <li>Keycloak also tracks Client Session Idle/Max and Offline Session Idle/Max separately from the main
-      SSO session fields, plus distinct Remember-Me variants of the SSO idle/max pair — each one an
-      independent timeout, not an alias for another.</li>
-      <li>Every setting change in this chapter's lab was confirmed with a separate <code>kcadm.sh get
-      realms/northwind-apps --fields ...</code> call, never trusted from the update command's own response
-      alone.</li>
-      <li>Keycloak's realm defaults (300s access token, 1,800s SSO idle, 36,000s SSO max, registration and
-      self-service reset both off) are reasonable generic starting points, not a policy any specific
-      organization should assume fits them without a deliberate review.</li>
-      <li>Northwind's case study shows token/session lifetimes moving in <em>different directions</em> for
-      the same underlying security posture: a longer idle timeout for convenience, paired with a tighter
-      absolute ceiling so that convenience can't drift into an indefinitely "active" session.</li>
-      <li>Security Defenses (brute-force detection) and Themes (branding/localization) exist as real tabs on
-      this same Realm Settings screen but are deliberately out of scope here — full depth lands in chapters
-      30 and 26 respectively, once a realm has users and a public-facing identity worth protecting/branding.</li>
-    </ul>
-
-    <h2>Self-check</h2>
-    <ol class="self-check">
-      <li>Explain, without looking it up, why Access Token Lifespan and SSO Session Max are independent
-      clocks rather than the same setting under two names — what's a concrete scenario where this
-      distinction actually matters to a user?</li>
-      <li>Northwind lengthened its SSO Session Idle timeout but shortened its SSO Session Max ceiling in the
-      same change. Why do those two moves make sense together, rather than contradicting each other?</li>
-      <li>Why does enabling "Remember Me" not automatically mean a user's session now obeys the realm's
-      regular SSO Session Idle/Max values?</li>
-      <li>If a reader found Forgot Password enabled on a realm but reset emails never arriving, what's the
-      first thing you'd ask them to check, and why?</li>
-      <li>Why does this chapter recreate <code>northwind-apps</code> from scratch at the start of its lab
-      instead of assuming chapter 20's realm is still sitting there, ready to configure?</li>
-      <li>Security Defenses and Themes are both real tabs on the same screen this chapter documents. What's
-      the actual reason this chapter doesn't configure either of them, beyond "a later chapter does it"?</li>
-    </ol>
-
-    <h2>Quiz</h2>
-    <div class="quiz-block" id="quiz-mount"></div>
-
-    <h2>Deep dive</h2>
-    <ul>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#general-realm-settings">Keycloak docs — Server Administration Guide: General realm settings</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_login">Keycloak docs — Server Administration Guide: Login settings</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_timeouts">Keycloak docs — Server Administration Guide: Session and token timeouts</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_brute_force">Keycloak docs — Server Administration Guide: Brute force attacks</a></li>
-      <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_themes">Keycloak docs — Server Administration Guide: Themes</a></li>
-    </ul>
-
-    <nav class="chapter-nav" id="chapter-nav-footer"></nav>
-  </article></main>
+  </main>
 </div>
 <script src="../assets/js/nav-data.js"></script>
 <script src="../assets/js/glossary-data.js"></script>
 <script src="../assets/js/quiz-data.js"></script>
 <script src="../assets/js/book.js"></script>
 <script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     QuizEngine.renderQuiz("quiz-mount", "realms", 15);
+    SlideDeck.init({ chapterSlug: "realms" });
   });
 </script>
 </body>

@@ -39,8 +39,9 @@ proposal — CLAUDE.md §4 has been rewritten to describe it as the official tem
 already-built chapters (02-30) to match chapter 1 is now the active unit, worked through Part by Part
 via the usual parallel-subagent-then-merge pattern, before Part VI's new content resumes. Each
 conversion agent also re-verifies/fixes diagram geometry and adds a model answer to every self-check
-question while it's in there, per the new template. **Progress**: Part I (chapters 02-09) and Part II
-(chapters 10-12) both done 2026-11-10 — see Done below. Part III (chapters 13-18) is next.
+question while it's in there, per the new template. **Progress**: Part I (chapters 02-09), Part II
+(chapters 10-12), Part III (chapters 13-18), and the first 6 chapters of Part IV (19-24) all done
+2026-11-10 — see Done below. Part IV's remaining chapters 25-26, then Part V (chapters 27-30), are next.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -99,8 +100,9 @@ agent re-verifies diagram geometry, adds self-check model answers, and is explic
 visuals/examples where it helps, not just re-chunk existing prose.
 10a. ~~Part I (chapters 02-09, 8 chapters)~~ — done 2026-11-10, see Done below.
 10b. ~~Part II (chapters 10-12, 3 chapters)~~ — done 2026-11-10, see Done below.
-10c. Part III (chapters 13-18, 6 chapters) — **next**.
-10d. Part IV (chapters 19-26, 8 chapters).
+10c. ~~Part III (chapters 13-18, 6 chapters)~~ — done 2026-11-10, see Done below.
+10d. Part IV (chapters 19-26, 8 chapters) — chapters 19-24 done 2026-11-10 (see Done below); **25-26
+     next**.
 10e. Part V (chapters 27-30, 4 chapters).
 
 ### Part VI (federation & integration) — queued after the redesign rollout
@@ -713,6 +715,49 @@ project) remain.
     same conclusion.
   - This completes the redesign rollout for **Part II** (chapters 10-12). Part III (chapters 13-18) is
     next per the Queue.
+
+### Redesign rollout — Part III converted (chapters 13-18), plus Part IV chapters 19-24
+- 2026-11-10 chapters 13-24 (12 chapters: all of Part III — Protocols, plus the first 6 of Part IV —
+  Keycloak Core Administration) converted from the old book format to the chapter-1 slide-deck template
+  in one combined 12-way parallel round (one subagent per chapter, no shared-file writes), then
+  independently re-verified by the coordinator:
+  - Structural: all 12 files re-parsed cleanly (Python `html.parser`, zero errors), `<section
+    class="slide">`/`<svg>`/`<details>`/`<summary>` tag counts balanced per file, all 10 required
+    mount-point ids present exactly once each, `CURRENT_CHAPTER`/`chapterSlug` confirmed matching on
+    every page. Re-served locally (`python3 -m http.server`) and `curl`-confirmed `200` for all 12
+    chapter pages. `git status --short` confirmed only the 12 chapter files were modified — no shared
+    data file (glossary-data.js/quiz-data.js/nav-data.js) or sibling chapter touched.
+  - Final slide counts: ch13 17, ch14 15, ch15 13, ch16 13, ch17 13, ch18 12, ch19 13, ch20 16, ch21 17,
+    ch22 13, ch23 16, ch24 16.
+  - Self-check: every existing self-check question across all 12 chapters (71 total) got a real,
+    chapter-grounded model answer; none left unanswered.
+  - New diagrams/examples added: ch13 +1 (Figure 13.4, exact-match vs. loose-match redirect_uri
+    validation, illustrating the chapter's own live finding on the Duende demo server); ch20/21/22/23
+    added case-study callouts/takeaways extending Northwind's pattern to Riverside Health/Meridian Trust
+    where the chapter had only touched one or two of the three orgs; ch19 added a Meridian Trust
+    worked example (Oracle vs. Postgres DB-backend choice); ch21 added a reasoning "Try it" exercise
+    contrasting Meridian's likely session-timeout posture against Northwind's. Chapters 14-18 and 24
+    judged their existing diagram/example density already sufficient and added none.
+  - **Real diagram/accessibility bugs found and fixed, 4 total**: ch17 Figure 17.2 had a floating label
+    overflowing its viewBox by ~19% (split into two lines); ch22 Figure 22.3's trailing caption was one
+    `<text>` element with a literal newline that SVG collapsed into a single ~206-char line overflowing
+    the viewBox by ~50% (split into two real `<text>` elements); ch23 had three `fill="#fff"` hardcoded
+    white text colors across two diagrams that would have rendered wrong/invisible in dark or print
+    themes — replaced with the `diagram-label-on-accent` token class. No connector-through-box bugs were
+    found in this round (all 12 agents traced every connector's coordinates against every box's bounds
+    and confirmed clean); several borderline text-overflow cases in the 0.7%-19% range were evaluated
+    case by case, with the one genuine >15% case (ch17) fixed and all others left alone per the
+    threshold rule.
+  - **Table-compare classes**: applied once this round — ch20's `start-dev` vs. production-mode table
+    (`table-compare table-compare--problem-solution`, less-secure dev mode listed first). Every other
+    table across all 12 chapters (grant-type surveys, JWS-vs-JWE, HS256-vs-RS256, SAML-vs-OIDC,
+    bindings, deployment/DB-backend references, realm-settings/token-field references, client-type and
+    role/scope reference tables) was judged a neutral multi-column reference or a genuine no-good/bad-
+    side comparison, not a pro/con or problem/solution pair — several agents added a one-line `<p
+    class="note">`/`<p class="diagram-note">` explaining that judgment call inline in the chapter itself.
+  - Part III (chapters 13-18) is now fully converted, completing queue item 10c. Part IV (chapters
+    19-26) is 6/8 converted (19-24 done); **chapters 25-26, then Part V (27-30), are next** per the
+    Queue.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is
