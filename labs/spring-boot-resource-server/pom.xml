@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Northwind Apps billing/invoicing API: a real Spring Boot OAuth2 Resource Server validating
+  Keycloak-issued JWTs, built for chapter 34 (Securing a Backend API) of the IAM and Keycloak
+  Mastery course.
+
+  Spring Boot version was live-verified against repo1.maven.org's maven-metadata.xml for
+  org.springframework.boot:spring-boot immediately before this POM was written (2026-11-11):
+  4.1.2 is the newest fully released GA version (4.2.0 exists only as M1/M2/RC1/RC2 as of that
+  check, so 4.2 is not yet GA), pinned here rather than guessed. Spring Boot 4.x's parent POM
+  defaults java.version to 17; this project overrides it to 21, the JDK confirmed available on
+  the dev machine (java version reports OpenJDK 21.0.13).
+
+  Reader facing port note: this app's own server.port defaults to 8081 in
+  src/main/resources/application.properties, deliberately NOT 8080, since this chapter's
+  Keycloak instance (labs/docker/docker-compose.yml, unmodified) already occupies 8080 and 9000,
+  and a reader following this chapter runs both side by side.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.2</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.northwindapps</groupId>
+  <artifactId>billing-api</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Northwind Apps Billing API</name>
+  <description>
+    A small Spring Boot OAuth2 Resource Server securing a billing/invoicing API with
+    Keycloak-issued JWTs, for chapter 34 of the IAM &amp; Keycloak Mastery course.
+  </description>
+
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

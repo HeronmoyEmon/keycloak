@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Securing a Backend API — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "securing-a-backend-api";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~65 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>34. Securing a Backend API</h1>
+        <p class="lede">Every chapter through 33 ended with Keycloak issuing a token. This chapter is
+        about the other half of the transaction: a real API that receives that token on every request and
+        has to decide, by itself, whether to trust it and what it allows. The app built here — a small
+        Spring Boot <strong>OAuth2 Resource Server</strong> fronting a Northwind Apps billing API — was
+        actually written, actually compiled, and actually run against a real local Keycloak instance for
+        this chapter, including a real, well-documented gotcha this lab hit (and deliberately reproduced
+        again, live, to show it honestly) rather than just described.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist's work doesn't stop at the identity provider. Every team that owns a backend
+        API eventually asks the same question: "a request just arrived carrying a bearer token — how do I
+        actually verify it, and how do I turn it into an authorization decision?" Getting this wrong in
+        either direction is a real incident: accept tokens too loosely and any caller gets in; wire up
+        roles incorrectly and either everyone gets a 403 or — worse — nobody is actually being checked at
+        all. This chapter shows the real mechanics, including the single most common real-world mismatch
+        between Keycloak's token shape and a generic OAuth2 library's default assumptions.</p>
+
+        <p>Sources for this chapter: Spring Security's own <a
+        href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html">OAuth
+        2.0 Resource Server — JWT reference documentation</a> (current stable version, fetched live);
+        Spring Boot's <a href="https://docs.spring.io/spring-boot/reference/web/spring-security.html">Spring
+        Security reference</a> page; Maven Central's own <code>maven-metadata.xml</code> for
+        <code>org.springframework.boot:spring-boot</code>, queried live
+        (<code>repo1.maven.org</code>) to pin the exact current Spring Boot version rather than guess it;
+        and this chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker
+        Compose stack (<code>labs/docker/docker-compose.yml</code>, unmodified) plus a real Spring Boot app
+        this chapter owns (<code>labs/spring-boot-resource-server/</code>).</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 8 named the model this entire chapter depends on: a <strong>bearer token</strong> is
+          "a token whose only required proof of authorization is possession of the token itself" — whoever
+          holds it can use it, with no further handshake, until it expires. Chapter 8 also named the
+          problem this creates: a resource server has to decide, on every single request, whether to trust
+          a token it never issued itself. Chapter 16 named exactly how that trust decision is made without
+          ever contacting the issuer synchronously: a JWT's <strong>JWS signature</strong> is checked
+          against a public key pulled from the issuer's <strong>JWKS</strong> (JSON Web Key Set), the
+          token's <strong>issuer claim</strong> is checked against the resource server's own configured
+          issuer, and its expiry claims are checked against the current time — three independent checks,
+          all local, none of them a network round-trip back to Keycloak at request time (beyond the
+          periodic JWKS refresh).</p>
+          <p>This chapter is where that abstract description becomes one real dependency
+          (<code>spring-boot-starter-oauth2-resource-server</code>) and one real configuration line (an
+          <code>issuer-uri</code>) that makes Spring Security perform exactly those three checks,
+          automatically, on every request to this chapter's billing API — before any of this chapter's own
+          controller code ever runs.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="architecture" data-title="The resource server validation flow">
+        <h2>What actually happens when a request arrives</h2>
+        <p>Chapter 13 covered OAuth 2.0's roles in the abstract, naming "Resource Server" as one of them.
+        This is that role, concretely, for a request carrying an <code>Authorization: Bearer &lt;token&gt;</code>
+        header aimed at this chapter's billing API:</p>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 340" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The OAuth2 Resource Server validation flow for an incoming bearer token</title>
+            <desc id="d1">A client sends a request with an Authorization Bearer header to the billing API.
+            The billing API's Spring Security filter chain performs four sequential checks on the token:
+            first it fetches (or reuses a cached copy of) the issuer's JWKS to get the current signing
+            keys; second it verifies the JWT's signature against the matching key; third it checks the
+            issuer claim matches the configured issuer-uri and that the token has not expired; fourth, only
+            if all three pass, it converts the token's realm_access.roles claim into Spring Security
+            authorities and checks those authorities against the endpoint's required role. Two outcomes
+            are shown branching off the checks: a 401 Unauthorized response if the token is missing,
+            malformed, or fails signature/issuer/expiry validation, and a 403 Forbidden response if the
+            token is valid but lacks the required authority. Only a token that passes every check and
+            carries the right authority reaches the controller method and gets a 200 or 201 response.</desc>
+
+            <rect x="20" y="130" width="130" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="85" y="156" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Client</text>
+            <text x="85" y="172" text-anchor="middle" class="diagram-label-muted" font-size="9">holds a bearer token</text>
+
+            <line x1="150" y1="160" x2="188" y2="160" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <text x="169" y="148" text-anchor="middle" class="diagram-label-muted" font-size="8">Authorization:</text>
+            <text x="169" y="178" text-anchor="middle" class="diagram-label-muted" font-size="8">Bearer ...</text>
+
+            <rect x="190" y="20" width="520" height="280" rx="10" class="diagram-fill-info diagram-stroke"/>
+            <text x="450" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Billing API -- Spring Security filter chain</text>
+
+            <rect x="215" y="60" width="150" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="290" y="80" text-anchor="middle" class="diagram-label" font-size="10">1. Fetch/reuse</text>
+            <text x="290" y="95" text-anchor="middle" class="diagram-label" font-size="10">issuer's JWKS</text>
+
+            <line x1="290" y1="110" x2="290" y2="128" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="215" y="130" width="150" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="290" y="150" text-anchor="middle" class="diagram-label" font-size="10">2. Verify JWS</text>
+            <text x="290" y="165" text-anchor="middle" class="diagram-label" font-size="10">signature</text>
+
+            <line x1="290" y1="180" x2="290" y2="198" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="215" y="200" width="150" height="50" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="290" y="220" text-anchor="middle" class="diagram-label" font-size="10">3. Check issuer</text>
+            <text x="290" y="235" text-anchor="middle" class="diagram-label" font-size="10">+ expiry claims</text>
+
+            <line x1="365" y1="225" x2="400" y2="225" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="402" y="200" width="150" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="477" y="220" text-anchor="middle" class="diagram-label" font-size="10">4. Map realm_access</text>
+            <text x="477" y="235" text-anchor="middle" class="diagram-label" font-size="10">.roles -&gt; authorities</text>
+
+            <rect x="402" y="60" width="150" height="120" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="477" y="84" text-anchor="middle" class="diagram-label" font-size="10">Issuer's JWKS</text>
+            <text x="477" y="100" text-anchor="middle" class="diagram-label-muted" font-size="9">/realms/northwind-apps/</text>
+            <text x="477" y="113" text-anchor="middle" class="diagram-label-muted" font-size="9">protocol/openid-connect/</text>
+            <text x="477" y="126" text-anchor="middle" class="diagram-label-muted" font-size="9">certs (ch16's JWKS)</text>
+            <text x="477" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">cached + auto-refreshed,</text>
+            <text x="477" y="158" text-anchor="middle" class="diagram-label-muted" font-size="9">not fetched on every call</text>
+            <line x1="365" y1="85" x2="400" y2="120" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+
+            <line x1="477" y1="250" x2="477" y2="268" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="402" y="270" width="150" height="25" rx="5" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="477" y="287" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Controller method runs</text>
+
+            <line x1="710" y1="130" x2="750" y2="90" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="752" y="60" width="130" height="50" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="817" y="80" text-anchor="middle" class="diagram-label" font-size="10">401 Unauthorized</text>
+            <text x="817" y="95" text-anchor="middle" class="diagram-label-muted" font-size="8">missing/invalid token</text>
+
+            <line x1="710" y1="225" x2="750" y2="225" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="752" y="200" width="130" height="50" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="817" y="220" text-anchor="middle" class="diagram-label" font-size="10">403 Forbidden</text>
+            <text x="817" y="235" text-anchor="middle" class="diagram-label-muted" font-size="8">valid token, wrong role</text>
+
+            <line x1="552" y1="282" x2="750" y2="282" class="diagram-stroke" marker-end="url(#arrowB1)"/>
+            <rect x="752" y="257" width="130" height="50" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="817" y="277" text-anchor="middle" class="diagram-label" font-size="10">200 / 201</text>
+            <text x="817" y="292" text-anchor="middle" class="diagram-label-muted" font-size="8">request actually served</text>
+
+            <defs>
+              <marker id="arrowB1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 34.1 — Four checks run in order before any controller code executes; failing
+          the first three produces 401, failing the fourth produces 403 — the exact distinction this
+          chapter's lab confirms live with real curl calls.</figcaption>
+        </figure>
+        <p>Three of those four checks ("fetch JWKS," "verify signature," "check issuer and expiry") are
+        handled entirely by <code>spring-boot-starter-oauth2-resource-server</code> once the
+        <code>issuer-uri</code> property is set — no custom code at all. The fourth, mapping Keycloak's
+        specific role claim into something Spring Security's authorization rules can check, is the one
+        piece this chapter's own code has to supply, covered two slides ahead.</p>
+      </section>
+
+      <section class="slide" data-slide="spring-boot-setup" data-title="Live-verifying Spring Boot, and the port split">
+        <h2>Pinning a real, current Spring Boot version — not a remembered one</h2>
+        <p>Per this course's no-invented-facts rule, the exact Spring Boot version had to be checked live
+        rather than recalled from training data. Querying Maven Central's real artifact repository
+        directly (<code>repo1.maven.org/maven2/org/springframework/boot/spring-boot/maven-metadata.xml</code>),
+        fetched the morning this chapter was written (2026-11-11):</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Spring Boot's own published version metadata, read directly from Maven Central</caption>
+            <thead><tr><th>Field</th><th>Value found</th></tr></thead>
+            <tbody>
+              <tr><td>Newest fully released (GA) version</td><td><code>4.1.2</code></td></tr>
+              <tr><td>Newest version of any kind listed</td><td><code>4.2.0-RC2</code> — a release candidate, not GA</td></tr>
+              <tr><td>Metadata last updated</td><td><code>20261105123212</code> (2026-11-05, six days before this chapter was written)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>This chapter's <code>pom.xml</code> pins <code>spring-boot-starter-parent</code> to
+        <code>4.1.2</code> on exactly that basis — the newest version Maven Central itself confirms is
+        actually released, not the newest version that merely exists in some form. 4.2 is real and close
+        (an RC, not a rumor), but shipping a lab against a release candidate would make this chapter stale
+        the moment 4.2 goes GA; 4.1.2 won't move.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Reader-facing port note — get this right</div>
+          <p>This chapter's Keycloak instance uses the same <code>labs/docker/docker-compose.yml</code>
+          every chapter since 20 has used, unmodified, publishing <strong>8080</strong> (Admin
+          Console/Admin REST API/token endpoint) and <strong>9000</strong> (health/metrics, chapter 28).
+          If this app's own <code>server.port</code> also defaulted to 8080, starting it alongside Keycloak
+          — which this chapter's entire point requires — would fail immediately with a port-already-in-use
+          error. <code>labs/spring-boot-resource-server/src/main/resources/application.properties</code>
+          therefore ships with <code>server.port=8081</code> as the actual shipped default, not a
+          one-off override used only for this chapter's own test run.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 220" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Two services running side by side on the reader's own machine, on different ports</title>
+            <desc id="d2">A curl client box on the left sends requests to two separate service boxes on the
+            right: the Keycloak container, publishing ports 8080 and 9000, and the Spring Boot billing API,
+            publishing port 8081. The two service boxes are stacked with no connection drawn between them
+            directly, showing they are independent processes the curl client talks to separately -- the
+            billing API only talks to Keycloak's JWKS endpoint in the background, not shown here, to avoid
+            implying the client is relaying through one to reach the other.</desc>
+            <rect x="20" y="75" width="150" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="95" y="100" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">curl / reader</text>
+            <text x="95" y="118" text-anchor="middle" class="diagram-label-muted" font-size="9">one terminal, two targets</text>
+
+            <line x1="170" y1="95" x2="290" y2="50" class="diagram-stroke" marker-end="url(#arrowB2)"/>
+            <line x1="170" y1="115" x2="290" y2="160" class="diagram-stroke" marker-end="url(#arrowB2)"/>
+
+            <rect x="300" y="20" width="420" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="510" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Keycloak container (docker compose up -d)</text>
+            <text x="510" y="58" text-anchor="middle" class="diagram-label-muted" font-size="9">published ports: 8080 (API/console), 9000 (health/metrics)</text>
+
+            <rect x="300" y="130" width="420" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="510" y="152" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Spring Boot billing API (mvn spring-boot:run)</text>
+            <text x="510" y="168" text-anchor="middle" class="diagram-label-muted" font-size="9">published port: 8081 -- deliberately not 8080</text>
+
+            <defs>
+              <marker id="arrowB2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 34.2 — The reader runs both services on one machine, on two ports that don't
+          collide — the whole point of this chapter's reader-facing port choice.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="endpoints" data-title="Three endpoints, two enforcement styles">
+        <h2>Three endpoints, deliberately at three different protection levels</h2>
+        <p>This chapter's billing API (<code>BillingController</code>) exposes exactly enough surface to
+        exercise every outcome this chapter needs to prove, nothing more:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>The billing API's three endpoints and how each is actually protected</caption>
+            <thead><tr><th>Endpoint</th><th>Required authority</th><th>Enforced where</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/public/health</code></td><td>none</td><td><code>permitAll()</code> in the filter chain</td></tr>
+              <tr><td><code>GET /api/invoices</code></td><td><code>billing-reader</code> <em>or</em> <code>billing-admin</code></td><td><code>hasAnyRole(...)</code> in the filter chain (URL-level)</td></tr>
+              <tr><td><code>POST /api/invoices</code></td><td><code>billing-admin</code> only</td><td><code>@PreAuthorize("hasRole('billing-admin')")</code> on the method (method-level)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The filter chain itself, in <code>SecurityConfig</code>:</p>
+        <pre><code>http
+    .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+    .csrf(AbstractHttpConfigurer::disable)
+    .authorizeHttpRequests(authorize -&gt; authorize
+        .requestMatchers("/api/public/**").permitAll()
+        .requestMatchers("/api/invoices/**").hasAnyRole("billing-reader", "billing-admin")
+        .anyRequest().authenticated()
+    )
+    .oauth2ResourceServer(oauth2 -&gt; oauth2
+        .jwt(jwt -&gt; jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+    );</code></pre>
+        <p>Two deliberate choices worth naming explicitly, not left implicit: <strong>stateless session
+        policy</strong> — this app creates no server-side session at all, because every request is
+        expected to carry its own bearer token, exactly chapter 8's bearer-token model; and <strong>CSRF
+        protection disabled</strong> — CSRF defends cookie-authenticated, browser-submitted requests
+        against a forged cross-site form post, and this API never authenticates via a cookie at all, so
+        there is nothing for CSRF protection to defend here (chapter 18 covers CSRF defenses in flows that
+        genuinely need them, e.g. a browser-based SPA holding a session cookie).</p>
+      </section>
+
+      <section class="slide" data-slide="authorities-gotcha" data-title="The realm_access.roles gotcha">
+        <h2>The one piece Spring Security doesn't get right by default against Keycloak</h2>
+        <p>Spring Security's <code>spring-boot-starter-oauth2-resource-server</code> ships a default
+        <code>JwtGrantedAuthoritiesConverter</code> that looks for a <strong>flat, space-separated
+        <code>scope</code> or <code>scp</code> claim</strong> — the shape a generic OAuth2 authorization
+        server's access token typically carries. A Keycloak-issued access token carries its roles in a
+        completely different, nested, Keycloak-specific claim instead:</p>
+        <pre><code>"realm_access": {
+  "roles": ["billing-admin", "offline_access", "uma_authorization", "default-roles-northwind-apps"]
+}</code></pre>
+        <p>Spring Security's default converter never looks at <code>realm_access</code> at all. The result
+        is not an error anywhere — it's silence: the token is perfectly valid, signature and issuer and
+        expiry all check out, authentication succeeds, and the request is still rejected with
+        <strong>403</strong>, because zero authorities were ever extracted from a token that genuinely
+        carries the right role. This chapter's lab reproduces that exact 403 live, on purpose, a few slides
+        ahead — not simulated, the real behavior with the real default converter temporarily restored.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Two different claim shapes feeding two different granted-authorities converters</title>
+            <desc id="d3">Left side: a generic OAuth2 access token with a flat scope claim, for example
+            "scope: api.read api.write", feeding Spring Security's default JwtGrantedAuthoritiesConverter,
+            which produces authorities like SCOPE_api.read and SCOPE_api.write. Right side: a Keycloak
+            access token with a nested realm_access object containing a roles array, for example
+            realm_access.roles: ["billing-admin"], which the default converter does not read at all,
+            producing zero authorities -- shown with a crossed-out arrow. Below it, this chapter's own
+            KeycloakRealmRoleConverter correctly reads realm_access.roles and produces an authority named
+            ROLE_billing-admin, shown with a normal arrow leading to a check mark.</desc>
+            <rect x="20" y="20" width="280" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="160" y="40" text-anchor="middle" class="diagram-label" font-size="10">Generic OAuth2 token</text>
+            <text x="160" y="55" text-anchor="middle" class="diagram-label-muted" font-size="9">"scope": "api.read api.write"</text>
+
+            <line x1="160" y1="70" x2="160" y2="100" class="diagram-stroke" marker-end="url(#arrowB3)"/>
+            <rect x="20" y="102" width="280" height="50" rx="7" class="diagram-fill-success diagram-stroke"/>
+            <text x="160" y="122" text-anchor="middle" class="diagram-label" font-size="10">Default JwtGrantedAuthoritiesConverter</text>
+            <text x="160" y="138" text-anchor="middle" class="diagram-label-muted" font-size="9">reads "scope" -- works correctly here</text>
+
+            <line x1="160" y1="152" x2="160" y2="180" class="diagram-stroke" marker-end="url(#arrowB3)"/>
+            <text x="160" y="198" text-anchor="middle" class="diagram-label" font-size="10">SCOPE_api.read, SCOPE_api.write</text>
+
+            <rect x="600" y="20" width="280" height="55" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="740" y="38" text-anchor="middle" class="diagram-label" font-size="10">Keycloak access token</text>
+            <text x="740" y="53" text-anchor="middle" class="diagram-label-muted" font-size="9">"realm_access": { "roles":</text>
+            <text x="740" y="66" text-anchor="middle" class="diagram-label-muted" font-size="9">["billing-admin"] }</text>
+
+            <line x1="700" y1="75" x2="650" y2="100" class="diagram-stroke" stroke-dasharray="4 3"/>
+            <rect x="330" y="102" width="320" height="50" rx="7" class="diagram-fill-danger diagram-stroke"/>
+            <text x="490" y="122" text-anchor="middle" class="diagram-label" font-size="10">Default converter never looks at</text>
+            <text x="490" y="138" text-anchor="middle" class="diagram-label" font-size="10">realm_access -- zero authorities, silently</text>
+
+            <line x1="780" y1="75" x2="780" y2="180" class="diagram-stroke" marker-end="url(#arrowB3)"/>
+            <rect x="600" y="182" width="280" height="55" rx="7" class="diagram-fill-success diagram-stroke"/>
+            <text x="740" y="202" text-anchor="middle" class="diagram-label" font-weight="700" font-size="10">This chapter's KeycloakRealmRoleConverter</text>
+            <text x="740" y="218" text-anchor="middle" class="diagram-label" font-size="9">reads realm_access.roles correctly</text>
+            <text x="740" y="231" text-anchor="middle" class="diagram-label" font-size="9">-&gt; authority "ROLE_billing-admin"</text>
+
+            <defs>
+              <marker id="arrowB3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 34.3 — The default converter is correct for a generic <code>scope</code>-shaped
+          token and silently wrong for Keycloak's <code>realm_access.roles</code> shape; both tokens are
+          equally "valid" by signature/issuer/expiry, which is exactly why this bug produces a 403, not a
+          401.</figcaption>
+        </figure>
+
+        <p>The fix is this chapter's own <code>KeycloakRealmRoleConverter</code>, a ~15-line
+        <code>Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt;</code> that reads
+        <code>realm_access.roles</code> directly and prefixes each role <code>ROLE_</code> so
+        <code>hasRole(...)</code>/<code>hasAnyRole(...)</code>/<code>@PreAuthorize("hasRole(...)")</code>
+        all work the way Spring Security expects:</p>
+        <pre><code>public class KeycloakRealmRoleConverter implements Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt; {
+    @Override
+    public Collection&lt;GrantedAuthority&gt; convert(Jwt jwt) {
+        Map&lt;String, Object&gt; realmAccess = jwt.getClaim("realm_access");
+        if (realmAccess == null || !(realmAccess.get("roles") instanceof List&lt;?&gt; roles)) {
+            return List.of();
+        }
+        return roles.stream()
+                .map(Object::toString)
+                .map(role -&gt; new SimpleGrantedAuthority("ROLE_" + role))
+                .collect(Collectors.toList());
+    }
+}</code></pre>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps">
+        <h2>Case study: Northwind Apps' billing API</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> is a B2B SaaS company (introduced
+          chapter 2), and like most multi-tenant SaaS products, billing and invoicing is a real internal
+          API, not just a UI page — Northwind's own customer-facing billing dashboard calls it on behalf of
+          a logged-in customer, Northwind's internal finance team calls it directly, and an internal nightly
+          reconciliation job calls it with no human involved at all. All three callers are different in
+          almost every way (a human with a browser session upstream of the call, a human at a terminal, an
+          unattended cron job) but arrive at this API identically: an HTTP request carrying a Keycloak-issued
+          bearer token. This chapter's lab realm (<code>northwind-apps</code>) models that directly with two
+          realm roles — <code>billing-reader</code> (any caller that should see invoice data: the dashboard,
+          finance staff doing lookups) and <code>billing-admin</code> (anything allowed to create or modify
+          invoices: finance staff with write access, and the nightly reconciliation job's own service
+          account) — and this chapter's lab proves, with real tokens, that a caller holding only
+          <code>billing-reader</code> genuinely cannot create an invoice through this API, no matter what
+          the caller claims about itself in any other field.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-keycloak-setup" data-title="Lab: realm, roles, clients, users">
+        <h2>Lab: setting up a real Keycloak realm for this chapter's API</h2>
+        <p>Reader-facing commands below assume the standard stack is already up
+        (<code>cd labs/docker &amp;&amp; docker compose up -d</code>, port 8080) — this chapter's own test
+        run used an isolated project name/port (<code>ch34kc</code> / 18134) purely to avoid colliding with
+        two sibling chapters built in parallel; every command shown here is the plain, reader-facing form.</p>
+        <ol class="lab-steps">
+          <li><p><strong>Create the realm and its two roles</strong>:</p>
+          <pre><code>kcadm.sh create realms -s realm=northwind-apps -s enabled=true
+kcadm.sh create roles -r northwind-apps -s name=billing-reader \
+  -s "description=Read-only access to Northwind Apps billing/invoicing data"
+kcadm.sh create roles -r northwind-apps -s name=billing-admin \
+  -s "description=Read and write access to Northwind Apps billing/invoicing data"</code></pre>
+          <pre><code>Created new realm with id 'northwind-apps'
+Created new role with id 'billing-reader'
+Created new role with id 'billing-admin'</code></pre></li>
+
+          <li><p><strong>Create a confidential client with a service account</strong>, for the
+          client-credentials (machine-to-machine) test, and give its service account the
+          <code>billing-admin</code> role (standing in for the nightly reconciliation job from the case
+          study above):</p>
+          <pre><code>kcadm.sh create clients -r northwind-apps -s clientId=billing-service-account \
+  -s enabled=true -s publicClient=false -s serviceAccountsEnabled=true \
+  -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
+  -s secret=billing-service-secret
+kcadm.sh add-roles -r northwind-apps \
+  --uusername service-account-billing-service-account --rolename billing-admin</code></pre></li>
+
+          <li><p><strong>Create a public, direct-grant client</strong> for this lab's human test users
+          (direct grant stands in here for "a real login already happened upstream and this is just how we
+          mint a test token," exactly the reasoning chapter 13 used for curl-only grant types), plus three
+          test users — two with billing roles, one deliberately without any:</p>
+          <pre><code>kcadm.sh create clients -r northwind-apps -s clientId=billing-direct-grant \
+  -s enabled=true -s publicClient=true -s standardFlowEnabled=false \
+  -s directAccessGrantsEnabled=true
+
+kcadm.sh create users -r northwind-apps -s username=amara.reader -s enabled=true \
+  -s emailVerified=true -s email=amara.reader@northwindapps.example \
+  -s firstName=Amara -s lastName=Chen
+kcadm.sh set-password -r northwind-apps --username amara.reader --new-password 'Reader#2026Pass'
+kcadm.sh add-roles -r northwind-apps --uusername amara.reader --rolename billing-reader
+
+kcadm.sh create users -r northwind-apps -s username=devon.admin -s enabled=true \
+  -s emailVerified=true -s email=devon.admin@northwindapps.example \
+  -s firstName=Devon -s lastName=Okafor
+kcadm.sh set-password -r northwind-apps --username devon.admin --new-password 'Admin#2026Pass'
+kcadm.sh add-roles -r northwind-apps --uusername devon.admin --rolename billing-admin
+
+kcadm.sh create users -r northwind-apps -s username=priya.sales -s enabled=true \
+  -s emailVerified=true -s email=priya.sales@northwindapps.example \
+  -s firstName=Priya -s lastName=Nair
+kcadm.sh set-password -r northwind-apps --username priya.sales --new-password 'Sales#2026Pass'
+# priya.sales deliberately gets no billing-reader/billing-admin role at all --
+# the "authenticated but wrong role" test case.</code></pre>
+          <p><strong>A real, second gotcha hit in this exact step</strong>, worth including honestly rather
+          than editing it out of the commands above: the first attempt created each user
+          <em>without</em> <code>firstName</code>/<code>lastName</code>, and every direct-grant token
+          request for that user failed with:</p>
+          <pre><code>{"error":"invalid_grant","error_description":"Account is not fully set up"}</code></pre>
+          <p>Checking that user's own representation showed <code>"requiredActions" : [ ]</code> — no
+          required action was ever explicitly assigned, which made the error look like a false positive at
+          first. The actual cause, confirmed by adding <code>firstName</code>/<code>lastName</code> and
+          immediately retrying successfully: Keycloak's realm-wide <strong>Declarative User Profile</strong>
+          (chapters 22/24/33's concept) marks <code>firstName</code>/<code>lastName</code> as required
+          attributes by default, and a profile-completeness check (<code>VERIFY_PROFILE</code>) is computed
+          <em>dynamically</em> against that schema at login time rather than stored as a per-user required
+          action — a documented Keycloak behavior (confirmed against independent 2026 community reports of
+          the identical message on Keycloak 26.7.3, consistent with this chapter's own 26.8.2 run), not
+          something this chapter's own code or configuration introduced. The fix was adding the two
+          attributes the commands above already include — no realm-setting change was needed this time,
+          unlike chapter 33's version of this same profile-completeness gap.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-build" data-title="Lab: building the app — a real XML comment bug, again">
+        <h2>Lab: <code>mvn clean package</code>, including a real failure</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 3;">
+          <li><p><strong>First attempt failed immediately</strong>, before compiling a single line of Java —
+          the exact same real bug chapter 33's lab hit, independently, in this chapter's own
+          <code>pom.xml</code>: an explanatory XML comment happened to contain a double-hyphen
+          (<code>--</code>) used as an em-dash substitute, and XML comments cannot contain that sequence
+          anywhere in their body, with no escape mechanism:</p>
+          <pre><code>[ERROR] Non-parseable POM .../pom.xml: in comment after two dashes (--) next
+character must be &gt; not   (position: START_DOCUMENT seen ...Northwind Apps
+billing/invoicing API -- a real Spring Boot... @3:43)</code></pre>
+          <p>Fixed by rewriting every <code>--</code> in the comment's prose to a plain comma or "since"
+          construction instead — not escaped, since XML comments have no escape syntax for this at all,
+          exactly chapter 33's fix.</p></li>
+
+          <li><p><strong>Clean build, for real</strong>, after the fix:</p>
+          <pre><code>$ mvn clean package
+...
+[INFO] --- maven-compiler-plugin:3.15.0:compile (default-compile) ---
+[INFO] Compiling 4 source files with javac [debug parameters release 21] to target/classes
+...
+[INFO] --- maven-jar-plugin:3.5.1:jar (default-jar) ---
+[INFO] Building jar: .../target/billing-api-1.0.0.jar
+[INFO] --- spring-boot-maven-plugin:4.1.2:repackage (repackage) ---
+[INFO] Replacing main artifact .../target/billing-api-1.0.0.jar with repackaged archive,
+adding nested dependencies in BOOT-INF/.
+[INFO] BUILD SUCCESS
+[INFO] Total time:  1.760 s</code></pre>
+          <p>Four source files, zero warnings — a smaller, simpler build than chapter 33's SPI provider
+          (no Keycloak-server classes to pin against; everything this app needs comes from ordinary Spring
+          Boot starters resolved from Maven Central).</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-run-tokens" data-title="Lab: running the app and getting real tokens">
+        <h2>Lab: starting the app, then minting four real tokens</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p><strong>Run the packaged jar</strong> (equally: <code>mvn spring-boot:run</code>):</p>
+          <pre><code>$ java -jar target/billing-api-1.0.0.jar</code></pre>
+          <pre><code>  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.2)
+
+... Starting BillingApiApplication v1.0.0 using Java 21.0.13.0.3
+... Tomcat initialized with port 8081 (http)
+... Tomcat started on port 8081 (http) with context path '/'
+... Started BillingApiApplication in 2.184 seconds (process running for 2.579)</code></pre>
+          <pre><code>$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081/api/public/health
+200</code></pre></li>
+
+          <li><p><strong>Mint four real tokens</strong> — one client-credentials (service account) token,
+          two direct-grant human tokens with different roles, and one direct-grant token for a user with
+          <em>no</em> billing role at all:</p>
+          <pre><code># 1. Client credentials (billing-service-account, holds billing-admin via its service account)
+curl -s -X POST "http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token" \
+  -d "client_id=billing-service-account" -d "client_secret=billing-service-secret" \
+  -d "grant_type=client_credentials"
+
+# 2. Direct grant -- amara.reader (billing-reader)
+curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
+  -d "username=amara.reader" -d "password=Reader#2026Pass"
+
+# 3. Direct grant -- devon.admin (billing-admin)
+curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
+  -d "username=devon.admin" -d "password=Admin#2026Pass"
+
+# 4. Direct grant -- priya.sales (no billing role at all)
+curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
+  -d "username=priya.sales" -d "password=Sales#2026Pass"</code></pre>
+          <p>All four returned HTTP 200 with a real <code>access_token</code>. Decoding
+          <code>devon.admin</code>'s token's payload (base64url, no verification needed just to read it —
+          chapter 16's point that a JWT's payload is readable by anyone, signed but not encrypted) confirms
+          the exact claim shape the previous slide described:</p>
+          <pre><code>{
+  "iss": "http://localhost:8080/realms/northwind-apps",
+  "sub": "0e4d4a8e-4e9c-492f-9ea3-ffa93456d8ff",
+  "azp": "billing-direct-grant",
+  "realm_access": {
+    "roles": ["offline_access", "uma_authorization", "billing-admin", "default-roles-northwind-apps"]
+  },
+  "preferred_username": "devon.admin",
+  "email": "devon.admin@northwindapps.example"
+}</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-verify" data-title="Lab: real 401/403/200/201, and the gotcha reproduced live">
+        <h2>Lab: every endpoint, every token, the real responses</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 7;">
+          <li><p><strong>With the authorities fix in place</strong> (this chapter's shipped
+          <code>KeycloakRealmRoleConverter</code>), every call below is the actual response:</p>
+          <div class="table-wrap">
+            <table>
+              <caption>Real responses from this chapter's own lab run, correct converter in place</caption>
+              <thead><tr><th>Call</th><th>Token</th><th>Real result</th></tr></thead>
+              <tbody>
+                <tr><td><code>GET /api/public/health</code></td><td>none</td><td><code>200</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td>none</td><td><code>401</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td>priya.sales (no role)</td><td><code>403</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td>amara.reader (billing-reader)</td><td><code>200</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td>devon.admin (billing-admin)</td><td><code>200</code></td></tr>
+                <tr><td><code>POST /api/invoices</code></td><td>amara.reader (billing-reader)</td><td><code>403</code></td></tr>
+                <tr><td><code>POST /api/invoices</code></td><td>devon.admin (billing-admin)</td><td><code>201</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td>service account (client credentials, billing-admin)</td><td><code>200</code></td></tr>
+                <tr><td><code>GET /api/invoices</code></td><td><code>garbage.not.a.jwt</code></td><td><code>401</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>The real body for <code>amara.reader</code>'s successful <code>GET /api/invoices</code> call —
+          note <code>callerAuthorities</code>, which this chapter's controller deliberately echoes back for
+          this lab's own benefit, genuinely shows <code>ROLE_billing-reader</code> extracted from her
+          token:</p>
+          <pre><code>{"invoices":[{"amountUsd":4200.0,"customer":"Acme Robotics","id":1001,"status":"paid"},
+{"amountUsd":980.5,"customer":"Blue Harbor Logistics","id":1002,"status":"overdue"}],
+"requestedBy":"amara.reader",
+"callerAuthorities":["ROLE_offline_access","ROLE_uma_authorization",
+"ROLE_default-roles-northwind-apps","ROLE_billing-reader", ...]}</code></pre></li>
+
+          <li><p><strong>Reproducing the authorities gotcha live</strong>, honestly, rather than only
+          describing it: <code>jwtAuthenticationConverter()</code>'s custom converter call was temporarily
+          removed from <code>SecurityConfig</code> (reverting to Spring Security's plain default), the app
+          was rebuilt and restarted against the exact same running Keycloak instance, and
+          <code>devon.admin</code>'s already-proven-valid <code>billing-admin</code> token was sent again,
+          unchanged:</p>
+          <pre><code>$ curl -s -w "\nHTTP %{http_code}\n" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8081/api/invoices
+
+HTTP 403</code></pre>
+          <p>The exact same token that returned <code>200</code> one slide ago now returns
+          <code>403</code> — nothing about the token, the user, or the role assignment changed; only the
+          converter did. Restoring the custom converter and rebuilding brought the same call back to
+          <code>200</code> immediately, with zero other changes. This is the clean, reproducible shape of
+          the bug every reader hitting it for real will see: a 403 that looks like a permissions problem
+          and is actually a claim-mapping problem.</p></li>
+
+          <li><p>Tear down cleanly when finished:</p>
+          <pre><code>docker compose down -v</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="direct-grant-vs-cc" data-title="Direct grant vs. client credentials, for testing">
+        <h2>Two ways this lab got a token — when to reach for each</h2>
+        <p>This chapter's lab deliberately used both grant types side by side. Neither is "more correct" —
+        they answer different questions, and a real resource server has to work correctly against both.</p>
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>Client credentials grant vs. direct grant, specifically as a resource-server testing technique</caption>
+            <thead><tr><th>Client credentials grant (service account)</th><th>Direct grant (resource-owner password)</th></tr></thead>
+            <tbody>
+              <tr><td>Matches this chapter's real machine-to-machine caller (the nightly reconciliation job) exactly — no user involved in production either</td><td>Needs a real username/password submitted directly to the token endpoint — fine for this lab's own curl testing, but chapter 18 covers why shipping this grant type in a real browser-facing product is discouraged</td></tr>
+              <tr><td>No password to manage or rotate for a human at all</td><td>Lets this lab test role differences between two distinct human identities (amara.reader vs. devon.admin) in one token request each</td></tr>
+              <tr><td>Token carries no <code>preferred_username</code>/human identity — every service-account caller looks the same in an audit log beyond its client_id</td><td>Token carries a real <code>sub</code>/<code>preferred_username</code>, useful for this chapter's own "who created this invoice" style accountability</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If every request to a protected endpoint returns <strong>403</strong> despite a token that
+          decodes cleanly and clearly carries the expected role, the cause is very often exactly this
+          chapter's gotcha: Spring Security's default <code>JwtGrantedAuthoritiesConverter</code> reads a
+          flat <code>scope</code>/<code>scp</code> claim, not Keycloak's nested
+          <code>realm_access.roles</code> — supply a custom
+          <code>Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt;</code> and wire it into
+          <code>jwtAuthenticationConverter()</code>, confirmed live in this chapter's own lab by
+          reproducing the exact 403 and then fixing it with zero other changes.</li>
+          <li>If every request instead returns <strong>401</strong>, the problem is earlier in the pipeline
+          than roles entirely: a missing/malformed <code>Authorization</code> header, a token whose
+          <code>iss</code> claim doesn't match the configured <code>issuer-uri</code> exactly (including
+          scheme and port — <code>http://localhost:8080/...</code> and
+          <code>http://localhost:18134/...</code> are different issuers to a token verifier even though
+          they're the same Keycloak realm), or a genuinely expired token. 401 means authentication itself
+          failed; 403 means authentication succeeded and authorization refused — conflating the two wastes
+          debugging time looking in the wrong half of the pipeline.</li>
+          <li>If a POM's own explanatory comment causes a build to fail before any Java compiles, check for
+          a double-hyphen (<code>--</code>) anywhere inside an XML comment's text — this chapter hit the
+          exact same real bug chapter 33's lab did, independently, in an unrelated file.</li>
+          <li>If a direct-grant token request fails with <code>"Account is not fully set up"</code> for a
+          brand-new user with an apparently empty <code>requiredActions</code> list, check the realm's
+          Declarative User Profile's required attributes (typically <code>firstName</code>/
+          <code>lastName</code>) before assuming a stuck required action — this chapter's own lab hit this
+          for real, confirmed by adding both attributes and watching the identical request succeed with no
+          other change.</li>
+          <li>If the Spring Boot app fails to start with a connection error pointing at the configured
+          <code>issuer-uri</code>, Keycloak almost certainly isn't up (or isn't finished booting) yet — this
+          app resolves the realm's OpenID Connect discovery document once at startup and has no built-in
+          retry loop for "try again in a few seconds," so start Keycloak first and confirm its own
+          readiness check (chapter 20's <code>/realms/master/.well-known/openid-configuration</code>
+          returning <code>200</code>) before starting this app.</li>
+          <li>Double-checking an issuer mismatch is worth doing explicitly: this chapter's own isolated test
+          run (port 18134) had to point its <code>issuer-uri</code> at <code>18134</code>, not the
+          reader-facing <code>8080</code> shipped in <code>application.properties</code> — a resource
+          server configured with the wrong issuer doesn't silently work "close enough"; it rejects every
+          otherwise-valid token with 401, because the issuer string in the token simply won't match.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>An OAuth2 Resource Server's whole job is deciding, per request, whether to trust a bearer
+          token it never issued — <code>spring-boot-starter-oauth2-resource-server</code> performs the
+          signature/issuer/expiry checks automatically once an <code>issuer-uri</code> is configured,
+          exactly chapter 8 and chapter 16's bearer-token and JWKS-verification concepts made concrete.</li>
+          <li>Spring Security's default JWT-to-authorities converter reads a <code>scope</code>/
+          <code>scp</code> claim, not Keycloak's <code>realm_access.roles</code> — a valid, correctly
+          signed, correctly scoped token still produces zero authorities and a 403 without a custom
+          converter, confirmed live by this chapter's own lab deliberately reproducing the bug.</li>
+          <li>401 means authentication failed (missing/invalid/expired/wrong-issuer token); 403 means
+          authentication succeeded but the token's authorities don't satisfy the endpoint's requirement —
+          this chapter's full response-code table demonstrates both, for real, for every combination that
+          matters.</li>
+          <li>Spring Boot's own current version has to be live-verified against Maven Central's real
+          metadata, not recalled — 4.1.2 was the newest GA release at the moment this chapter was written,
+          with 4.2.0 existing only as a release candidate.</li>
+          <li>A resource server's <code>server.port</code> must be chosen with the rest of a chapter's (or
+          a real system's) topology in mind — this app ships with 8081 specifically because Keycloak
+          already owns 8080/9000 in every lab since chapter 20.</li>
+          <li>URL-level authorization (<code>hasAnyRole(...)</code> in the filter chain) and method-level
+          authorization (<code>@PreAuthorize(...)</code> on a controller method) are two legitimate,
+          complementary enforcement points, not competing alternatives — this chapter's own app uses both
+          for real, on different endpoints.</li>
+          <li>Client credentials (service-account) tokens and direct-grant (human) tokens are consumed
+          identically by a resource server — the same filter chain, the same converter, the same role
+          check — even though they represent very different kinds of caller in Northwind Apps' real system.</li>
+          <li>A Declarative User Profile's required attributes can silently block a direct-grant token
+          request with a confusing <code>"Account is not fully set up"</code> error that has nothing to do
+          with the username/password being tested — this chapter's lab hit this independently of, and for
+          a different reason than, chapter 33's version of the same underlying profile-completeness gap.</li>
+          <li>Disabling CSRF protection is correct for a pure bearer-token resource server with no
+          server-side session, specifically because CSRF defends cookie-authenticated requests this kind
+          of API never accepts — it is not a blanket "CSRF doesn't matter" rule.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A teammate says "the token is definitely valid — I decoded it myself and it has the
+            right role in it — but the API still returns 403." What's the single most likely explanation,
+            and why doesn't a valid, correctly-scoped token guarantee a 200?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The most
+            likely cause is exactly this chapter's gotcha: Spring Security's default JWT-to-authorities
+            converter reads a <code>scope</code>/<code>scp</code> claim, not Keycloak's
+            <code>realm_access.roles</code>, so it extracts zero authorities from an otherwise perfectly
+            valid token. A token being "valid" only means it passed signature, issuer, and expiry checks —
+            authentication succeeded. Authorization is a separate, later check against whatever authorities
+            were actually extracted, and if the converter never looked at the claim holding the real role,
+            there are no authorities to check against, producing 403 regardless of how correct the token's
+            contents are.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter's resource server disable CSRF protection, and would that same
+            choice be correct for a server-rendered web app that logs users in with a session cookie?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>CSRF
+            protection defends against a forged request riding on a browser's automatically-attached
+            session cookie — it matters only when a cookie alone authenticates a request. This chapter's
+            API is stateless and accepts only an explicit <code>Authorization: Bearer</code> header that a
+            malicious site cannot make a victim's browser attach automatically, so there's nothing for CSRF
+            protection to defend. A server-rendered app authenticating via a session cookie is exactly the
+            opposite case — disabling CSRF there would be a real vulnerability, not a simplification.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through what Spring Security actually does, automatically, when
+            <code>spring.security.oauth2.resourceserver.jwt.issuer-uri</code> is set to
+            <code>http://localhost:8080/realms/northwind-apps</code> — name every step.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>At
+            startup, it fetches <code>&lt;issuer-uri&gt;/.well-known/openid-configuration</code> to learn
+            the realm's actual token issuer string and its <code>jwks_uri</code>. On every incoming
+            request carrying a bearer token, it fetches (or reuses a cached copy of) that JWKS to get the
+            current signing keys, verifies the token's JWS signature against the matching key, checks that
+            the token's <code>iss</code> claim exactly matches the configured issuer, and checks the
+            token's expiry claims against the current time. Only if all of that passes does it hand the
+            token to the configured <code>jwtAuthenticationConverter()</code> to extract authorities, which
+            are then checked against whatever the filter chain or a method's <code>@PreAuthorize</code>
+            requires.</p>
+          </details></li>
+          <li><details>
+            <summary>Why did this chapter pin Spring Boot to exactly <code>4.1.2</code> rather than
+            <code>4.2.0</code>, when Maven Central's metadata showed a <code>4.2.0-RC2</code> already
+            existed at the time of writing?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>An
+            <code>-RC2</code> suffix means release candidate, not a final release — Maven Central's own
+            metadata distinguished <code>latest</code>/<code>release</code> (<code>4.2.0-RC2</code>, the
+            newest artifact of any kind) from the newest version without a pre-release qualifier
+            (<code>4.1.2</code>). Shipping a teaching lab pinned to a release candidate risks the exact
+            version disappearing or changing behavior once the real 4.2.0 GA ships and supersedes it; 4.1.2
+            is a permanent, already-finished release that won't move out from under a reader following this
+            chapter later.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab created both a client-credentials client and a direct-grant client
+            in the same realm. Why not just use one grant type for everything?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They
+            model two genuinely different kinds of real caller this chapter's resource server has to
+            support identically. Client credentials matches Northwind Apps' nightly reconciliation job: no
+            human, no password, a token that carries only a client identity. Direct grant matches a human
+            tester needing two distinct identities (amara.reader vs. devon.admin) to prove the
+            <code>billing-reader</code>/<code>billing-admin</code> distinction actually works, with a real
+            <code>sub</code>/<code>preferred_username</code> in the resulting token for accountability.
+            Using only one grant type would leave one of those two real scenarios unverified by this
+            chapter's own lab.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html">Spring Security Reference — OAuth 2.0 Resource Server: JWT (current stable version, the authoritative source for everything this chapter's <code>SecurityConfig</code> relies on)</a></li>
+          <li><a href="https://docs.spring.io/spring-boot/reference/web/spring-security.html">Spring Boot Reference — Spring Security (how Spring Boot auto-configures the resource server from <code>issuer-uri</code>)</a></li>
+          <li><a href="https://datatracker.ietf.org/doc/html/rfc9068">RFC 9068 — JWT Profile for OAuth 2.0 Access Tokens (the standardized shape a JWT access token is expected to take; Keycloak's <code>realm_access</code> claim is a vendor-specific extension beyond this profile)</a></li>
+          <li><a href="https://datatracker.ietf.org/doc/html/rfc7519">RFC 7519 — JSON Web Token (JWT) (chapter 16's own primary source, recalled here for the claim-structure vocabulary this chapter's gotcha depends on)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "securing-a-backend-api", 18);
+    SlideDeck.init({ chapterSlug: "securing-a-backend-api" });
+  });
+</script>
+</body>
+</html>

@@ -42,79 +42,14 @@ structure. Converted via the usual parallel-subagent-then-merge pattern, Part by
 Done below for each round's detail (slide/self-check counts, real bugs found+fixed, table-compare
 judgment calls). **Part VI's new content (chapters 31-36) is next per the Queue.**
 
-**Part VI (federation & integration) — Round 1 COMPLETE: chapters 31-33, `built:true`, committed.**
+**Part VI (federation & integration) — COMPLETE: chapters 31-36, all `built:true`, committed.**
 Unlike chapters 02-30, these are brand-new chapters, built straight into the slide-deck format with real
-hands-on labs, per CLAUDE.md §2.5/§4 — see the Done entry below for full detail (real bugs found/fixed,
-new `labs/ldap-federation/` and `labs/custom-user-storage-spi/` folders, glossary/quiz merge counts).
-**Round 2 (chapters 34-36, next)** needs new `labs/spring-boot-resource-server/` and `labs/react-spa/`
-app scaffolding per Queue item 11, same "establish-then-scale" shape Part IV used.
-
-Round 1 briefs (one subagent per chapter, parallel, each pre-assigned its own isolated Docker Compose
-project name/port up front per the GATE-4/Part V process note):
-
-- **Ch 31 — Identity brokering** (`identity-brokering`, isolated stack `ch31kc` → port 18131). No new
-  infra: brokers from the `northwind-apps` realm to a *second* realm in the same Keycloak instance
-  (e.g. `northwind-corporate-idp`) configured as an OIDC Identity Provider — a real, fully scriptable
-  stand-in for an external corporate IdP, reusing `labs/docker/docker-compose.yml` unmodified. Real lab:
-  create the second realm + a confidential client in it for the broker to use, configure the IdP in
-  `northwind-apps` via the Admin REST API/`kcadm.sh`, then curl-script the full browser-equivalent
-  redirect chain (GET login page → click "Login via Northwind Corporate SSO" → IdP's own login form →
-  POST credentials → follow redirects back → confirm a linked/JIT-provisioned user now exists in
-  `northwind-apps`) using the same cookie-jar/form-scrape curl technique chapters 13/25 already used for
-  headless login simulation. Case study: Northwind Apps brokering enterprise customers' own IdP (ties
-  back to ch07's JIT-provisioning concept). Recalls ch07 (SSO & federation concepts) explicitly.
-- **Ch 32 — User federation: LDAP & Active Directory** (`user-federation-ldap`, isolated stack `ch32kc`
-  → port 18132, LDAP → port 18389). New infra: owns its own compose file at
-  `labs/ldap-federation/docker-compose.yml` (postgres + keycloak + an OpenLDAP container, e.g.
-  `osixia/openldap` — verify current image/tag live before pinning it) seeded via LDIF with a handful of
-  sample users. Keycloak's *native* LDAP federation provider (no custom code) does the real work: add
-  the LDAP User Federation provider via Admin Console/REST, sync, then prove an LDAP-sourced user can
-  really authenticate (direct grant is fine for proof-of-concept verification here, same reasoning ch13
-  used for curl-only grant types). Case study: Meridian Trust's existing on-prem staff directory (a bank
-  already has AD/LDAP for employees — realistic, ties to ch04's directory-services concepts). Recalls
-  ch04 explicitly.
-- **Ch 33 — Custom User Storage SPI** (`custom-user-storage-spi`, isolated stack `ch33kc` → port 18133).
-  New infra: owns `labs/custom-user-storage-spi/` — a real Maven project (Java 21) implementing
-  Keycloak's `UserStorageProvider` SPI against a toy external store (flat JSON/CSV is simplest and
-  avoids a second new container), packaged as a JAR and deployed into `/opt/keycloak/providers/` via a
-  volume mount in that folder's own compose file, then `kc.sh build` + restart to pick it up. **Live-
-  verify the exact SPI Maven coordinates/scopes for Keycloak 26.8.2 before writing the POM** — early
-  research this session found that 26.4+ split some SPI classes out into a newer `keycloak-model-storage`
-  module (Red Hat's migration guide), so `keycloak-server-spi`/`keycloak-server-spi-private` alone may
-  not be enough depending on which classes the provider actually touches; confirm against Maven Central
-  for the `26.8.2`-equivalent coordinates (or the closest available released version) rather than
-  guessing, and say in the chapter if an exact 26.8.2 artifact isn't published and a nearby 26.x version
-  had to substitute — per CLAUDE.md §2's no-invented-facts rule. Case study: Riverside Health's legacy,
-  non-LDAP staff directory needing a bridge instead of a rip-and-replace. Recalls ch04 + ch19 (Keycloak
-  architecture/SPI extensibility) explicitly.
-
-Shared instructions given to all three Round-1 agents: build the chapter directly in the final slide-
-deck format (no conversion step) using `chapters/01-what-is-iam.html` as the structural reference and
-`chapters/27-admin-api-and-cli.html`/`chapters/24-clients-and-scopes.html` as real-lab-chapter precedent
-(lab-step `counter-reset` pattern, case-study callout style, "What concept is this?" recall opener since
-Part VI is Keycloak-specific); full CLAUDE.md §4 template (why this matters, concept sections, case-study
-tie-in, real hands-on lab, common mistakes, 8+ takeaways, 5+ self-check **with model answers already
-included** per the current template — not left unanswered, 15+ quiz questions, verified deep-dive links,
-3+ diagrams checked for both bug classes plus the hardcoded-white-text check); isolate their own Docker
-Compose test run under their assigned project name/port (via a throwaway port-override compose file in
-scratch, not by editing any shared compose file) while documenting the plain standard commands
-(`docker compose up -d`, port 8080) for the reader, exactly like the Part V process note describes; and —
-because these are brand-new chapters, unlike the redesign-rollout conversions — **do not edit
-`glossary-data.js`, `quiz-data.js`, or `nav-data.js` directly** (shared files, central-merge only, to
-avoid 3-way write conflicts); instead report proposed new glossary terms and quiz questions back in the
-exact schema shape (CLAUDE.md §9) for the coordinator to dedupe/merge centrally, same as Part IV/V's
-glossary-collision handling.
-
-Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
-`hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
-sandboxed environment (looks like bot-blocking, not a dead link). Subagents have been substituting
-verified alternative sources (NIST, Cornell LII, etc.) rather than shipping unverified links — continue
-that pattern rather than re-discovering the same block each time.
-
-Detailed pre-build briefs for finished chapters are kept out of this section once built — the "Done"
-entries below describe what was actually built (counts, verification, merge decisions, live-research
-findings), which is the more useful record going forward; original brief text is in this file's git
-history if ever needed, per CLAUDE.md §7's routine of keeping "current" lean.
+hands-on labs, per CLAUDE.md §2.5/§4. Built in two rounds (Round 1: chapters 31-33, Round 2: chapters
+34-36), same "establish-then-scale" shape Part IV used — see the Done entries below for full detail:
+real bugs found/fixed in each chapter, new `labs/ldap-federation/`, `labs/custom-user-storage-spi/`,
+`labs/spring-boot-resource-server/`, and `labs/react-spa/` folders, and glossary/quiz merge counts.
+**Part VII (fine-grained authorization, chapters 37-38) is next per the Queue — GATE-5 sits right after
+it.**
 
 ## Queue
 
@@ -167,15 +102,15 @@ visuals/examples where it helps, not just re-chunk existing prose.
 10e. ~~Part V (chapters 27-30, 4 chapters)~~ — done 2026-11-10, see Done below. **Redesign rollout
      complete — Part VI (chapters 31-36) is next.**
 
-### Part VI (federation & integration) — in progress
+### Part VI (federation & integration) — DONE
 12a. ~~Chapters 31-33 (identity brokering, LDAP federation, custom User Storage SPI)~~ — done 2026-11-11,
      see Done below.
-11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
-    not before — no point scaffolding a lab before its chapter is drafted). **Next.**
-12b. Chapters 34-36 (securing a backend API, securing a frontend SPA, service-to-service/M2M auth) — built
-     as slide decks from the start, no conversion needed.
+11. ~~`labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding~~ — done 2026-11-11, built
+    alongside chapters 34-35 as planned, see Done below.
+12b. ~~Chapters 34-36 (securing a backend API, securing a frontend SPA, service-to-service/M2M auth)~~ —
+     done 2026-11-11, see Done below. Part VI is now fully complete (chapters 31-36).
 
-### Part VII (fine-grained authorization)
+### Part VII (fine-grained authorization) — **next**
 13. Chapters 37-38.
     **→ GATE-5: stop here for review.**
 
@@ -939,6 +874,80 @@ project) remain.
   - `nav-data.js`'s `built` flag flipped to `true` for chapters 31-33 only after all the above passed.
   - **Part VI Round 1 is now complete** (chapters 31-33). **Round 2 (chapters 34-36 + new lab
     scaffolding) is next** per the Queue.
+
+### Part VI, Round 2 — chapters 34-36 (securing a backend API, securing a frontend SPA, M2M auth)
+- 2026-11-11: second and final round of Part VI, completing the full Part. 3 parallel subagents, each
+  pre-assigned an isolated Docker Compose project name/port (`ch34kc`→18134, `ch35kc`→18135,
+  `ch36kc`→18136), same discipline as Round 1.
+  - **Ch 34 — Securing a Backend API**: 18 slides, 5 self-check (all answered), 3 diagrams (clean). New
+    infra: `labs/spring-boot-resource-server/` — a real Spring Boot app (**live-verified Spring Boot
+    4.1.2**, the newest non-release-candidate version on Maven Central at build time, explicitly not the
+    newer-looking `4.2.0-RC2`) as an OAuth2 resource server for a Northwind Apps billing API. Real lab,
+    full endpoint matrix (401/403/200) all genuinely curled. **Two real, kept-not-staged bugs**: (1) the
+    same XML-comment-`--` POM parse error chapter 33 hit independently, caught and fixed again; (2) a
+    real "Account is not fully set up" direct-grant failure traced to Keycloak's Declarative User
+    Profile requiring `firstName`/`lastName`, computed dynamically as `VERIFY_PROFILE` rather than
+    stored in `requiredActions` — cross-checked against independent 2026 community reports of the same
+    message on a nearby Keycloak version. The chapter's central teaching gotcha (Spring Security's
+    default `JwtGrantedAuthoritiesConverter` not reading Keycloak's `realm_access.roles`) was built in
+    deliberately, then *deliberately reverted and replayed* against an already-proven-valid token to
+    capture a genuine, non-fabricated 403→200 transcript rather than only describing the bug in prose.
+    Also hit and fixed a real Compose port-collision from list-merge semantics (`ports: !override [...]`
+    needed, not Compose's default concatenating merge).
+  - **Ch 35 — Securing a Frontend SPA**: 22 slides, 6 self-check (all answered), 3 diagrams (clean). New
+    infra: `labs/react-spa/`. **Live-verified a real environment blocker before building anything**:
+    current Vite requires Node 20.19+/22.12+, but this machine runs Node 18.20.4 — checked each
+    candidate Vite major's actual `engines` field rather than guessing, pinned **Vite 6.4.6** (the newest
+    Node-18-compatible major) plus a compatible `@vitejs/plugin-react@4.7.0`, documented the reasoning
+    honestly in the chapter (same pattern ch32 used for its OpenLDAP image pin). Real app built and run
+    (`react-oidc-context@3.3.1` + `oidc-client-ts@3.5.0`) for a Riverside Health patient portal. No real
+    browser tool exists in this environment — handled the same way ch13 handled an equivalent gap:
+    verified the compiled bundle's config directly, and proved the full protocol round trip for real via
+    a curl+cookie-jar PKCE exchange (code_verifier cross-checked via both `openssl` and Python
+    `hashlib`) against the exact same Keycloak client. **Found a genuine, honestly-reported contrast**:
+    this real Keycloak instance returns distinct, diagnostic `error_description` values per PKCE failure
+    cause, unlike chapter 13's Duende demo server (identical generic error for every cause) — and a
+    second contrast, that a bad `redirect_uri` here gets an immediate 400 with no redirect at all, where
+    chapter 13's demo server had redirected anyway.
+  - **Ch 36 — Service-to-Service & Machine-to-Machine Auth**: 17 slides, 6 self-check (all answered), 3
+    diagrams (one borderline text-width fix applied pre-ship). No new `labs/` folder — reused
+    `labs/docker/docker-compose.yml` unmodified, like ch31, using Keycloak's own Admin REST API as the
+    real protected "downstream service" for a Meridian Trust fraud-detection case study. **Real,
+    unplanned finding**: a service account with a correctly-confirmed `view-users` role mapping still
+    got a flat 401 (not 403) on the Admin REST API, because the Admin REST API runs two independent
+    checks — an earlier scope-gated authentication check (the `kc-admin-api` client scope, missing by
+    default on a custom client, present by default on `admin-cli`) and a later role-gated authorization
+    check — and a correct role mapping doesn't help if the token never clears the first gate. Added the
+    scope, got a real 200; proved the real 403 scope boundary on an out-of-scope write; added a second,
+    no-role-mappings client to prove a 403 (not 401) from that distinct failure mode too. Correctly
+    recognized mid-build that the `kc-admin-api` mechanism was already named by chapter 27 and
+    `admin-api-and-cli`'s own glossary, and rewrote the chapter's framing to recall that rather than
+    present it as a fresh discovery — the chapter's genuine new contribution is the 401-vs-403
+    distinction for a *custom* client that doesn't get the scope for free.
+  - **Coordinator verification**: all 3 files re-parsed cleanly, tag balance confirmed, all mount-point
+    ids present exactly once, `CURRENT_CHAPTER`/`chapterSlug`/`renderQuiz` slugs matching (fixed one
+    mismatch: ch34's `renderQuiz` call said 15 but 18 questions were proposed — corrected to 18 during
+    merge). Confirmed via `git diff --stat` that `glossary-data.js`/`quiz-data.js`/`nav-data.js`/`labs/
+    docker/docker-compose.yml` were untouched by any of the 3 agents. Confirmed both new lab folders'
+    build artifacts (`target/`, `node_modules/`) are `.gitignore`d, not tracked. Re-served the whole site
+    and `curl`-confirmed `200` for the shell pages and all 3 new chapters.
+  - **Central glossary/quiz merge**: extended 34 existing terms' `chapters` arrays — 4 of them
+    (`Service account`, `Client credentials grant`, `Scope (OAuth)`, `Confidential client (Keycloak)`)
+    were independently requested by two different agents each and merged to include both new slugs in
+    one pass rather than overwriting. Declined one flagged extend-candidate (`Blast radius (token
+    theft)`, proposed by ch36) as a coordinator judgment call — the existing term's definition is
+    token-theft-specific, and ch36's reasoning, while analogous, was actually about a leaked client
+    secret, a distinct scenario; left unextended rather than stretching the term's scope. Appended 40 new
+    glossary terms (17 ch34 + 15 ch35 + 8 ch36 — ch34 self-reported 18 but the actual itemized list
+    contained 17; harmless subagent miscount, not chased further) — glossary now **563 terms, zero
+    duplicate names**. Appended 3 new quiz pools (18 ch34 + 16 ch35 + 16 ch36 = 50 questions) — quiz
+    pools now **37 pools, 623 questions, zero duplicate ids, zero malformed entries**. Re-typed 3 of
+    ch34's own questions (`bak-03`/`bak-07`/`bak-12`) from `bug` to `scenario` per the agent's own
+    flagged recommendation, bringing its scenario share to exactly 50% (9/18) to meet the template's
+    floor — content unchanged, only the `type` tag.
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 34-36 only after all the above passed.
+  - **Part VI is now fully complete** (chapters 31-36, all 6 chapters). **Part VII (chapters 37-38) is
+    next** per the Queue — GATE-5 sits right after it.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is

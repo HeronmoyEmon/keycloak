@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service-to-Service &amp; Machine-to-Machine Auth — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "service-to-service-auth";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~45 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>36. Service-to-Service &amp; Machine-to-Machine Auth</h1>
+        <p class="lede">Not every caller of a protected API is a person sitting at a browser. A nightly batch
+        job, a fraud-scoring pipeline, or a monitoring agent needs to authenticate too — with no user to log
+        in, no browser to redirect, and ideally no standing password baked into a config file. Keycloak's
+        answer is the <strong>service account</strong>: a dedicated, non-human identity attached to a client,
+        reachable only through the OAuth 2.0 client credentials grant, and governed by the exact same
+        role-mapping mechanics as any human user. This chapter builds one for real, scopes it down to the
+        narrowest access that still does its job, and proves — with real HTTP responses, not assumptions —
+        exactly where that scope boundary actually sits.</p>
+
+        <h2>Why this matters</h2>
+        <p>Machine-to-machine (M2M) credentials are a favorite target precisely because nobody is watching a
+        login screen for them — a service account with broad, unreviewed access is a standing, silent
+        liability until the day it's abused. An IAM specialist who can only secure <em>human</em> logins has
+        covered half the attack surface. This chapter's lab also puts chapter 27's <code>kc-admin-api</code>
+        finding to the test for the first time against a client that doesn't get it for free: correct role
+        mappings alone were not enough to call the Admin REST API in this chapter's own test run — the
+        <code>kc-admin-api</code> scope chapter 27 noticed on <code>admin-cli</code>'s token turned out to be
+        a separate, required gate, and a custom client has to be wired up for it deliberately. The resulting
+        distinction — authentication failing versus authorization failing, a flat 401 versus a clean 403 —
+        is exactly the kind of debugging instinct this role needs.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 13 defined the <strong>client credentials grant</strong> (RFC 6749 §4.4): the client
+          authenticates directly to the token endpoint with its own credentials — a client ID and secret, no
+          user, no browser, no redirect — and receives an access token scoped to <em>itself</em>, not to any
+          resource owner. Chapter 14 drilled that mechanic further with introspection and revocation against
+          a public demo server's <code>m2m</code> client. This chapter is that same grant, for the first
+          time against a real Keycloak realm this course controls, with a concrete payoff: Keycloak's own
+          <strong>service account</strong> feature is simply "give a client a dedicated user, so the client
+          credentials grant has someone to issue a token <em>as</em>."</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="recall-client-credentials" data-title="Recall: the client credentials grant">
+        <h2>Recall: the client credentials grant, no user involved at any point</h2>
+        <p>Before touching Keycloak specifically, the shape of the grant chapter 13 taught is worth having
+        fresh: two parties, one request, no redirect.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 720 220" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The client credentials grant: a direct, two-party exchange with no user or browser</title>
+            <desc id="d1">A box labeled client application on the left sends one direct request to a box
+            labeled authorization server token endpoint on the right, carrying its own client id and client
+            secret and the grant type client_credentials. The token endpoint responds directly with an
+            access token scoped to the client itself. No browser, no redirect, and no resource-owner user box
+            appear anywhere in this diagram, unlike the authorization-code grant chapter 13 also covered.</desc>
+            <rect x="30" y="80" width="190" height="64" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="125" y="106" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Client application</text>
+            <text x="125" y="124" text-anchor="middle" class="diagram-label-muted" font-size="10">own client_id + client_secret</text>
+
+            <rect x="500" y="70" width="200" height="84" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="600" y="98" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Authorization server</text>
+            <text x="600" y="116" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">token endpoint</text>
+            <text x="600" y="134" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">(Keycloak realm)</text>
+
+            <line x1="222" y1="100" x2="498" y2="100" class="diagram-stroke" marker-end="url(#arrowM1)"/>
+            <text x="360" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">grant_type=client_credentials</text>
+            <text x="360" y="64" text-anchor="middle" class="diagram-label-muted" font-size="10">+ client_id + client_secret</text>
+
+            <line x1="498" y1="128" x2="222" y2="128" class="diagram-stroke" marker-end="url(#arrowM1)"/>
+            <text x="360" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">access token, scoped to the client itself</text>
+
+            <text x="360" y="195" text-anchor="middle" class="diagram-label-muted" font-size="11">No browser. No redirect. No resource-owner user — the client IS the subject.</text>
+
+            <defs>
+              <marker id="arrowM1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 36.1 — The client credentials grant chapter 13 established: a single direct
+          request/response pair between the client and the token endpoint, with no human in the loop.</figcaption>
+        </figure>
+
+        <p>Chapters 13-14 ran this grant against a public demo server's <code>m2m</code> client, which simply
+        existed already. This chapter's open question is the one that mattered less there: <em>who, inside
+        Keycloak, is the subject of the token this grant produces</em> — and the answer turns out to be a
+        real, addressable user record, not an abstraction.</p>
+      </section>
+
+      <section class="slide" data-slide="service-account-mechanism" data-title="Service accounts: a dedicated user, not a special case">
+        <h2>Service accounts: a dedicated user record, not a special case</h2>
+        <p>Enable <strong>Service accounts roles</strong> on a confidential client and Keycloak does something
+        very literal: it creates a real <code>User</code> record in that realm, named
+        <code>service-account-&lt;clientId&gt;</code>, permanently tied to that one client. This chapter's lab
+        confirmed it directly — a plain <code>GET users?username=service-account-fraud-detection-service</code>
+        returns a real user object, with a real internal id, indistinguishable in shape from any human user's
+        record.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The service-account mechanism: client, dedicated user, role mapping, scoped token, scoped access</title>
+            <desc id="d2">A horizontal chain of five boxes connected left to right. Box 1: the confidential
+            client, fraud-detection-service, with service accounts enabled. Box 2: its own dedicated user
+            record, service-account-fraud-detection-service, created automatically and addressed by a normal
+            internal user id exactly like a human user. Box 3: a client-role mapping placed directly on that
+            user's id, specifically the view-users role from the realm-management client, using the same
+            role-mappings endpoint any human user's roles go through. Box 4: a client_credentials token
+            request returns an access token whose subject claim equals that dedicated user's id and whose
+            resource_access.realm-management.roles array lists view-users. Box 5: that token calls the Admin
+            REST API and succeeds only for the operations view-users actually covers, confirmed for real in
+            this chapter's lab with a 200 on a read and a 403 on a write.</desc>
+            <rect x="10" y="110" width="150" height="80" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="85" y="138" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">fraud-detection-</text>
+            <text x="85" y="154" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">service (client)</text>
+            <text x="85" y="172" text-anchor="middle" class="diagram-label-muted" font-size="9">service accounts: ON</text>
+
+            <rect x="195" y="100" width="170" height="100" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="280" y="124" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Dedicated user</text>
+            <text x="280" y="142" text-anchor="middle" class="diagram-label-muted" font-size="9">service-account-</text>
+            <text x="280" y="156" text-anchor="middle" class="diagram-label-muted" font-size="9">fraud-detection-service</text>
+            <text x="280" y="175" text-anchor="middle" class="diagram-label-muted" font-size="9">own real user id</text>
+            <text x="280" y="190" text-anchor="middle" class="diagram-label-muted" font-size="9">(d03a09a5-...)</text>
+
+            <rect x="400" y="100" width="170" height="100" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="485" y="124" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Client-role mapping</text>
+            <text x="485" y="142" text-anchor="middle" class="diagram-label-muted" font-size="9">on that user id:</text>
+            <text x="485" y="158" text-anchor="middle" class="diagram-label" font-size="10">realm-management</text>
+            <text x="485" y="174" text-anchor="middle" class="diagram-label" font-size="10">/ view-users</text>
+            <text x="485" y="190" text-anchor="middle" class="diagram-label-muted" font-size="9">same endpoint as any user</text>
+
+            <rect x="605" y="100" width="150" height="100" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="680" y="124" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Scoped token</text>
+            <text x="680" y="144" text-anchor="middle" class="diagram-label-muted" font-size="9">sub = the dedicated</text>
+            <text x="680" y="158" text-anchor="middle" class="diagram-label-muted" font-size="9">user's id</text>
+            <text x="680" y="176" text-anchor="middle" class="diagram-label-muted" font-size="9">resource_access.</text>
+            <text x="680" y="190" text-anchor="middle" class="diagram-label-muted" font-size="9">realm-mgmt: [view-users]</text>
+
+            <rect x="780" y="105" width="110" height="90" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="835" y="128" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Scoped</text>
+            <text x="835" y="144" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">access</text>
+            <text x="835" y="164" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">GET users → 200</text>
+            <text x="835" y="180" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">POST users → 403</text>
+
+            <line x1="162" y1="150" x2="193" y2="150" class="diagram-stroke" marker-end="url(#arrowM2)"/>
+            <text x="178" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">creates</text>
+            <line x1="367" y1="150" x2="398" y2="150" class="diagram-stroke" marker-end="url(#arrowM2)"/>
+            <text x="383" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">maps onto</text>
+            <line x1="572" y1="150" x2="603" y2="150" class="diagram-stroke" marker-end="url(#arrowM2)"/>
+            <text x="588" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">appears in</text>
+            <line x1="757" y1="150" x2="778" y2="150" class="diagram-stroke" marker-end="url(#arrowM2)"/>
+            <text x="767" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">enforces</text>
+
+            <text x="450" y="270" text-anchor="middle" class="diagram-label-muted" font-size="11">Every arrow here was confirmed with a live REST call in this chapter's lab — none inferred.</text>
+
+            <defs>
+              <marker id="arrowM2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 36.2 — The full service-account mechanism this chapter's lab confirmed end to
+          end: a client's own dedicated user, a role mapped directly onto that user's id, a token that carries
+          the result, and an API call enforced against it.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>A client's <strong>Service account roles</strong> tab in the Admin Console is a UI
+          front end over exactly the same mechanism this lab used via REST: it edits role mappings on that
+          client's dedicated service-account user, through the identical
+          <code>users/{id}/role-mappings/clients/{clientUuid}</code> resource any human user's client-role
+          assignment goes through. There is no separate "service account permission system" — it is the
+          ordinary user-role-mapping machinery chapter 23 covered, pointed at a user Keycloak happens to have
+          created for you.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="least-privilege" data-title="Least privilege for machine callers">
+        <h2>Least privilege for a machine caller: why the exact role you pick matters</h2>
+        <p>Keycloak's own built-in <code>realm-management</code> client ships a full menu of admin
+        capabilities as client roles — <code>view-users</code>, <code>manage-users</code>,
+        <code>view-clients</code>, <code>manage-realm</code>, and more — each independently grantable. A
+        fraud-detection service that only ever needs to <em>read</em> account data to score it for risk has
+        no legitimate reason to hold <code>manage-users</code>, which can create, modify, and delete any user
+        in the realm. Chapter 9's threat landscape named exactly this risk: a compromised service credential
+        with broad standing access turns one leaked secret into a realm-wide breach, where a narrowly scoped
+        credential limits the same leak to whatever that one role actually permits. Chapter 23 already showed
+        this mechanism (client roles, composite roles) for human users; this chapter is the identical
+        mechanism applied to a non-human caller, where the stakes of over-granting are arguably higher,
+        because nobody is watching a login screen to notice the account behaving strangely.</p>
+
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>A narrowly-scoped <code>view-users</code> role versus a broad <code>manage-users</code> role, for a read-only M2M caller like Meridian Trust's fraud-detection service</caption>
+            <thead><tr><th><code>view-users</code> (narrow, read-only)</th><th><code>manage-users</code> (broad, read-write)</th></tr></thead>
+            <tbody>
+              <tr><td>A leaked client secret only ever lets an attacker read user data, never alter or delete it</td><td>A leaked client secret lets an attacker create, modify, or delete any user in the realm</td></tr>
+              <tr><td>Matches exactly what a read-only scoring service actually needs to do its job</td><td>Grants far more than the service's own stated purpose requires</td></tr>
+              <tr><td>An auditor reviewing this client's access sees a role name that matches its actual behavior</td><td>An auditor has to separately verify the service never actually uses its write access, rather than reading that fact off the role name</td></tr>
+              <tr><td>Composite role already includes <code>query-users</code>/<code>query-groups</code> — covers realistic read needs without extra grants</td><td>Composite role includes everything <code>view-users</code> does, plus write — no way to "opt out" of the write half once granted</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>"It's just an internal service, nobody will misuse it" is not a least-privilege argument — it's
+          an argument that the blast radius of a credential leak doesn't matter, which is precisely backwards.
+          The whole point of scoping a service account narrowly is that it still protects you on the day the
+          credential leaks anyway, which chapter 9 already established is a question of when, not if, at
+          sufficient scale.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Meridian Trust's fraud-detection service">
+        <h2>Case study: Meridian Trust scopes its fraud-detection service down to read-only</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span>, the retail bank running under PCI-DSS
+          obligations since chapter 11, operates a nightly fraud-scoring pipeline that pulls account and user
+          metadata out of its Keycloak-backed identity layer to feed a risk model — never a browser session,
+          never a human operator, running unattended on a schedule. Before this chapter's redesign, that
+          pipeline's Keycloak client held <code>manage-users</code> "just in case a later feature needed
+          write access" — exactly the over-provisioning chapter 9 warns against, and exactly the kind of
+          finding a PCI-DSS assessor reviewing least-privilege controls would flag on sight. This chapter's
+          lab is that fix, concretely: a <code>fraud-detection-service</code> client whose service account
+          holds <code>view-users</code> alone, proven — not assumed — to still complete its actual job (reading
+          account data) while a write attempt now fails loudly and immediately, long before any assessor ever
+          has to ask about it.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: realm, client &amp; service account">
+        <h2>Lab: a real realm, a real confidential client, a real service account</h2>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack — the same
+        <code>labs/docker/docker-compose.yml</code> environment every Part IV+ chapter uses, unmodified, in an
+        isolated test instance for this chapter's own authoring. Every claimed outcome below is a real HTTP
+        response, not a narrated one.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll until Keycloak is ready, then authenticate <code>kcadm.sh</code>
+          and create a fresh <code>meridian-trust</code> realm:</p>
+          <pre><code>cd labs/docker
+docker compose up -d
+# poll /realms/master/.well-known/openid-configuration until it returns 200, as in every prior lab chapter
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=meridian-trust -s enabled=true</code></pre>
+          <pre><code>Created new realm with id 'meridian-trust'</code></pre></li>
+
+          <li><p>Create the confidential client representing the fraud-detection service, with its service
+          account enabled and no interactive flows at all — this client should never see a browser or a user
+          password:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r meridian-trust \
+  -s clientId=fraud-detection-service -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=false \
+  -s serviceAccountsEnabled=true -s directAccessGrantsEnabled=false</code></pre>
+          <pre><code>Created new client with id '4eea5238-fc49-45e4-a17e-c315aa79d075'</code></pre>
+          <p>Fetch its real secret:</p>
+          <pre><code>CID=4eea5238-fc49-45e4-a17e-c315aa79d075
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/$CID/client-secret" -r meridian-trust</code></pre>
+          <pre><code>{
+  "type" : "secret",
+  "value" : "Io8Nu6ctMbcuUASBgK0EFWu5D9sf8N8lxS9yOSEaMcLw8x0uC3UgbzeBHHhH9iWoXnXC7aJvZO8gdWmHOr2eFu"
+}</code></pre></li>
+
+          <li><p>Confirm, via REST — not assumed — that enabling the service account really did create a
+          dedicated user record, with its own real internal id:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users -r meridian-trust \
+  -q username=service-account-fraud-detection-service</code></pre>
+          <pre><code>[ {
+  "id" : "d03a09a5-40d4-425e-b5e8-ca8e4c88835c",
+  "username" : "service-account-fraud-detection-service",
+  "emailVerified" : false,
+  "enabled" : true,
+  "createdTimestamp" : 1794377671514,
+  "totp" : false,
+  "disableableCredentialTypes" : [ ],
+  "requiredActions" : [ ],
+  "notBefore" : 0,
+  "access" : { "manage" : true }
+} ]</code></pre>
+          <p>A real user object — nothing distinguishes its shape from a human user's record. Every later
+          role mapping in this lab targets this exact id, <code>d03a09a5-40d4-425e-b5e8-ca8e4c88835c</code>.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-role-mapping" data-title="Lab: scoping the service account to view-users">
+        <h2>Lab: mapping the narrow <code>view-users</code> role onto the service account's user</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 3;">
+          <li><p>List the real client roles Keycloak's built-in <code>realm-management</code> client ships —
+          confirming <code>view-users</code> and <code>manage-users</code> both genuinely exist as separate,
+          independently grantable roles, not assumed from documentation:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/&lt;realm-management id&gt;/roles \
+  -r meridian-trust --fields name</code></pre>
+          <pre><code>[ { "name" : "manage-authorization" }, { "name" : "view-users" },
+  { "name" : "query-groups" }, { "name" : "view-authorization" },
+  { "name" : "view-events" }, { "name" : "view-realm" },
+  { "name" : "manage-clients" }, { "name" : "manage-users" },
+  { "name" : "manage-realm" }, { "name" : "query-users" }, ... ]</code></pre></li>
+
+          <li><p>Map <code>view-users</code> directly onto the service account's own user, by username — the
+          exact same <code>add-roles</code> subcommand chapter 23 used for an ordinary human user:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r meridian-trust \
+  --uusername service-account-fraud-detection-service \
+  --cclientid realm-management --rolename view-users</code></pre>
+          <p>Succeeds silently, exactly like chapter 23 warned — confirm it with a separate read against that
+          same user id's own role-mappings endpoint, not by trusting the silent exit code:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
+  "users/d03a09a5-40d4-425e-b5e8-ca8e4c88835c/role-mappings/clients/&lt;realm-management id&gt;" \
+  -r meridian-trust</code></pre>
+          <pre><code>[ {
+  "id" : "68901c78-c249-410b-8d13-e3d06ff8e582",
+  "name" : "view-users",
+  "description" : "${role_view-users}",
+  "composite" : true,
+  "clientRole" : true,
+  "containerId" : "e66a221d-270e-4736-bb56-7283f6b0682a"
+} ]</code></pre>
+          <p>Confirmed live, against the service account's own user id — not the client, not some separate
+          "service account roles" object. <code>view-users</code> is itself a <strong>composite role</strong>
+          (<code>"composite": true</code>), which matters in the next slide: a token carrying it will also
+          carry whatever it composes.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-token-gotcha" data-title="Lab: a real token — and a real, non-obvious rejection">
+        <h2>Lab: a real token, and a genuine, non-obvious rejection</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p>Request a token via the client credentials grant, exactly chapter 13's mechanics, and decode
+          its payload:</p>
+          <pre><code>curl -s -X POST "http://localhost:8080/realms/meridian-trust/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=client_credentials" \
+  --data-urlencode "client_id=fraud-detection-service" \
+  --data-urlencode "client_secret=Io8Nu6ctMbcuUASBgK0EFWu5D9sf8N8lxS9yOSEaMcLw8x0uC3UgbzeBHHhH9iWoXnXC7aJvZO8gdWmHOr2eFu"</code></pre>
+          <pre><code>{
+  "sub": "d03a09a5-40d4-425e-b5e8-ca8e4c88835c",
+  "azp": "fraud-detection-service",
+  "preferred_username": "service-account-fraud-detection-service",
+  "resource_access": {
+    "realm-management": { "roles": [ "view-users", "query-groups", "query-users" ] },
+    "account": { "roles": [ "manage-account", "manage-account-links", "view-profile" ] }
+  },
+  "scope": "email profile"
+}</code></pre>
+          <p><code>sub</code> is literally the service account's own user id from the previous slide. The
+          composite <code>view-users</code> role expanded into three effective roles, exactly as its
+          <code>"composite": true</code> flag promised.</p></li>
+
+          <li><p>Call the real target API — Keycloak's own Admin REST API, this chapter's protected
+          "downstream service" — expecting a 200:</p>
+          <pre><code>curl -s -i -H "Authorization: Bearer &lt;token&gt;" \
+  "http://localhost:8080/admin/realms/meridian-trust/users"</code></pre>
+          <pre><code>HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+
+{"error":"HTTP 401 Unauthorized"}</code></pre>
+          <p><strong>A real, unexpected rejection</strong> — not a 403 for insufficient permission, a flat
+          401, despite the role mapping from the previous slide being confirmed correct. Investigating:
+          a token from <code>admin-cli</code> in the <code>master</code> realm, used by every lab chapter
+          since 20, succeeds against this same endpoint — and chapter 27 already decoded exactly why,
+          flagging that its token's <code>scope</code> included <code>kc-admin-api</code>, "a scope an
+          ordinary application client's token would not carry." This service account's own token never
+          requested that scope at all — chapter 27 named the mechanism; this lab is the first time this
+          course has hit the consequence of a client not getting it automatically.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-fix" data-title="Lab: the fix — the kc-admin-api client scope">
+        <h2>Lab: the real fix — a separate, scope-gated audience check</h2>
+        <p>Inspecting the realm's own client scopes turned up the exact <code>kc-admin-api</code> scope
+        chapter 27 had already named on <code>admin-cli</code>'s token, with a self-describing definition
+        confirmed live on this realm, not guessed:</p>
+        <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get client-scopes -r meridian-trust</code></pre>
+        <pre><code>{
+  "name": "kc-admin-api",
+  "description": "Grants access to the Keycloak Admin REST API by adding its required audience to the token",
+  "protocolMappers": [ { "protocolMapper": "oidc-admin-api-audience-mapper", ... } ]
+}</code></pre>
+        <p>That scope was present in the realm but <strong>not</strong> among
+        <code>fraud-detection-service</code>'s default or optional client scopes — so its tokens never
+        requested or received it, and the Admin REST API's authentication layer rejected the token before
+        role mappings were even considered. Adding it as a default scope and re-requesting a token fixed it:</p>
+        <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update \
+  "clients/$CID/default-client-scopes/&lt;kc-admin-api scope id&gt;" -r meridian-trust</code></pre>
+        <p>A fresh token now decodes with <code>"scope": "kc-admin-api email profile"</code> and an
+        <code>aud</code> array that gained <code>http://localhost:8080/admin/realms/meridian-trust</code>
+        alongside <code>realm-management</code> and <code>account</code> — the exact audience that scope's
+        own mapper promises to add.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 860 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Two independent gates between a token and a successful Admin REST API call</title>
+            <desc id="d3">Two stacked gates a bearer token must pass before an Admin REST API call succeeds.
+            Gate one, labeled authentication, scope-gated: does this token carry the kc-admin-api client
+            scope, which adds the Admin REST API's own required audience to the token? If no, the request is
+            rejected with 401 Unauthorized before any role is even checked — this is exactly what this
+            chapter's lab hit on its first real attempt. If yes, proceed to gate two, labeled authorization,
+            role-gated: does the token's resource_access for the realm-management client contain the specific
+            role this exact endpoint and verb require? If no, the request is rejected with 403 Forbidden — a
+            valid, authenticated token that simply lacks permission for this operation. If yes, the call
+            succeeds with a 200.</desc>
+            <rect x="40" y="20" width="780" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="430" y="44" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">GATE 1 — AUTHENTICATION (scope-gated)</text>
+            <text x="430" y="64" text-anchor="middle" class="diagram-label-muted" font-size="10">Does the token carry the kc-admin-api scope (→ the Admin REST API's own required audience)?</text>
+            <text x="430" y="82" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">NO → 401 Unauthorized, before any role is even read</text>
+
+            <line x1="430" y1="100" x2="430" y2="128" class="diagram-stroke" marker-end="url(#arrowM3)"/>
+            <text x="470" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">YES</text>
+
+            <rect x="40" y="130" width="780" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="430" y="154" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">GATE 2 — AUTHORIZATION (role-gated)</text>
+            <text x="430" y="174" text-anchor="middle" class="diagram-label-muted" font-size="10">Does resource_access.realm-management contain the role this exact endpoint + verb needs?</text>
+            <text x="430" y="192" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">NO → 403 Forbidden &#160;&#160;&#160;&#160; YES → 200 OK, the call actually runs</text>
+
+            <text x="430" y="242" text-anchor="middle" class="diagram-label-muted" font-size="11">This chapter's lab hit Gate 1's 401 first, fixed the scope, then proved Gate 2's 403 for real on a write call.</text>
+
+            <defs>
+              <marker id="arrowM3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 36.3 — Two independent gates a bearer token must clear: a scope-gated
+          authentication check first, then a role-gated authorization check — a 401 means the first gate
+          rejected it; a 403 means it passed the first gate but not the second.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="lab-scope-boundary" data-title="Lab: proving the scope boundary is real">
+        <h2>Lab: proving the scope boundary — a real 200, a real 403</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 7;">
+          <li><p>With the <code>kc-admin-api</code> scope fixed, the in-scope read now succeeds for real
+          (a real bank-customer user, <code>jordan.alvarez</code>, created for this test):</p>
+          <pre><code>curl -s -H "Authorization: Bearer &lt;fixed token&gt;" \
+  "http://localhost:8080/admin/realms/meridian-trust/users?briefRepresentation=true"</code></pre>
+          <pre><code>[ {
+  "id": "5823d1d6-4009-4f4e-9658-a7370d9d7d14",
+  "username": "jordan.alvarez",
+  "firstName": "Jordan", "lastName": "Alvarez",
+  "email": "jordan.alvarez@meridiantrust.example",
+  "enabled": true,
+  "access": { "manage": false }
+} ]</code></pre>
+          <p>A real 200 with a real record — and Keycloak's own response body already tells the scoping
+          story on its own: <code>"access": {"manage": false}</code>, per resource, confirming this exact
+          caller cannot manage this exact user, without needing a second request to find that out.</p></li>
+
+          <li><p>Attempt an out-of-scope <strong>write</strong> with the identical token — creating a user
+          requires <code>manage-users</code>, which this service account was never granted:</p>
+          <pre><code>curl -s -X POST -H "Authorization: Bearer &lt;same token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"should-not-be-created","enabled":true}' \
+  "http://localhost:8080/admin/realms/meridian-trust/users"</code></pre>
+          <pre><code>HTTP/1.1 403 Forbidden
+{"error":"HTTP 403 Forbidden"}</code></pre>
+          <p>A real, clean 403 — a valid, authenticated token (it passed Gate 1 from Figure 36.3) rejected
+          purely on permission (Gate 2). No user named <code>should-not-be-created</code> exists afterward.
+          The scope boundary from Figure 36.2 is not theoretical — it's an enforced, confirmed fact.</p></li>
+
+          <li><p><strong>Contrast case</strong>: a second client, <code>no-roles-service</code>, with
+          service accounts enabled, the <code>kc-admin-api</code> scope added (so it clears Gate 1), but
+          <strong>no</strong> <code>realm-management</code> role mapping at all:</p>
+          <pre><code>curl -s -i -H "Authorization: Bearer &lt;no-roles-service token&gt;" \
+  "http://localhost:8080/admin/realms/meridian-trust/users"</code></pre>
+          <pre><code>HTTP/1.1 403 Forbidden
+{"error":"HTTP 403 Forbidden"}</code></pre>
+          <p>Note the difference from this chapter's earlier mistake: this is a clean 403, not a 401 —
+          because this token <em>does</em> carry the right scope (Gate 1 passes), it's simply carrying zero
+          <code>realm-management</code> roles at all (Gate 2 fails completely). A no-role-mappings service
+          account isn't rejected for being unrecognized; it's rejected for being recognized and granted
+          nothing.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-verify-teardown" data-title="Lab: verify &amp; tear down">
+        <h2>Lab: final confirmation, then tear down</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 10;">
+          <li><p>One more independent confirmation before closing out, tying straight back to chapter 27:
+          <code>master</code> realm's own built-in <code>admin-cli</code> client — used by every
+          <code>kcadm.sh config credentials</code> call since chapter 20 — already carries
+          <code>kc-admin-api</code> as a default scope out of the box, which is exactly why it never needed
+          the manual scoping this lab's custom client did:</p>
+          <pre><code>curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=admin" --data-urlencode "password=admin_lab_password"
+# decoded payload includes: "scope": "email kc-admin-api profile"</code></pre>
+          <p>A genuinely useful comparison: Keycloak's own built-in admin tooling ships pre-wired for the
+          Admin REST API; any custom service account has to be wired up deliberately, which is exactly the
+          step this lab's first attempt skipped and then diagnosed.</p></li>
+
+          <li><p>Tear the stack down cleanly:</p>
+          <pre><code>docker compose down -v</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li><strong>A real finding from writing this chapter</strong>: if you see a service account with
+          correctly confirmed <code>realm-management</code> role mappings still get a flat
+          <code>401 Unauthorized</code> against the Admin REST API, the cause is very likely a missing
+          <code>kc-admin-api</code> client scope on that client — the same scope chapter 27 noticed on
+          <code>admin-cli</code>'s token, but which a custom client does not get automatically. It's a
+          separate, scope-gated audience check that runs <em>before</em> role mappings are even consulted.
+          Correct roles do not help if the token never clears this earlier gate. Check whether the realm's
+          <code>admin-cli</code> client (which has this scope by default) succeeds against the same endpoint
+          as a quick sanity comparison.</li>
+          <li>If you see a <code>403 Forbidden</code> instead, the token already cleared the scope gate — the
+          problem is a genuinely missing or wrong role mapping, not a scope issue. Don't "fix" a 403 by adding
+          more client scopes; fix it by checking the role mapping on the service account's actual user id.</li>
+          <li>Confusing a <strong>client role</strong> with a <strong>realm role</strong> for a service
+          account is an easy mistake going in the other direction: <code>realm-management</code>'s roles
+          (<code>view-users</code>, <code>manage-users</code>, etc.) are client roles, scoped to that one
+          client's namespace, not realm roles — mapping them requires <code>--cclientid realm-management</code>
+          on <code>add-roles</code>, not a bare <code>--rolename</code> alone, and a bare realm-role mapping
+          attempt against a client-role name will simply fail to find it.</li>
+          <li>If the Admin Console's own <strong>Service Account Roles</strong> tab on a client's detail page
+          looks empty or confusing, remember it is editing role mappings on that client's dedicated
+          service-account <em>user</em>, not on the client resource itself — the same confusion this chapter's
+          REST-based lab sidesteps by addressing the user id directly, but one worth recognizing if you later
+          work in the console UI instead.</li>
+          <li>Granting <code>manage-users</code> (or worse, a broad composite admin role) to a service account
+          "to save time" because the exact read-only role wasn't obvious is the least-privilege failure
+          Meridian Trust's case study exists to warn against — the narrow role existed
+          (<code>view-users</code>) and did everything the actual job required; the broad grant only added
+          risk with no corresponding benefit.</li>
+          <li>If a service account's token seems to have more effective roles than you explicitly granted,
+          check whether the role you mapped is a <strong>composite role</strong> first (as <code>view-users</code>
+          is, in this chapter's own lab) before assuming something else over-granted it — a composite role's
+          sub-roles appear in the token automatically and are not a separate mistake to chase down.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Enabling a Keycloak client's service account creates a real, dedicated user record
+          (<code>service-account-&lt;clientId&gt;</code>) with its own internal id — confirmed live, not
+          inferred — and that id is what every later role mapping and token subject actually points at.</li>
+          <li>Mapping a role onto a service account uses the exact same mechanism as mapping a role onto any
+          human user — the same <code>add-roles</code> subcommand and the same
+          <code>users/{id}/role-mappings/...</code> endpoint, addressed by the service account's own user id.</li>
+          <li><code>realm-management</code>'s client roles (<code>view-users</code>, <code>manage-users</code>,
+          etc.) are independently grantable — picking the narrowest one that still satisfies a service's real
+          job is a direct application of chapter 9's threat-landscape reasoning and chapter 23's role-mapping
+          mechanics to a non-human caller.</li>
+          <li>Chapter 27 already flagged that <code>admin-cli</code>'s token carries a
+          <code>kc-admin-api</code> scope; this chapter's lab is the first time this course hit the
+          consequence directly — a custom client's service account does not get that scope automatically,
+          and calling the Admin REST API without it fails before role-based authorization is ever
+          consulted.</li>
+          <li>A <code>401 Unauthorized</code> from the Admin REST API with otherwise-correct role mappings
+          points at that missing scope (an authentication-layer rejection); a <code>403 Forbidden</code>
+          points at an actually insufficient role (an authorization-layer rejection) — they are different
+          failures with different fixes, confirmed as genuinely distinct in this chapter's own lab.</li>
+          <li>Keycloak's response body itself can carry scoping information directly — this lab's
+          <code>GET users</code> call returned <code>"access": {"manage": false}</code> per user record,
+          confirming the caller's own limits without a second request.</li>
+          <li>A service account with the right scope but zero role mappings gets a clean 403 on every
+          protected call — recognized and authenticated, but granted nothing — distinct from an
+          unrecognized/unscoped token's 401.</li>
+          <li>Meridian Trust's fraud-detection service moving from an over-provisioned <code>manage-users</code>
+          grant to a narrowly-scoped <code>view-users</code> grant is exactly the least-privilege correction a
+          PCI-DSS access-control review expects to find already in place, not flagged as an open finding.</li>
+          <li>Built-in Keycloak clients like <code>admin-cli</code> ship pre-wired with the
+          <code>kc-admin-api</code> scope; any custom service account intended to call the Admin REST API has
+          to be wired up for it deliberately — it is not implied by role mappings alone.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "service accounts are a special Keycloak feature with their own permission system, separate from normal user roles." Correct this precisely.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>That's wrong. Enabling a client's service account simply creates an ordinary user record (<code>service-account-&lt;clientId&gt;</code>) with its own real user id. Granting it access uses the identical role-mapping mechanism chapter 23 covered for any human user — the same <code>add-roles</code> subcommand and the same <code>users/{id}/role-mappings/clients/{clientUuid}</code> endpoint — just pointed at the id Keycloak happened to create for that client. There is no separate permission system to learn.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab got a 401 Unauthorized on its first real attempt to call the Admin REST API, even though the role mapping was already confirmed correct. What was the actual cause, and why didn't correct role mappings prevent it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The client's token never carried the <code>kc-admin-api</code> client scope, which adds the Admin REST API's own required audience to the token. That scope gates a separate, earlier check — "can this token even call the admin API at all" — that Keycloak evaluates before it ever reads the token's role mappings. Correct role mappings only matter once a token has already cleared that first, scope-gated check; they can't substitute for it.</p>
+          </details></li>
+          <li><details>
+            <summary>Distinguish, for the Admin REST API specifically, what a 401 response tells you versus what a 403 response tells you, using this chapter's own lab results as the example.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A 401 means the token itself was rejected before any permission was checked — in this lab, because it lacked the <code>kc-admin-api</code> scope entirely. A 403 means the token was accepted as valid and authenticated, but the specific operation requested exceeds what its role mappings allow — in this lab, the <code>view-users</code>-only service account got a 403 specifically on a user-creation attempt, which needs <code>manage-users</code>. The 401 is an authentication failure; the 403 is an authorization failure, and they require different fixes (add the missing scope, versus add the missing role).</p>
+          </details></li>
+          <li><details>
+            <summary>Why does granting view-users instead of manage-users to Meridian Trust's fraud-detection service matter in practice, given that the service was never going to intentionally write data anyway?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It matters because the scoping decision only pays off in the scenario where something goes wrong — a leaked client secret, a compromised host running the service, or a bug that calls the wrong endpoint. In all of those cases, intent doesn't protect anything; only the actual granted role does. With <code>view-users</code> alone, any of those failure modes is limited to read access. With <code>manage-users</code> "just in case," the exact same failure modes allow creating, modifying, or deleting any user in the realm — a dramatically larger blast radius for a service whose legitimate job never needed that power in the first place.</p>
+          </details></li>
+          <li><details>
+            <summary>A service account with the kc-admin-api scope but no realm-management role mappings at all calls GET /admin/realms/meridian-trust/users. What HTTP status does it get, and why is that different from a client that never requested kc-admin-api in the first place?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It gets a 403 Forbidden, confirmed directly in this chapter's lab with the <code>no-roles-service</code> client. That's different from the 401 a client without the <code>kc-admin-api</code> scope gets, because this token already clears the scope-gated authentication check (Gate 1) — Keycloak recognizes it as a legitimate, properly-scoped caller. It simply carries zero roles on the <code>realm-management</code> client, so the role-gated authorization check (Gate 2) finds nothing to permit the request with. Recognized-but-granted-nothing (403) and never-cleared-the-gate-at-all (401) are genuinely different failures.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain why view-users showed up in this lab's decoded token as three roles — view-users, query-users, and query-groups — rather than just the one role that was actually mapped.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>view-users</code> is a composite role (confirmed by its own <code>"composite": true</code> field when this lab queried it), meaning it bundles other roles underneath it — in this case <code>query-users</code> and <code>query-groups</code>. A token carrying a composite role automatically carries everything that role composes, the same composite-role mechanic chapter 23 introduced for human users, applied here to a service account with no extra steps needed to make the bundled roles appear.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc6749#section-4.4">RFC 6749 §4.4 — The OAuth 2.0 Authorization Framework: Client Credentials Grant</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_service_accounts">Keycloak Server Administration Guide — Service accounts</a></li>
+          <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak Admin REST API reference</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#assigning-permissions-using-roles-and-groups">Keycloak Server Administration Guide — Assigning permissions using roles and groups</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "service-to-service-auth", 16);
+    SlideDeck.init({ chapterSlug: "service-to-service-auth" });
+  });
+</script>
+</body>
+</html>

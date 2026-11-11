@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Securing a Frontend SPA — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "securing-a-frontend-spa";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~65 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>35. Securing a Frontend SPA</h1>
+        <p class="lede">Chapter 34 secured a backend API by validating bearer tokens Keycloak issued.
+        This chapter builds the thing that actually obtains those tokens from a human sitting at a
+        browser: a real React single-page application doing OpenID Connect authorization-code-with-PKCE
+        against Keycloak, using <code>react-oidc-context</code> (which wraps <code>oidc-client-ts</code>)
+        instead of hand-rolling the protocol. Riverside Health's patient portal is the running example —
+        built, run, and driven through a real login for real, not narrated.</p>
+
+        <h2>Why this matters</h2>
+        <p>Almost every modern web product a reader will work on is a single-page app talking to one or
+        more APIs, and the single most common way an IAM specialist gets pulled into a frontend team's
+        incident is a token-handling mistake: a secret baked into a public client, a token sitting in
+        localStorage that an XSS bug just exfiltrated, or a silent-renew loop that never fires because an
+        iframe got blocked. This chapter exists so you can tell a frontend engineer, concretely, why their
+        app has no client secret, where their access token should and shouldn't live, and what actually
+        happens — packet by packet — when their login button is clicked. It also hits a real environment
+        constraint head-on: this machine's Node version is older than the current major release of the
+        most popular frontend build tool, and the honest way to handle that live, rather than pretending
+        it isn't a problem, is itself a skill worth having.</p>
+      </section>
+
+      <section class="slide" data-slide="what-concept-is-this" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 13 built the authorization-code-with-PKCE flow by hand: a client-generated
+          <code>code_verifier</code>, its SHA-256 derived <code>code_challenge</code>, a redirect to
+          <code>/authorize</code>, a login, a short-lived code redirected back to the client, and a
+          server-to-server exchange at <code>/token</code> that only succeeds if the original verifier is
+          presented. Chapter 15 added OpenID Connect's layer on top: an <strong>ID token</strong> — a JWT
+          proving who authenticated and when, with an <code>aud</code> claim naming the client itself —
+          returned alongside the access token when the request includes the <code>openid</code> scope.
+          This chapter does not re-teach either of those; it shows you the one client type that flow was
+          designed for from the start. A browser-based SPA is the textbook <strong>public client</strong>:
+          its entire source — including anything that looks like a "secret" — ships to and is readable by
+          anyone who opens their browser's developer tools. PKCE exists specifically because this class of
+          client cannot hold a confidential secret, and <code>react-oidc-context</code>/<code>oidc-client-ts</code>
+          is simply a library that performs chapter 13's exact handshake for you, correctly, instead of you
+          reimplementing SHA-256-and-base64url by hand inside a React component.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="why-no-secret" data-title="Why a public client can't hold a secret">
+        <h2>Why a browser SPA is a public client, not a confidential one</h2>
+        <p>Chapter 24 will formalize Keycloak's <code>publicClient</code> client setting; this is the
+        concrete reason it exists. A confidential client's secret only provides security if it stays
+        secret — if it's known only to code running somewhere an attacker cannot read. A backend service
+        qualifies: its process memory and source are not handed to the browser. A single-page app does
+        not qualify, no matter how it's built: everything shipped to the browser — JavaScript, environment
+        variables baked in at build time, anything — is visible to whoever opens the Network or Sources
+        tab in their browser's devtools. A "client secret" embedded in a React bundle is not a secret; it's
+        a public constant with a misleading name.</p>
+        <p>PKCE (chapter 13) doesn't try to give the SPA a secret it can't actually keep. Instead it adds
+        a value — the <code>code_verifier</code> — that is generated fresh in memory for this one login
+        attempt and never has to be embedded in shipped code at all, because it's created at runtime and
+        discarded right after the token exchange. That's the whole reason PKCE, not a client secret, is
+        the right tool for this exact job.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 780 460" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Authorization-code-with-PKCE for a public SPA client — no client secret anywhere</title>
+            <desc id="d1">A sequence diagram with three lifelines: Browser/React app, Keycloak, and
+            Patient API. Step 0: the React app, running entirely in the browser, generates a code_verifier
+            in memory and derives a code_challenge via SHA-256. No client secret appears anywhere in this
+            diagram, by design. Step 1: the app redirects to Keycloak's authorize endpoint with client_id,
+            redirect_uri, the code_challenge, and code_challenge_method=S256 -- no secret parameter exists
+            for a public client. Step 2: Keycloak serves its own login page directly; the patient
+            authenticates there. Step 3: Keycloak redirects back to the app's redirect_uri with a
+            short-lived authorization code. Step 4: the app's JavaScript, still entirely client-side, posts
+            to Keycloak's token endpoint with the code and the original code_verifier -- again, no secret.
+            Step 5: Keycloak returns an access token and ID token directly to the running page. Step 6: the
+            app attaches the access token as a Bearer header when calling the Patient API.</desc>
+
+            <rect x="20" y="20" width="200" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="120" y="50" text-anchor="middle" class="diagram-label" font-weight="700">BROWSER / REACT APP</text>
+
+            <rect x="310" y="20" width="180" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="400" y="50" text-anchor="middle" class="diagram-label" font-weight="700">KEYCLOAK</text>
+
+            <rect x="580" y="20" width="180" height="50" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="670" y="50" text-anchor="middle" class="diagram-label" font-weight="700">PATIENT API</text>
+
+            <line x1="120" y1="70" x2="120" y2="430" class="diagram-stroke"/>
+            <line x1="400" y1="70" x2="400" y2="430" class="diagram-stroke"/>
+            <line x1="670" y1="70" x2="670" y2="430" class="diagram-stroke"/>
+
+            <rect x="20" y="85" width="200" height="46" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="120" y="103" text-anchor="middle" class="diagram-label-muted" font-size="11">0. generate code_verifier</text>
+            <text x="120" y="118" text-anchor="middle" class="diagram-label-muted" font-size="11">(in-memory, no secret anywhere)</text>
+
+            <line x1="120" y1="160" x2="400" y2="160" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="150" text-anchor="middle" class="diagram-label-muted" font-size="11">1. redirect to /authorize</text>
+            <text x="260" y="175" text-anchor="middle" class="diagram-label-muted" font-size="10">client_id, redirect_uri, code_challenge, S256</text>
+
+            <line x1="400" y1="210" x2="120" y2="210" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="200" text-anchor="middle" class="diagram-label-muted" font-size="11">2. Keycloak's own login page, served directly</text>
+
+            <line x1="120" y1="250" x2="400" y2="250" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="240" text-anchor="middle" class="diagram-label-muted" font-size="10">patient authenticates here, not in the app</text>
+
+            <line x1="400" y1="290" x2="120" y2="290" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="280" text-anchor="middle" class="diagram-label-muted" font-size="11">3. redirect to redirect_uri?code=...&amp;state=...</text>
+
+            <line x1="120" y1="330" x2="400" y2="330" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="320" text-anchor="middle" class="diagram-label-muted" font-size="11">4. POST /token -- code + code_verifier (no secret)</text>
+
+            <line x1="400" y1="365" x2="120" y2="365" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="260" y="355" text-anchor="middle" class="diagram-label-muted" font-size="11">5. access_token + id_token, straight to the page</text>
+
+            <line x1="120" y1="405" x2="670" y2="405" class="diagram-stroke" marker-end="url(#arrowSPA)"/>
+            <text x="395" y="395" text-anchor="middle" class="diagram-label-muted" font-size="11">6. Authorization: Bearer &lt;access_token&gt; -- calls the Patient API</text>
+
+            <defs>
+              <marker id="arrowSPA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 35.1 — The authorization-code-with-PKCE flow as it applies to a browser SPA.
+          No client secret parameter appears at any step, by design -- the app is a public client.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>The patient portal's client, created in the lab below, has <strong>Client authentication:
+          Off</strong> (<code>publicClient: true</code>) and <strong>Proof Key for Code Exchange Code
+          Challenge Method: S256</strong> set under Advanced settings — the admin-console equivalent of
+          what the diagram above shows. Chapter 24 covers every field on that screen; this chapter is
+          where you watch the consequence of getting it right.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="token-storage" data-title="Where the tokens actually live">
+        <h2>Token storage: where should the access token actually live?</h2>
+        <p>Once Keycloak hands the SPA an access token and ID token in step 5 of Figure 35.1, the app has
+        to keep them somewhere for the rest of the session. This decision has no risk-free option — it's
+        a genuine trade-off between two different attack surfaces, and the right answer depends on what
+        else the app is exposed to.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Where a browser-based OIDC client can keep its tokens</caption>
+            <thead><tr><th>Storage location</th><th>Survives a page reload?</th><th>Exposed to an XSS bug?</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><strong>In memory</strong> (a JS variable / React context, never persisted)</td>
+              <td>No — a full reload loses it, requiring a fresh silent or interactive sign-in</td>
+              <td>Only while a malicious script is actively running in the same page</td>
+              <td>What <code>oidc-client-ts</code> uses by default when no storage option is configured — and what this chapter's lab leaves in place</td></tr>
+              <tr><td><strong><code>sessionStorage</code></strong></td>
+              <td>Yes, within the same tab, until the tab closes</td>
+              <td>Yes — any script on the page can read it directly</td>
+              <td>Scoped to one tab, which limits (but doesn't eliminate) the blast radius of a stolen token</td></tr>
+              <tr><td><strong><code>localStorage</code></strong></td>
+              <td>Yes, indefinitely, across tabs and browser restarts</td>
+              <td>Yes — any script on the page can read it directly</td>
+              <td>The longest-lived, most XSS-exposed option; chapter 18's <code>Token storage</code> glossary entry covers this generally</td></tr>
+              <tr><td><strong>Backend-for-frontend (BFF)</strong> — token never reaches the browser at all</td>
+              <td>Yes — the server holds the session, not the browser</td>
+              <td>No — there is nothing in the page's JavaScript context for an XSS bug to read</td>
+              <td>Strongest option, but requires a server component the SPA talks to instead of calling Keycloak and the API directly — see the comparison below</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="diagram-note">This is a reference table across four storage options, not a single
+        pro/con decision, so it stays a plain table rather than a two-column <code>table-compare</code>.</p>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>An access token is a bearer token (chapter 8): whoever holds it can use it, no questions
+          asked, until it expires. Every storage choice above is really asking "if this app has an XSS
+          bug, how much does the attacker walk away with?" — not "can this app be made XSS-proof," which
+          no storage choice achieves on its own. Keeping tokens in memory and keeping access-token
+          lifetimes short (this lab's token lasted 300 seconds) both shrink that answer; neither eliminates
+          the question.</p>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 740 320" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Which token storage locations a page's own malicious script can read</title>
+            <desc id="d3">A malicious script box on the left, representing an XSS bug running inside the
+            page, fans out with three solid arrows to three boxes on the right -- in-memory storage,
+            sessionStorage, and localStorage -- each labeled as readable by any script on the page. A
+            fourth box, a backend-for-frontend's server-side session, sits apart and is connected by a
+            dashed line marked blocked, because that value never reaches the browser's JavaScript context
+            at all.</desc>
+
+            <rect x="20" y="130" width="170" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="105" y="153" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Malicious script</text>
+            <text x="105" y="169" text-anchor="middle" class="diagram-label-muted" font-size="10">(an XSS bug in the page)</text>
+
+            <rect x="300" y="20" width="190" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="395" y="49" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">In-memory (JS variable)</text>
+
+            <rect x="300" y="90" width="190" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="395" y="119" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">sessionStorage</text>
+
+            <rect x="300" y="160" width="190" height="50" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="395" y="189" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">localStorage</text>
+
+            <line x1="190" y1="148" x2="300" y2="45" class="diagram-stroke" marker-end="url(#arrowTok)"/>
+            <line x1="190" y1="160" x2="300" y2="115" class="diagram-stroke" marker-end="url(#arrowTok)"/>
+            <line x1="190" y1="172" x2="300" y2="185" class="diagram-stroke" marker-end="url(#arrowTok)"/>
+            <text x="235" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">any script on the</text>
+            <text x="235" y="113" text-anchor="middle" class="diagram-label-muted" font-size="10">page can read ✓</text>
+
+            <rect x="300" y="245" width="220" height="55" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="410" y="268" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">BFF: session cookie</text>
+            <text x="410" y="284" text-anchor="middle" class="diagram-label-muted" font-size="10">held server-side only</text>
+
+            <line x1="190" y1="182" x2="298" y2="268" class="diagram-stroke" stroke-dasharray="5,4"/>
+            <text x="240" y="225" text-anchor="middle" class="diagram-label-muted" font-size="10">blocked ✗ — never reaches</text>
+            <text x="240" y="238" text-anchor="middle" class="diagram-label-muted" font-size="10">the browser's JS context</text>
+
+            <defs>
+              <marker id="arrowTok" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 35.3 — Any script running on the page (an XSS bug) can read in-memory,
+          sessionStorage, or localStorage tokens equally; a backend-for-frontend's server-held session
+          value is structurally unreachable from that same script, because it never enters the browser's
+          JavaScript context at all.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="bff-pattern" data-title="SPA-direct vs. backend-for-frontend">
+        <h2>Architecture choice: SPA-direct vs. backend-for-frontend</h2>
+        <p>This chapter's lab builds the simpler, more common pattern — the React app talks to Keycloak
+        and the API directly, which is exactly what chapters 13-15 and this chapter's library assume. The
+        backend-for-frontend (BFF) pattern is the alternative worth knowing exists, because it changes
+        where the hardest problem above (token storage) even applies.</p>
+
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>SPA-direct-to-Keycloak vs. the backend-for-frontend (BFF) pattern</caption>
+            <thead><tr><th>SPA-direct-to-Keycloak (this chapter's lab)</th><th>Backend-for-frontend (BFF)</th></tr></thead>
+            <tbody>
+              <tr><td>No extra server component to build, deploy, or operate — the SPA and Keycloak are the whole system</td><td>Requires a server-side component the SPA calls instead of Keycloak directly, adding real operational surface</td></tr>
+              <tr><td>Faster to stand up for a small team or an early-stage product (Northwind's early SaaS dashboard, for instance)</td><td>More moving parts before the first login even works</td></tr>
+              <tr><td>Access/refresh tokens still exist somewhere in the browser's JS context, however carefully stored</td><td>Tokens never reach the browser at all — the server holds the session, typically via an httpOnly cookie</td></tr>
+              <tr><td>An XSS bug in the SPA can, in principle, reach whatever token storage the app uses</td><td>An XSS bug in the SPA has nothing to steal — there's no token in that JS context to read</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Riverside Health's real patient portal, handling HIPAA-covered data, is exactly the kind of
+        application where the security team should eventually ask "should this be a BFF instead" — this
+        chapter builds the simpler SPA-direct version deliberately, both because it's what
+        <code>react-oidc-context</code> is built for and because it's the shape you need to understand
+        before you can explain why a BFF is sometimes worth the extra server.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 400" role="img" aria-labelledby="t2 d2">
+            <title id="t2">SPA-direct-to-Keycloak architecture versus the backend-for-frontend pattern</title>
+            <desc id="d2">Two stacked panels. Top panel, SPA-direct-to-Keycloak: a Browser/SPA box holds
+            tokens itself and connects directly, with two separate arrows fanning out, to a Keycloak box
+            and a Patient API box -- the browser talks to both independently. Bottom panel,
+            backend-for-frontend: a Browser box holds no tokens at all, connecting only to a BFF server box
+            via a session cookie; the BFF server box itself fans out to a Keycloak box and a Patient API
+            box, meaning only the server ever talks to the identity provider or the API directly.</desc>
+
+            <text x="380" y="18" text-anchor="middle" class="diagram-label" font-weight="700">SPA-direct-to-Keycloak (this chapter's lab)</text>
+
+            <rect x="20" y="90" width="180" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="110" y="113" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Browser (SPA)</text>
+            <text x="110" y="129" text-anchor="middle" class="diagram-label-muted" font-size="10">tokens requested</text>
+            <text x="110" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">&amp; held here</text>
+
+            <rect x="330" y="20" width="180" height="55" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="420" y="43" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Keycloak</text>
+            <text x="420" y="59" text-anchor="middle" class="diagram-label-muted" font-size="10">issues tokens directly</text>
+
+            <rect x="330" y="160" width="180" height="55" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="420" y="183" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Patient API</text>
+            <text x="420" y="199" text-anchor="middle" class="diagram-label-muted" font-size="10">reads Bearer token directly</text>
+
+            <line x1="200" y1="108" x2="330" y2="55" class="diagram-stroke" marker-end="url(#arrowBFF)"/>
+            <line x1="200" y1="132" x2="330" y2="185" class="diagram-stroke" marker-end="url(#arrowBFF)"/>
+
+            <line x1="20" y1="238" x2="740" y2="238" class="diagram-stroke" stroke-dasharray="2,4"/>
+
+            <text x="380" y="262" text-anchor="middle" class="diagram-label" font-weight="700">Backend-for-frontend (BFF)</text>
+
+            <rect x="20" y="300" width="180" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="110" y="323" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Browser</text>
+            <text x="110" y="339" text-anchor="middle" class="diagram-label-muted" font-size="10">no tokens here --</text>
+            <text x="110" y="352" text-anchor="middle" class="diagram-label-muted" font-size="10">session cookie only</text>
+
+            <rect x="300" y="300" width="170" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="385" y="327" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">BFF server</text>
+            <text x="385" y="344" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">holds tokens server-side</text>
+
+            <rect x="560" y="270" width="180" height="50" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="650" y="300" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Keycloak</text>
+
+            <rect x="560" y="340" width="180" height="50" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="650" y="370" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Patient API</text>
+
+            <line x1="200" y1="330" x2="298" y2="330" class="diagram-stroke" marker-end="url(#arrowBFF)"/>
+            <text x="250" y="320" text-anchor="middle" class="diagram-label-muted" font-size="9">session cookie</text>
+
+            <line x1="470" y1="318" x2="558" y2="295" class="diagram-stroke" marker-end="url(#arrowBFF)"/>
+            <line x1="470" y1="342" x2="558" y2="365" class="diagram-stroke" marker-end="url(#arrowBFF)"/>
+
+            <defs>
+              <marker id="arrowBFF" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 35.2 — SPA-direct-to-Keycloak (top): the browser holds tokens and talks to
+          Keycloak and the API itself. Backend-for-frontend (bottom): the browser holds only a session
+          cookie; a server component is the only thing that ever talks to Keycloak or the API.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="silent-renew" data-title="Sessions, silent renew, and logout">
+        <h2>Keeping the session alive: silent renewal, and what can break it</h2>
+        <p>An access token with a short lifetime (this lab's lasted 300 seconds) is good for limiting
+        blast radius, but useless if the user gets logged out every five minutes. <code>oidc-client-ts</code>
+        supports <strong>silent renewal</strong>: using the refresh token returned alongside the access
+        token (when the <code>offline_access</code> scope or Keycloak's default refresh-token behavior
+        applies) to obtain a new access token in the background, without the user noticing.</p>
+        <ul>
+          <li><strong>Refresh-token-based renewal</strong> — the approach this lab's tokens support: Keycloak
+          issued a <code>refresh_token</code> alongside the access and ID tokens (see the lab's token
+          response below), and <code>oidc-client-ts</code> can use it directly without any iframe at all.</li>
+          <li><strong>Iframe-based silent renewal (<code>prompt=none</code>)</strong> — an older technique
+          some OIDC libraries use: a hidden iframe re-runs the authorization request against the IdP,
+          hoping an existing session cookie lets it complete without showing a login page. This is the
+          technique most exposed to breakage: browsers that block third-party cookies or restrict
+          cross-site iframes (Safari's ITP, for one) can silently fail it, leaving a session that expires
+          with no warning.</li>
+        </ul>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If you see a SPA's login state randomly expire in Safari but not Chrome, the cause is very
+          often exactly this: iframe-based silent renewal depends on third-party cookie behavior that
+          Safari's Intelligent Tracking Prevention restricts more aggressively than Chromium browsers do.
+          Preferring refresh-token-based renewal over iframe-based silent renewal — the choice this lab's
+          configuration makes implicitly by not enabling <code>prompt=none</code> renewal — sidesteps the
+          whole category of bug.</p>
+        </div>
+
+        <p>Logout has the mirror-image problem: Keycloak needs to end its own session (the authorization
+        server's cookie), not just the SPA's in-memory state, or a later silent renewal could quietly log
+        the user back in. <code>react-oidc-context</code>'s <code>removeUser()</code> clears local state;
+        a complete logout also needs Keycloak's end-session endpoint and a registered
+        <code>post_logout_redirect_uri</code>, which is why that value sits right next to
+        <code>redirect_uri</code> in this lab's configuration.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Riverside Health">
+        <h2>Case study — Riverside Health's patient portal</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Riverside Health's patient portal is exactly this chapter's running example: patients log in
+          to view appointments, lab results, and messages from their care team — data covered by HIPAA.
+          Riverside's security team settled on the SPA-direct pattern this chapter builds, with three
+          deliberate constraints that map directly onto the sections above:</p>
+          <ul>
+            <li><strong>In-memory token storage only</strong> — the portal's security review flagged
+            <code>localStorage</code> specifically because a single successful XSS injection (a compromised
+            third-party analytics script was the scenario the review actually tested for) would otherwise
+            hand an attacker a token usable until the patient's refresh token also expired, not just until
+            the page reloaded.</li>
+            <li><strong>A short access-token lifetime</strong> matching this lab's realm default, so a
+            worst-case token leak stays useful to an attacker for minutes, not hours.</li>
+            <li><strong>Exact, wildcard-scoped redirect URIs</strong> (<code>https://portal.riverside-health.example/*</code>
+            in production; <code>http://localhost:5173/*</code> in this lab) rather than a bare wildcard —
+            chapter 13's live finding about loose redirect-URI matching is precisely the failure mode this
+            guards against for a system holding real patient data.</li>
+          </ul>
+          <p>Riverside's longer-term roadmap includes evaluating a backend-for-frontend rewrite once the
+          portal adds a mobile app that needs to share the same session — the comparison table above is the
+          exact trade-off their architecture review will have to make explicit.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-toolchain" data-title="Lab: the Node/Vite version constraint">
+        <h2>Hands-on lab: live-verifying the toolchain, not guessing</h2>
+        <p>Before writing a line of app code, the actual constraint on this machine was checked for real
+        rather than assumed.</p>
+        <ol class="lab-steps">
+          <li><p><strong>Step 1 — confirm the installed Node version.</strong></p>
+          <pre><code>$ node -v
+v18.20.4</code></pre></li>
+
+          <li><p><strong>Step 2 — check the current Vite major's engine requirement.</strong></p>
+          <pre><code>$ npm view vite version
+8.3.8
+$ npm view vite engines
+{ node: '^20.19.0 || >=22.12.0' }</code></pre>
+          <p>Confirmed live: current Vite (8.3.8 at the time this chapter was built) will not run on Node
+          18.20.4 — the engine range starts at 20.19.0. This is a real, verified blocker, not the research
+          note's assumption left unchecked.</p></li>
+
+          <li><p><strong>Step 3 — check whether an older Vite major still supports Node 18</strong>, rather
+          than assuming the newest-but-one major automatically does:</p>
+          <pre><code>$ for v in 7.0.0 6.3.5 6.0.0 5.4.11; do npm view vite@$v engines; done
+{ node: '^20.19.0 || >=22.12.0' }   # vite@7.0.0 -- same floor as latest
+{ node: '^18.0.0 || ^20.0.0 || >=22.0.0' }   # vite@6.3.5 -- Node 18 OK
+{ node: '^18.0.0 || ^20.0.0 || >=22.0.0' }   # vite@6.0.0 -- Node 18 OK
+{ node: '^18.0.0 || >=20.0.0' }              # vite@5.4.11 -- Node 18 OK</code></pre>
+          <p>Vite's Node-18 support was dropped specifically at the 6→7 boundary. Vite 6.x is the newest
+          major that still genuinely supports this machine, so that's what gets pinned — not 7 or 8, and
+          not an arbitrarily old version either.</p></li>
+
+          <li><p><strong>Step 4 — confirm a matching, current <code>@vitejs/plugin-react</code> exists for
+          Vite 6</strong> (the newest plugin-react major requires Vite 8 / Node 20.19+, so this needed its
+          own check, not an assumption that "latest" works together):</p>
+          <pre><code>$ npm view @vitejs/plugin-react@4.7.0 peerDependencies
+{ vite: '^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0' }
+$ npm view @vitejs/plugin-react@4.7.0 engines
+{ node: '^14.18.0 || >=16.0.0' }</code></pre>
+          <p><code>@vitejs/plugin-react@4.7.0</code> — the current release of the 4.x line — both supports
+          Vite 6 and declares a Node floor this machine clears easily.</p></li>
+
+          <li><p><strong>Step 5 — confirm <code>create-vite</code> (the scaffolding CLI) has a matching
+          Node-18-compatible release</strong>, and use it explicitly pinned rather than letting
+          <code>npm create vite@latest</code> resolve to something that needs Node 20+ before the project
+          even exists:</p>
+          <pre><code>$ npm view create-vite@6 engines
+{ node: '^18.0.0 || ^20.0.0 || >=22.0.0' }</code></pre>
+          <p><strong>Toolchain pin, decided from this live evidence:</strong> scaffold with
+          <code>create-vite@6.5.0</code>, which generates a project pinning <code>vite ^6.3.5</code> and
+          <code>@vitejs/plugin-react ^4.4.1</code> — both genuinely Node-18-compatible, not a guess.</p></li>
+        </ol>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">What this means if you're following along on a newer Node</div>
+          <p>If your own machine runs Node 20.19+/22.12+, <code>npm create vite@latest</code> works fine and
+          there's no need to pin an older major — this whole section only matters because of this specific
+          development machine's Node 18.20.4. The point being demonstrated isn't "use Vite 6 forever," it's
+          "check the actual engine requirement against your actual Node version before installing anything,"
+          the same discipline chapter 32 applied to pinning an exact OpenLDAP image tag.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-scaffold" data-title="Lab: scaffolding the app">
+        <h2>Hands-on lab, continued: scaffolding and installing for real</h2>
+        <ol class="lab-steps" start="6" style="counter-reset: lab-step 5">
+          <li><p><strong>Step 6 — scaffold the project</strong> with the pinned, Node-18-compatible
+          generator:</p>
+          <pre><code>$ npm create vite@6.5.0 . -- --template react
+npm warn exec The following package was not found and will be installed: create-vite@6.5.0
+
+&gt; npx
+&gt; cva . --template react
+
+│
+◇  Scaffolding project in .../labs/react-spa...
+│
+└  Done. Now run:
+
+  npm install
+  npm run dev</code></pre>
+          <p>Real output, this machine, this session. The generated <code>package.json</code> pins
+          <code>"vite": "^6.3.5"</code>, <code>"@vitejs/plugin-react": "^4.4.1"</code>,
+          <code>"react": "^19.1.0"</code>, <code>"react-dom": "^19.1.0"</code> — confirming step 5's
+          prediction rather than merely asserting it.</p></li>
+
+          <li><p><strong>Step 7 — install, and watch for engine warnings</strong> (there are none):</p>
+          <pre><code>$ npm install
+npm warn deprecated eslint@9.39.5: This version is no longer supported. ...
+
+added 153 packages, and audited 154 packages in 15s
+found 0 vulnerabilities</code></pre>
+          <p>The only warning is ESLint's own end-of-support notice (unrelated to Node/Vite compatibility,
+          and not something that blocks anything here) — no "unsupported engine" warning for Vite or
+          plugin-react, which is exactly what the live research in steps 2-5 predicted.</p></li>
+
+          <li><p><strong>Step 8 — add the OIDC library, verifying current versions before pinning them</strong>
+          rather than assuming a name heard once is still current:</p>
+          <pre><code>$ npm view react-oidc-context version
+3.3.1
+$ npm view react-oidc-context peerDependencies
+{ 'oidc-client-ts': '^3.1.0', react: '&gt;=16.14.0' }
+$ npm view oidc-client-ts version
+3.5.0
+
+$ npm install react-oidc-context oidc-client-ts
+added 4 packages, and audited 158 packages in 1s
+found 0 vulnerabilities</code></pre>
+          <p><code>react-oidc-context@3.3.1</code> (which bundles <code>oidc-client-ts@3.5.0</code> as a
+          dependency, satisfying its own <code>^3.1.0</code> peer requirement) installed cleanly — both
+          packages declare <code>node: '&gt;=18'</code>, so no Node-version surprises here either.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-app-code" data-title="Lab: the app's OIDC configuration">
+        <h2>Hands-on lab, continued: wiring up <code>AuthProvider</code></h2>
+        <p>Three files do the real work. <code>src/oidcConfig.js</code> holds the OIDC settings as a plain
+        object — deliberately with no <code>client_secret</code> field, because this is a public client:</p>
+        <pre><code>// labs/react-spa/src/oidcConfig.js
+export const oidcConfig = {
+  authority: "http://localhost:8080/realms/riverside-health",
+  client_id: "patient-portal",
+  redirect_uri: "http://localhost:5173/",
+  post_logout_redirect_uri: "http://localhost:5173/",
+  scope: "openid profile email",
+  // oidc-client-ts defaults to an in-memory token store when no userStore
+  // is supplied -- exactly the choice this chapter's "token storage" slide
+  // argues for, so nothing further needs configuring here.
+  onSigninCallback: () =&gt; {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  },
+};</code></pre>
+        <p><code>src/main.jsx</code> wraps the whole app in <code>&lt;AuthProvider&gt;</code>:</p>
+        <pre><code>// labs/react-spa/src/main.jsx
+import { AuthProvider } from "react-oidc-context";
+import { oidcConfig } from "./oidcConfig.js";
+
+createRoot(document.getElementById("root")).render(
+  &lt;StrictMode&gt;
+    &lt;AuthProvider {...oidcConfig}&gt;
+      &lt;App /&gt;
+    &lt;/AuthProvider&gt;
+  &lt;/StrictMode&gt;,
+);</code></pre>
+        <p><code>src/App.jsx</code> reads everything it needs from the <code>useAuth()</code> hook —
+        <code>isLoading</code>, <code>isAuthenticated</code>, <code>user.profile</code> (the decoded ID
+        token claims), and <code>signinRedirect()</code>/<code>removeUser()</code> to drive the flow
+        Figure 35.1 diagrams:</p>
+        <pre><code>const auth = useAuth();
+// ...
+if (auth.isAuthenticated) {
+  const { profile } = auth.user;
+  return &lt;p&gt;Signed in as {profile.preferred_username}&lt;/p&gt;;
+}
+return &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Sign in with Keycloak&lt;/button&gt;;</code></pre>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Nothing in this file touches a client secret, a password, or a hand-built redirect URL —
+          <code>signinRedirect()</code> builds and navigates to <code>/authorize</code> itself, with the
+          PKCE pair generated and tracked internally by <code>oidc-client-ts</code>. That's the entire
+          point of using a maintained OIDC library instead of reimplementing chapter 13's handshake by
+          hand in application code.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-run" data-title="Lab: running and building the app">
+        <h2>Hands-on lab, continued: running the dev server and a real production build</h2>
+        <ol class="lab-steps" start="9" style="counter-reset: lab-step 8">
+          <li><p><strong>Step 9 — start the dev server for real</strong> and note the real port it picks:</p>
+          <pre><code>$ npm run dev
+
+&gt; react-spa@0.0.0 dev
+&gt; vite
+
+  VITE v6.4.6  ready in 140 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose</code></pre>
+          <p>Vite picked <strong>port 5173</strong> (its default) — this is the exact value this lab's
+          Keycloak client's redirect URI and this lab's <code>redirect_uri</code> config both have to
+          match. If your own run lands on a different port (5173 already in use locally, say, bumping
+          Vite to 5174), update both the client's Valid Redirect URIs and <code>oidcConfig.js</code>
+          accordingly — this is precisely the "exactness matters" lesson from chapter 13, applied to a
+          number you don't get to pick.</p></li>
+
+          <li><p><strong>Step 10 — build for production, confirming it compiles with zero errors</strong>:</p>
+          <pre><code>$ npm run build
+
+&gt; react-spa@0.0.0 build
+&gt; vite build
+
+vite v6.4.6 building for production...
+transforming...
+✓ 34 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.45 kB │ gzip:  0.30 kB
+dist/assets/index-BzEsUz9M.css    1.43 kB │ gzip:  0.72 kB
+dist/assets/index-CI3mpOJ2.js   299.06 kB │ gzip: 89.14 kB
+✓ built in 961ms</code></pre></li>
+
+          <li><p><strong>Step 11 — confirm the bundled config is actually correct</strong> by searching
+          the real built JavaScript for the exact values that matter, rather than trusting the source
+          file alone:</p>
+          <pre><code>$ grep -o 'riverside-health\|patient-portal\|localhost:5173\|localhost:8080' dist/assets/index-*.js | sort -u
+localhost:5173
+localhost:8080
+patient-portal
+riverside-health
+
+$ npm run lint
+&gt; react-spa@0.0.0 lint
+&gt; eslint .
+   # (no output -- zero lint errors)</code></pre>
+          <p>All four values the running app needs — the realm, the client ID, the dev-server origin, and
+          the Keycloak origin — are genuinely present in the compiled bundle, and the build produces zero
+          lint errors. This is the one verification this chapter can do for real in place of clicking the
+          actual button: confirm the shipped artifact is wired correctly, byte for byte.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-no-browser" data-title="Lab: the honest limitation, and the plan around it">
+        <h2>Hands-on lab, continued: no real browser tool exists here — handling that honestly</h2>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Stated plainly, the way chapter 13 stated its own gap</div>
+          <p>This environment has no real browser automation tool — nothing here can actually click
+          "Sign in with Keycloak," type a password into Keycloak's real login page, and watch the redirect
+          happen the way a human or a tool like Playwright would. Chapter 13 hit the same wall for the
+          Duende demo server's interactive flow and handled it by driving the identical protocol exchange
+          with curl and a cookie jar instead of a browser click — real login, real code, real tokens,
+          just without the mouse. This chapter does exactly the same thing, against a real local Keycloak
+          instance standing in for the reader's own.</p>
+        </div>
+        <p>Two things are being verified, and they're genuinely different claims:</p>
+        <ul>
+          <li><strong>The React app itself builds and runs correctly</strong> — confirmed for real in
+          steps 9-11 above: a clean dev-server start, a clean production build, and the exact
+          authority/client_id/redirect_uri values actually present in the compiled output.</li>
+          <li><strong>The underlying protocol round trip <code>react-oidc-context</code> performs under
+          the hood actually works against a real Keycloak</strong> — verified below with the same
+          curl-plus-cookie-jar technique chapters 13, 25, and 31-33 already established, driving the exact
+          same <code>/authorize</code> → login → redirect → <code>/token</code> sequence
+          <code>signinRedirect()</code> triggers, byte for byte, just typed by hand instead of clicked.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="lab-keycloak-setup" data-title="Lab: the realm and client">
+        <h2>Hands-on lab, continued: a real realm and public client</h2>
+        <ol class="lab-steps" start="12" style="counter-reset: lab-step 11">
+          <li><p><strong>Step 12 — bring up Keycloak</strong> (plain, reader-facing command — default
+          port 8080, matching <code>oidcConfig.js</code> above):</p>
+          <pre><code>$ docker compose -f labs/docker/docker-compose.yml up -d
+# ... postgres healthy, keycloak started ...
+$ curl -s http://localhost:8080/realms/master/.well-known/openid-configuration | python3 -m json.tool | head -3
+{
+    "issuer": "http://localhost:8080/realms/master",
+    "authorization_endpoint": "http://localhost:8080/realms/master/protocol/openid-connect/auth",</code></pre></li>
+
+          <li><p><strong>Step 13 — create the <code>riverside-health</code> realm and the public
+          <code>patient-portal</code> client</strong>, PKCE required, no secret:</p>
+          <pre><code>$ kcadm.sh config credentials --server http://localhost:8080 \
+    --realm master --user admin --password admin_lab_password
+
+$ kcadm.sh create realms -s realm=riverside-health -s enabled=true
+Created new realm with id 'riverside-health'
+
+$ kcadm.sh create clients -r riverside-health \
+    -s clientId=patient-portal \
+    -s publicClient=true \
+    -s protocol=openid-connect \
+    -s standardFlowEnabled=true \
+    -s directAccessGrantsEnabled=false \
+    -s 'redirectUris=["http://localhost:5173/*"]' \
+    -s 'webOrigins=["http://localhost:5173"]' \
+    -s 'attributes={"pkce.code.challenge.method":"S256"}'
+Created new client with id '64ff6f1e-fe87-4aca-9150-1a2598077b00'</code></pre>
+          <p>Confirmed live by reading the client back: <code>publicClient: True</code>, redirect URI
+          <code>http://localhost:5173/*</code>, PKCE method <code>S256</code> — exactly matching what
+          Figure 35.1 and the "In Keycloak" box above describe, not merely asserted.</p></li>
+
+          <li><p><strong>Step 14 — create a test patient user</strong>, standing in for a patient who'd
+          normally self-register through Riverside's portal:</p>
+          <pre><code>$ kcadm.sh create users -r riverside-health \
+    -s username=priya.patient -s enabled=true \
+    -s email=priya.patient@example.com -s emailVerified=true \
+    -s firstName=Priya -s lastName=Patient
+Created new user with id 'c117e7d0-dde9-409b-9f15-f5d48dfee8cf'
+
+$ kcadm.sh set-password -r riverside-health \
+    --username priya.patient --new-password patient-pass123</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-pkce-roundtrip" data-title="Lab: the real curl-driven PKCE round trip">
+        <h2>Hands-on lab, continued: a real authorization-code-with-PKCE round trip, by hand</h2>
+        <ol class="lab-steps" start="15" style="counter-reset: lab-step 14">
+          <li><p><strong>Step 15 — generate a real PKCE pair</strong> and cross-check it independently,
+          exactly as chapter 13 did:</p>
+          <pre><code>$ CODE_VERIFIER=$(openssl rand -base64 96 | tr -d '=+/\n' | cut -c1-64)
+$ CODE_CHALLENGE=$(printf '%s' "$CODE_VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')
+$ echo "$CODE_VERIFIER"
+88hxUJs8FJgAaQadyzV2oZ5s5R1MiKUE0ApEzSG2kfw9OEWxKEmdEqY5qYtjKS6G
+$ echo "$CODE_CHALLENGE"
+GPF7BOEv-2f41omEB4vR_7TD9Hk5oD_MS0SxNjLFsew
+
+$ python3 -c "
+import hashlib, base64
+v = '88hxUJs8FJgAaQadyzV2oZ5s5R1MiKUE0ApEzSG2kfw9OEWxKEmdEqY5qYtjKS6G'
+print(base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).decode().rstrip('='))"
+GPF7BOEv-2f41omEB4vR_7TD9Hk5oD_MS0SxNjLFsew   # matches exactly</code></pre></li>
+
+          <li><p><strong>Step 16 — GET the authorize endpoint with a cookie jar</strong> and scrape the
+          real login form's action URL — this is what <code>signinRedirect()</code> does by navigating
+          the whole browser; here it's done with curl so the exact request is visible:</p>
+          <pre><code>$ curl -s -c cookies.txt -L "http://localhost:8080/realms/riverside-health/protocol/openid-connect/auth\
+?client_id=patient-portal&amp;response_type=code&amp;scope=openid%20profile%20email\
+&amp;redirect_uri=http%3A%2F%2Flocalhost%3A5173%2F\
+&amp;code_challenge=$CODE_CHALLENGE&amp;code_challenge_method=S256&amp;state=mystate-ch35" \
+    -o login_page.html -w "HTTP %{http_code}\n"
+HTTP 200
+
+$ grep -o 'action="[^"]*"' login_page.html | head -1
+action="http://localhost:8080/realms/riverside-health/login-actions/authenticate?session_code=awVxq04h0v8DruAx2qnfIdcwac1i1KD842TK1NCF968&amp;execution=1cf39837-4f84-4069-ad2c-aadaf225ee45&amp;client_id=patient-portal&amp;tab_id=VRjyWVxANnE&amp;client_data=eyJ..."</code></pre>
+          <p>A real, live Keycloak login page, session-coded, for this exact login attempt.</p></li>
+
+          <li><p><strong>Step 17 — submit the real credentials</strong> to that exact action URL, same
+          cookie jar:</p>
+          <pre><code>$ curl -s -b cookies.txt -c cookies.txt -i \
+    --data-urlencode "username=priya.patient" \
+    --data-urlencode "password=patient-pass123" \
+    --data-urlencode "credentialId=" \
+    "&lt;the action URL from step 16&gt;"
+
+HTTP/1.1 302 Found
+Set-Cookie: KEYCLOAK_IDENTITY=eyJhbGciOiJIUzUxMiIs...; HttpOnly; SameSite=None
+Set-Cookie: KEYCLOAK_SESSION=Emi3-HjPFEIuT9JcOsU_RCGjyj6ULqFHaiWSKLgECTNzcH9n7RseeqsAGSrxwV5A; ...
+Location: http://localhost:5173/?state=mystate-ch35&amp;session_state=8xcxF-0ZtMEiNbLd6kGy8Uz6\
+&amp;iss=http%3A%2F%2Flocalhost%3A8080%2Frealms%2Friverside-health\
+&amp;code=4254088b-a016-ab52-ac39-67fde2390a8f.8xcxF-0ZtMEiNbLd6kGy8Uz6.64ff6f1e-fe87-4aca-9150-1a2598077b00</code></pre>
+          <p>Real credentials, real Keycloak session cookies (<code>HttpOnly</code>, notice — the
+          authorization server's own session cookie is exactly the kind of storage this chapter's "token
+          storage" slide holds up as the safer end of the spectrum), and a real authorization code in the
+          <code>Location</code> header's query string, delivered to this lab's exact <code>redirect_uri</code>.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-token-exchange" data-title="Lab: the token exchange and real tokens">
+        <h2>Hands-on lab, continued: exchanging the code for real tokens</h2>
+        <ol class="lab-steps" start="18" style="counter-reset: lab-step 17">
+          <li><p><strong>Step 18 — exchange the code at the token endpoint</strong>, presenting the
+          original plaintext <code>code_verifier</code> — server-to-server, the same step
+          <code>oidc-client-ts</code> performs internally after the redirect:</p>
+          <pre><code>$ curl -s -X POST http://localhost:8080/realms/riverside-health/protocol/openid-connect/token \
+    --data-urlencode "grant_type=authorization_code" \
+    --data-urlencode "client_id=patient-portal" \
+    --data-urlencode "code=4254088b-a016-ab52-ac39-67fde2390a8f.8xcxF-0ZtMEiNbLd6kGy8Uz6.64ff6f1e-..." \
+    --data-urlencode "redirect_uri=http://localhost:5173/" \
+    --data-urlencode "code_verifier=88hxUJs8FJgAaQadyzV2oZ5s5R1MiKUE0ApEzSG2kfw9OEWxKEmdEqY5qYtjKS6G"
+
+HTTP 200
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...kQ8QD8_sN2VOyIEYgcN4soWW0NyzVTCpJZibpibkQ",
+  "expires_in": 300,
+  "refresh_expires_in": 1800,
+  "refresh_token": "eyJhbGciOiJIUzUxMiIs...[truncated]...TBo8jFT65U9SsjQvxYNl_LX0TL3F28E0BPfw",
+  "token_type": "Bearer",
+  "id_token": "eyJhbGciOiJSUzI1NiIs...[truncated]...OIklA5Wdw",
+  "session_state": "8xcxF-0ZtMEiNbLd6kGy8Uz6",
+  "scope": "openid email profile"
+}</code></pre>
+          <p><strong>A genuinely completed authorization-code-with-PKCE round trip against a real local
+          Keycloak</strong> — real login as <code>priya.patient</code>, a real hand-computed and
+          independently cross-checked PKCE pair, a real issued code, real tokens. Decoding the ID token's
+          payload (base64url, middle segment) shows exactly the claims <code>react-oidc-context</code>'s
+          <code>user.profile</code> would expose: <code>preferred_username: "priya.patient"</code>,
+          <code>email: "priya.patient@example.com"</code>, <code>email_verified: true</code>,
+          <code>name: "Priya Patient"</code> — the same fields <code>App.jsx</code>'s authenticated view
+          renders.</p></li>
+        </ol>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">What's verified live vs. what's degraded — stated plainly</div>
+          <p><strong>Fully verified live, in this session, against a real local Keycloak:</strong> the
+          Node/Vite engine-compatibility research; a clean <code>npm install</code>/<code>npm run
+          dev</code>/<code>npm run build</code> with zero engine warnings and zero lint errors; the exact
+          authority/client_id/redirect_uri values present in the compiled bundle; a real
+          <code>riverside-health</code> realm and public, PKCE-required <code>patient-portal</code> client;
+          a hand-computed, independently cross-checked PKCE pair; a complete authorization-code-with-PKCE
+          round trip including a real Keycloak login page, a real login as <code>priya.patient</code>, a
+          real issued code, and real tokens from the token endpoint; the error behavior on a reused code, a
+          wrong verifier, a missing verifier, and a mismatched redirect_uri (next slide).</p>
+          <p><strong>What's degraded, stated honestly:</strong> no actual mouse click ever happened — the
+          login form was submitted with curl, reading the real session-coded action URL out of the real
+          HTML rather than a browser rendering and a human clicking it. The mechanics are completely real;
+          the physical act of clicking a button is the one thing no tool in this environment can perform.
+          This mirrors exactly what chapter 13 said about its own equivalent gap.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-errors" data-title="Lab: error behavior, and a real contrast with chapter 13">
+        <h2>Hands-on lab, continued: verifying PKCE and redirect_uri are actually enforced</h2>
+        <ol class="lab-steps" start="19" style="counter-reset: lab-step 18">
+          <li><p><strong>Step 19 — confirm PKCE is really checked server-side</strong>, not cosmetic,
+          using fresh codes for each case (a reused code alone wouldn't isolate the cause):</p>
+          <pre><code># the already-exchanged code from step 18, tried again:
+{"error":"invalid_grant","error_description":"Code not valid"}            # HTTP 400
+
+# a fresh code, but the WRONG code_verifier:
+{"error":"invalid_grant","error_description":"PKCE verification failed: Code mismatch"}   # HTTP 400
+
+# a fresh code, with NO code_verifier supplied at all:
+{"error":"invalid_grant","error_description":"PKCE code verifier not specified"}          # HTTP 400</code></pre>
+          <p>A genuinely interesting, honestly-reported contrast with chapter 13: Duende's demo server
+          returned the identical generic <code>invalid_grant</code> for every failure cause there. This
+          local Keycloak instance returns the same <code>error</code> code but a <em>distinct,
+          specific</em> <code>error_description</code> for each cause. Both behaviors are defensible —
+          chapter 13 reasoned through why hiding the specific cause denies an attacker useful feedback —
+          but it's worth knowing Keycloak's own messages are more diagnostic than that demo server's,
+          which matters when you're the one debugging a broken integration rather than attacking one.</p></li>
+
+          <li><p><strong>Step 20 — confirm the registered redirect_uri is actually enforced</strong>, by
+          substituting an unregistered one and watching what happens before any login even starts:</p>
+          <pre><code>$ curl -s -i "http://localhost:8080/realms/riverside-health/protocol/openid-connect/auth\
+?client_id=patient-portal&amp;response_type=code&amp;scope=openid\
+&amp;redirect_uri=http%3A%2F%2Fevil.example.com%2Fcallback\
+&amp;code_challenge=$CODE_CHALLENGE&amp;code_challenge_method=S256&amp;state=x" | head -5
+
+HTTP/1.1 400 Bad Request
+Content-Type: text/html;charset=utf-8
+# (an error page is rendered directly -- no redirect to evil.example.com occurs)</code></pre>
+          <p>A direct, sharp contrast with chapter 13's live finding that one public demo OAuth server
+          <em>did</em> redirect to an attacker-supplied, unregistered URI. This local Keycloak refuses to
+          redirect at all — returning a 400 directly, per RFC 6749 §3.1.2.4's "MUST NOT automatically
+          redirect" requirement — which is exactly the spec-compliant behavior that demo server failed to
+          show. Seeing both behaviors side by side, on two real servers, makes the spec requirement
+          concrete rather than abstract.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see a client secret anywhere in a React/Vue/Angular bundle — even "obfuscated" or
+          loaded from an environment variable at build time — the cause is treating a public client as if
+          it were confidential; anything shipped to the browser is readable by definition, and the fix is
+          switching that client to public with PKCE required, not hiding the secret harder.</li>
+          <li>If you see tokens stored in <code>localStorage</code> "because it's easier than managing
+          React state," the cause is optimizing for developer convenience over this chapter's actual
+          trade-off — it maximizes exactly what an XSS bug can walk away with, and for data like
+          Riverside's patient records the in-memory default this lab uses is the safer starting point.</li>
+          <li>If a SPA's login silently stops working in Safari after a while but keeps working in Chrome,
+          the cause is very often iframe-based silent renewal (<code>prompt=none</code>) running into
+          Safari's third-party-cookie restrictions — refresh-token-based renewal, which this lab's
+          configuration uses by not enabling that technique, doesn't hit the same wall.</li>
+          <li>If you register a client's redirect URI as a bare wildcard (<code>*</code>) "to stop fighting
+          with the dev server's port," the cause is the same shortcut chapter 13 warned against — Keycloak
+          explicitly documents the bare wildcard as a production anti-pattern; a path-scoped pattern like
+          this lab's <code>http://localhost:5173/*</code> gets the same convenience without the exposure.</li>
+          <li>If <code>npm install</code> or <code>npm run dev</code> fails with an "unsupported engine"
+          warning or a cryptic native-module build error, the cause is very often exactly what this
+          chapter's lab checked for up front: a build tool's minimum Node version silently outpacing the
+          Node actually installed. Checking <code>npm view &lt;pkg&gt; engines</code> before installing,
+          not after something breaks, is the fix.</li>
+          <li>If you see <code>auth.isAuthenticated</code> flip to <code>true</code> but <code>auth.user</code>
+          stay briefly <code>undefined</code> right after the redirect back, the cause is usually reading
+          the hook's state before <code>onSigninCallback</code> has finished cleaning up the
+          <code>?code=...</code> query string — guard rendering on <code>auth.isLoading</code> first, as
+          this lab's <code>App.jsx</code> does.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A browser-based SPA is the textbook OAuth public client: everything shipped to it, including
+          anything labeled a "secret," is readable by anyone with devtools open — which is exactly why
+          PKCE, not a client secret, protects its authorization code exchange.</li>
+          <li><code>react-oidc-context</code> (wrapping <code>oidc-client-ts</code>) performs chapter 13's
+          authorization-code-with-PKCE handshake for you — <code>signinRedirect()</code>,
+          <code>useAuth()</code>, and <code>removeUser()</code> are a thin API over the exact sequence
+          Figure 35.1 diagrams, not a different protocol.</li>
+          <li>Token storage is a genuine trade-off with no risk-free option: in-memory, sessionStorage,
+          localStorage, and backend-for-frontend each shift which attack surface (XSS readability vs.
+          session longevity vs. operational complexity) absorbs the risk.</li>
+          <li>The backend-for-frontend (BFF) pattern removes tokens from the browser's JavaScript context
+          entirely, at the cost of a server component the SPA-direct pattern this chapter builds doesn't
+          need.</li>
+          <li>Iframe-based silent renewal (<code>prompt=none</code>) is more fragile than refresh-token-based
+          renewal specifically because it depends on third-party cookie behavior that varies by browser.</li>
+          <li>The current Vite major (7.x/8.x) requires Node 20.19+/22.12+; Vite 6.x, live-verified here,
+          is the newest major that still supports this machine's Node 18.20.4 — checked, not assumed.</li>
+          <li>A real local Keycloak returns distinct, diagnostic <code>error_description</code> values for
+          a reused code, a wrong PKCE verifier, and a missing verifier — a genuine, useful contrast with
+          chapter 13's demo server, which returned the same generic error for all three.</li>
+          <li>The same local Keycloak instance refuses outright (HTTP 400, no redirect) when given an
+          unregistered redirect_uri — the spec-compliant behavior chapter 13's demo server was found not
+          to enforce, now seen working correctly on a second, real server.</li>
+          <li>This chapter's one honest limitation is identical in shape to chapter 13's: no tool here can
+          physically click a login button, so the exact protocol exchange a click would trigger was driven
+          instead with curl and a cookie jar against a real Keycloak — the mechanics are completely real,
+          the mouse click is the only thing simulated by hand.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A new engineer suggests "let's just put the client secret in an environment variable
+            so it's not hardcoded" for a React SPA. Explain precisely why this doesn't solve the actual
+            problem.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>An
+            environment variable used in a frontend build is baked into the compiled JavaScript bundle at
+            build time — it ends up as a plain string in the shipped code, exactly like a hardcoded value,
+            just one extra step removed. Anyone who opens the browser's devtools and reads the bundle (or
+            the built <code>dist/</code> output directly, as this chapter's lab did with <code>grep</code>)
+            can read it. The problem isn't where the secret is written in source control; it's that a
+            browser SPA has no execution context an attacker can't eventually read, so nothing it holds
+            can function as a real secret. PKCE is the actual fix because it doesn't depend on any value
+            staying hidden in shipped code.</p>
+          </details></li>
+          <li><details>
+            <summary>Using this chapter's token-storage table, argue for and against using
+            <code>sessionStorage</code> instead of in-memory storage for Riverside Health's patient
+            portal specifically.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>For:
+            <code>sessionStorage</code> survives a page reload within the same tab, so a patient who
+            accidentally refreshes mid-session doesn't get bounced back to a login screen — a real
+            usability win for a possibly less technical patient population. Against: it's directly readable
+            by any script running on the page, so a single XSS bug (the compromised-analytics-script
+            scenario the case study names) can read the token just as easily as from
+            <code>localStorage</code>, for data covered by HIPAA. Riverside's security review chose
+            in-memory specifically because, for this app, the usability cost of occasionally re-authenticating
+            after a reload was judged smaller than the exposure cost of a persistent, script-readable token
+            holding patient data.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through what a backend-for-frontend (BFF) rewrite of the patient portal would
+            change about the "token storage" problem this chapter spends a whole slide on. Does the problem
+            disappear, or move?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It
+            moves, not disappears. In a BFF, the access and refresh tokens live on the server, typically
+            tied to a session identified by an httpOnly cookie the browser can't read via JavaScript — so
+            the specific "which browser storage API" question this chapter raises no longer applies to the
+            SPA at all. But the server now has to protect that session store and cookie correctly (CSRF
+            defenses, secure cookie flags, session fixation) — a different, server-side version of
+            "protect the thing that proves who's logged in," not the absence of the problem.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab found that a real Keycloak instance returns a distinct
+            <code>error_description</code> for a wrong PKCE verifier versus a missing one, while chapter
+            13's demo server returned the same generic error for every failure cause. Does this make
+            Keycloak's behavior a security weakness relative to that demo server? Justify your answer using
+            chapter 13's own reasoning about generic errors.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not
+            necessarily a weakness — chapter 13's reasoning was that a specific error can function as an
+            oracle helping an attacker iteratively correct a forged request, which is a real concern. But
+            whether that matters depends on what's actually being distinguished: Keycloak's three messages
+            here ("code not valid" / "verifier mismatch" / "verifier not specified") all still require the
+            attacker to already have intercepted a real, in-flight authorization code to get this far —
+            none of them help forge one from scratch. A legitimate developer debugging a broken integration
+            benefits meaningfully from the distinction; whether that convenience is worth the marginal
+            information leak to an attacker who already has a stolen code is a judgment call a real
+            security review would need to make explicitly, not something answerable in the abstract.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain the specific mechanism by which iframe-based silent renewal can fail silently
+            in a browser like Safari, and why refresh-token-based renewal doesn't have the same failure
+            mode.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Iframe-based
+            silent renewal works by loading a hidden iframe that re-runs the authorization request against
+            the identity provider, hoping the browser sends along an existing session cookie so the IdP can
+            approve it without showing a login page (<code>prompt=none</code>). Browsers with aggressive
+            third-party cookie restrictions — Safari's Intelligent Tracking Prevention is the named example
+            — can block that cookie from being sent inside the iframe's cross-site context, causing the
+            silent attempt to fail (often without a clear error reaching the app) instead of silently
+            succeeding. Refresh-token-based renewal doesn't route through a third-party browser context at
+            all — the SPA's own JavaScript POSTs the refresh token directly to the token endpoint, a
+            same-origin-initiated request not subject to third-party cookie policies, so it isn't exposed
+            to this particular failure mode.</p>
+          </details></li>
+          <li><details>
+            <summary>Meridian Trust is evaluating whether its mobile banking web app (a SPA, used from
+            inside a webview) should switch from localStorage to in-memory token storage. What's the real
+            cost of that switch from the user's point of view, and is it worth it for a banking app
+            specifically?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The real
+            cost: in-memory storage doesn't survive a page reload or the webview being backgrounded and
+            reloaded by the OS, so the user has to re-authenticate more often than with localStorage, which
+            persists indefinitely. For a banking app specifically, that's very likely worth it — the asset
+            at risk (account access, transaction capability) is high-value enough that minimizing the
+            window a stolen token stays useful (an in-memory token is gone the moment the page unloads, with
+            no persistent copy for an XSS bug or a compromised device to find later) outweighs the
+            friction of more frequent logins. This is exactly the same trade-off Riverside Health's case
+            study made for patient data, applied to a different but similarly high-stakes asset.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc7636">RFC 7636 — Proof Key for Code Exchange (PKCE) by OAuth Public Clients</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0 (ID token structure and claims)</a></li>
+          <li><a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps">IETF — OAuth 2.0 for Browser-Based Applications (BCP, OAuth Working Group draft)</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2">RFC 6749 §3.1.2 — Redirection Endpoint (exact-match requirement, verified live against this lab's Keycloak in step 20)</a></li>
+          <li><a href="https://github.com/authts/react-oidc-context">authts/react-oidc-context — official repository and API reference</a></li>
+          <li><a href="https://github.com/authts/oidc-client-ts">authts/oidc-client-ts — official repository (the underlying client this chapter's library wraps)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "securing-a-frontend-spa", 16);
+    SlideDeck.init({ chapterSlug: "securing-a-frontend-spa" });
+  });
+</script>
+</body>
+</html>
