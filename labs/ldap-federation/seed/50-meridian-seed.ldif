@@ -1,0 +1,100 @@
+# Seed data for chapter 32's LDAP federation lab.
+#
+# Stands in for Meridian Trust's existing on-prem staff directory (ou=staff) -- the realistic scenario
+# this chapter uses: a retail bank that already runs LDAP/AD for its employees, federating Keycloak
+# against it instead of duplicating every account. Loaded automatically at container first-start by
+# osixia/openldap:1.5.0's bootstrap mechanism. Base DN dc=meridiantrust,dc=example matches this compose
+# file's LDAP_BASE_DN.
+
+dn: ou=staff,dc=meridiantrust,dc=example
+objectClass: organizationalUnit
+ou: staff
+
+dn: ou=groups,dc=meridiantrust,dc=example
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=jmartinez,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: jmartinez
+cn: Julia Martinez
+sn: Martinez
+givenName: Julia
+mail: jmartinez@meridiantrust.example
+employeeType: Teller
+userPassword: TellerLdap-2026!
+
+dn: uid=dkim,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: dkim
+cn: David Kim
+sn: Kim
+givenName: David
+mail: dkim@meridiantrust.example
+employeeType: LoanOfficer
+userPassword: LoanLdap-2026!
+
+dn: uid=rpatel,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: rpatel
+cn: Rhea Patel
+sn: Patel
+givenName: Rhea
+mail: rpatel@meridiantrust.example
+employeeType: FraudAnalyst
+userPassword: FraudLdap-2026!
+
+dn: uid=swilliams,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: swilliams
+cn: Sara Williams
+sn: Williams
+givenName: Sara
+mail: swilliams@meridiantrust.example
+employeeType: BranchManager
+userPassword: BranchLdap-2026!
+
+dn: uid=aoconnor,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: aoconnor
+cn: Aidan O'Connor
+sn: O'Connor
+givenName: Aidan
+mail: aoconnor@meridiantrust.example
+employeeType: ITAdmin
+userPassword: ITAdminLdap-2026!
+
+dn: cn=tellers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: tellers
+member: uid=jmartinez,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=loan-officers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: loan-officers
+member: uid=dkim,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=fraud-analysts,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: fraud-analysts
+member: uid=rpatel,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=branch-managers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: branch-managers
+member: uid=swilliams,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=it-admins,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: it-admins
+member: uid=aoconnor,ou=staff,dc=meridiantrust,dc=example

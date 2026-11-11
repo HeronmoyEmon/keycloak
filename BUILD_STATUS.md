@@ -1,6 +1,7 @@
 # Build status
 
-Last updated: 2026-11-10 | Docker: 29.6.2 | Java: openjdk 21.0.13.0.3 | Node: v18.20.4 | Python: 3.12.3 |
+Last updated: 2026-11-11 | Docker: 29.6.2 | Java: openjdk 21.0.13.0.3 | Maven: 3.8.7 | Node: v18.20.4 |
+npm: 10.8.2 | Python: 3.12.3 |
 Git: yes, pushed to a GitHub remote (branch `main`). Deploy target: Vercel (not yet connected — do that
 once `index.html` exists, see Open questions). Commits happen per unit; pushes only when the user
 explicitly says to (standing instruction from the user — do not push without being asked).
@@ -40,6 +41,69 @@ structure. Converted via the usual parallel-subagent-then-merge pattern, Part by
 02-09), Part II (10-12), Part III (13-18), and all of Part IV (19-26) and Part V (27-30) are done — see
 Done below for each round's detail (slide/self-check counts, real bugs found+fixed, table-compare
 judgment calls). **Part VI's new content (chapters 31-36) is next per the Queue.**
+
+**Part VI (federation & integration) — Round 1 COMPLETE: chapters 31-33, `built:true`, committed.**
+Unlike chapters 02-30, these are brand-new chapters, built straight into the slide-deck format with real
+hands-on labs, per CLAUDE.md §2.5/§4 — see the Done entry below for full detail (real bugs found/fixed,
+new `labs/ldap-federation/` and `labs/custom-user-storage-spi/` folders, glossary/quiz merge counts).
+**Round 2 (chapters 34-36, next)** needs new `labs/spring-boot-resource-server/` and `labs/react-spa/`
+app scaffolding per Queue item 11, same "establish-then-scale" shape Part IV used.
+
+Round 1 briefs (one subagent per chapter, parallel, each pre-assigned its own isolated Docker Compose
+project name/port up front per the GATE-4/Part V process note):
+
+- **Ch 31 — Identity brokering** (`identity-brokering`, isolated stack `ch31kc` → port 18131). No new
+  infra: brokers from the `northwind-apps` realm to a *second* realm in the same Keycloak instance
+  (e.g. `northwind-corporate-idp`) configured as an OIDC Identity Provider — a real, fully scriptable
+  stand-in for an external corporate IdP, reusing `labs/docker/docker-compose.yml` unmodified. Real lab:
+  create the second realm + a confidential client in it for the broker to use, configure the IdP in
+  `northwind-apps` via the Admin REST API/`kcadm.sh`, then curl-script the full browser-equivalent
+  redirect chain (GET login page → click "Login via Northwind Corporate SSO" → IdP's own login form →
+  POST credentials → follow redirects back → confirm a linked/JIT-provisioned user now exists in
+  `northwind-apps`) using the same cookie-jar/form-scrape curl technique chapters 13/25 already used for
+  headless login simulation. Case study: Northwind Apps brokering enterprise customers' own IdP (ties
+  back to ch07's JIT-provisioning concept). Recalls ch07 (SSO & federation concepts) explicitly.
+- **Ch 32 — User federation: LDAP & Active Directory** (`user-federation-ldap`, isolated stack `ch32kc`
+  → port 18132, LDAP → port 18389). New infra: owns its own compose file at
+  `labs/ldap-federation/docker-compose.yml` (postgres + keycloak + an OpenLDAP container, e.g.
+  `osixia/openldap` — verify current image/tag live before pinning it) seeded via LDIF with a handful of
+  sample users. Keycloak's *native* LDAP federation provider (no custom code) does the real work: add
+  the LDAP User Federation provider via Admin Console/REST, sync, then prove an LDAP-sourced user can
+  really authenticate (direct grant is fine for proof-of-concept verification here, same reasoning ch13
+  used for curl-only grant types). Case study: Meridian Trust's existing on-prem staff directory (a bank
+  already has AD/LDAP for employees — realistic, ties to ch04's directory-services concepts). Recalls
+  ch04 explicitly.
+- **Ch 33 — Custom User Storage SPI** (`custom-user-storage-spi`, isolated stack `ch33kc` → port 18133).
+  New infra: owns `labs/custom-user-storage-spi/` — a real Maven project (Java 21) implementing
+  Keycloak's `UserStorageProvider` SPI against a toy external store (flat JSON/CSV is simplest and
+  avoids a second new container), packaged as a JAR and deployed into `/opt/keycloak/providers/` via a
+  volume mount in that folder's own compose file, then `kc.sh build` + restart to pick it up. **Live-
+  verify the exact SPI Maven coordinates/scopes for Keycloak 26.8.2 before writing the POM** — early
+  research this session found that 26.4+ split some SPI classes out into a newer `keycloak-model-storage`
+  module (Red Hat's migration guide), so `keycloak-server-spi`/`keycloak-server-spi-private` alone may
+  not be enough depending on which classes the provider actually touches; confirm against Maven Central
+  for the `26.8.2`-equivalent coordinates (or the closest available released version) rather than
+  guessing, and say in the chapter if an exact 26.8.2 artifact isn't published and a nearby 26.x version
+  had to substitute — per CLAUDE.md §2's no-invented-facts rule. Case study: Riverside Health's legacy,
+  non-LDAP staff directory needing a bridge instead of a rip-and-replace. Recalls ch04 + ch19 (Keycloak
+  architecture/SPI extensibility) explicitly.
+
+Shared instructions given to all three Round-1 agents: build the chapter directly in the final slide-
+deck format (no conversion step) using `chapters/01-what-is-iam.html` as the structural reference and
+`chapters/27-admin-api-and-cli.html`/`chapters/24-clients-and-scopes.html` as real-lab-chapter precedent
+(lab-step `counter-reset` pattern, case-study callout style, "What concept is this?" recall opener since
+Part VI is Keycloak-specific); full CLAUDE.md §4 template (why this matters, concept sections, case-study
+tie-in, real hands-on lab, common mistakes, 8+ takeaways, 5+ self-check **with model answers already
+included** per the current template — not left unanswered, 15+ quiz questions, verified deep-dive links,
+3+ diagrams checked for both bug classes plus the hardcoded-white-text check); isolate their own Docker
+Compose test run under their assigned project name/port (via a throwaway port-override compose file in
+scratch, not by editing any shared compose file) while documenting the plain standard commands
+(`docker compose up -d`, port 8080) for the reader, exactly like the Part V process note describes; and —
+because these are brand-new chapters, unlike the redesign-rollout conversions — **do not edit
+`glossary-data.js`, `quiz-data.js`, or `nav-data.js` directly** (shared files, central-merge only, to
+avoid 3-way write conflicts); instead report proposed new glossary terms and quiz questions back in the
+exact schema shape (CLAUDE.md §9) for the coordinator to dedupe/merge centrally, same as Part IV/V's
+glossary-collision handling.
 
 Standing environmental note (first hit in ch09, confirmed again independently in ch10 and ch11):
 `hhs.gov` and some other government/vendor domains return HTTP 403 to automated fetches in this
@@ -103,10 +167,13 @@ visuals/examples where it helps, not just re-chunk existing prose.
 10e. ~~Part V (chapters 27-30, 4 chapters)~~ — done 2026-11-10, see Done below. **Redesign rollout
      complete — Part VI (chapters 31-36) is next.**
 
-### Part VI (federation & integration) — queued after the redesign rollout
+### Part VI (federation & integration) — in progress
+12a. ~~Chapters 31-33 (identity brokering, LDAP federation, custom User Storage SPI)~~ — done 2026-11-11,
+     see Done below.
 11. `labs/spring-boot-resource-server/`, `labs/react-spa/` scaffolding (built alongside chapters 34-35,
-    not before — no point scaffolding a lab before its chapter is drafted).
-12. Chapters 31-36 — built as slide decks from the start, no conversion needed.
+    not before — no point scaffolding a lab before its chapter is drafted). **Next.**
+12b. Chapters 34-36 (securing a backend API, securing a frontend SPA, service-to-service/M2M auth) — built
+     as slide decks from the start, no conversion needed.
 
 ### Part VII (fine-grained authorization)
 13. Chapters 37-38.
@@ -799,6 +866,79 @@ project) remain.
     (02-30) now match chapter 1's template**, closing queue items 10a-10e in full. Part VI's new content
     (chapters 31-36, plus the `labs/spring-boot-resource-server/`/`labs/react-spa/` scaffolding) is next
     per the Queue.
+
+### Part VI, Round 1 — chapters 31-33 (identity brokering, LDAP federation, custom User Storage SPI)
+- 2026-11-11: first brand-new-content round of Part VI (not a conversion — `built:false` → `built:true`,
+  no prior files existed). Split into two rounds by infrastructure dependency, mirroring Part IV's
+  "establish-then-scale" shape: Round 1 = chapters 31-33 (mutually independent, each owning its own new
+  `labs/` subfolder), run as 3 parallel subagents, each pre-assigned an isolated Docker Compose project
+  name/port (`ch31kc`→18131, `ch32kc`→18132/LDAP 18389, `ch33kc`→18133) up front. Round 2 (chapters
+  34-36, needing new `labs/spring-boot-resource-server/`/`labs/react-spa/` scaffolding) is next.
+  - **Ch 31 — Identity brokering**: 19 slides, 6 self-check (all answered), 4 diagrams (no genuine bugs;
+    one stray `fill:inherit` cosmetic cleanup). Real lab: brokered `northwind-apps` to a second realm
+    (`northwind-corporate-idp`) acting as a real external OIDC IdP, full headless curl+cookie-jar round
+    trip (authorize → external login → broker callback → First Broker Login → final tokens), confirmed
+    via the Admin REST API that the resulting user was JIT-provisioned with a real `federated-identity`
+    link, never manually created. **Real bug found while building the chapter itself** (not staged):
+    splitting the isolated test stack's browser-facing vs. backend-facing hostnames across two different
+    ports produced a genuine `Wrong issuer from token` error — a real Keycloak-behind-a-proxy gotcha,
+    written up honestly as a "common mistakes" pitfall rather than smoothed over, with the fix (one
+    consistent hostname throughout) documented. Deep-dive links verified live.
+  - **Ch 32 — User federation: LDAP & Active Directory**: 16 slides, 5 self-check (all answered), 3
+    diagrams (2 genuine text-overflow bugs found and fixed pre-ship). New infra: `labs/ldap-federation/`
+    (own `docker-compose.yml` — Postgres + Keycloak 26.8.2 + `osixia/openldap:1.5.0`, live-verified as
+    the newest actual final-release tag since the project's v2 line is still prerelease-only — + a
+    Meridian Trust staff-directory seed LDIF). Real lab, run end to end: seeded LDAP, federated Keycloak
+    against it, full-synced, and **found a real attribute-mapping bug** (the built-in first-name mapper
+    read `cn`, which this directory uses for the full display name, producing `firstName: "Julia
+    Martinez"` instead of `"Julia"`) — diagnosed via the REST-exposed mapper config, fixed by repointing
+    the mapper at `givenName`, re-synced, re-confirmed. Added a custom attribute mapper and a group
+    mapper (neither exists by default); proved live LDAP-bind authentication via direct grant (correct
+    password succeeds, wrong password rejected) and exercised `testLDAPConnection`'s connection-vs-
+    authentication split for real. **Three genuine Docker/LDIF seeding gotchas** hit and documented
+    (bind-mounting a single file breaks the image's in-place `sed`; the image's default bootstrap path
+    *moves*, not copies, a loaded LDIF, silently deleting the host's seed file on the next clean rebuild;
+    a stray occurrence of the word "changetype" in a comment misled the bootstrap script's plain-text
+    add-vs-modify detection) — fixed via the image's `LDAP_SEED_INTERNAL_LDIF_PATH` mechanism, confirmed
+    reset-safe across a full `down -v`/`up -d` cycle.
+  - **Ch 33 — Custom User Storage SPI**: 19 slides, 6 self-check (all answered), 4 diagrams (no genuine
+    bugs). New infra: `labs/custom-user-storage-spi/` — a real Maven project (a read-only
+    `UserStorageProvider`/`Factory` pair bridging a toy CSV "legacy HR" store for the Riverside Health
+    case study). **Live-verified exact Keycloak 26.8.2 SPI Maven coordinates** two independent ways
+    (Maven Central metadata and inspecting the real jars inside the running server image) rather than
+    guessing — confirmed the 26.4+ module split the brief flagged as a risk is real: `UserStorageProvider`
+    now lives in `keycloak-model-storage`, not `keycloak-server-spi`. **Four genuine, kept-not-edited-out
+    build/deploy bugs**: (1) an XML comment containing `--` broke the POM parse (hit twice); (2) a real
+    compile error — `AbstractUserAdapter` leaves `UserModel.credentialManager()` abstract despite
+    "implementing everything but `getUsername()`", fixed by bridging to Keycloak core's own
+    `UserCredentialManager`; (3) a Docker bind-mount race — bringing the stack up before the JAR existed
+    on disk made Docker silently create an empty directory at that path instead of mounting a file; (4)
+    registering the federation component with the realm's human-readable name as `parentId` instead of
+    its real UUID silently orphaned it (`user_not_found` despite HTTP 201) — root-caused via `kcadm.sh
+    get realms/{realm} --fields id,realm` and fixed. Also re-hit and fixed, in a federated-provider
+    context this time, the same Declarative-User-Profile `unmanagedAttributePolicy` gap chapters 22/24
+    found. Real successful/failed direct-grant auths and a full container-log error sweep (clean) both
+    confirmed.
+  - **Coordinator verification**: all 3 files re-parsed cleanly (zero `html.parser` errors), tag balance
+    confirmed, all mount-point ids present exactly once, `CURRENT_CHAPTER`/`chapterSlug`/`renderQuiz`
+    slugs all matching. Confirmed via `git diff --stat` that `glossary-data.js`/`quiz-data.js`/`nav-
+    data.js`/`labs/docker/docker-compose.yml` were untouched by any of the 3 agents (central-merge-only
+    discipline, since these are brand-new chapters needing new shared-file content for the first time
+    since the redesign rollout began). Re-served the whole site locally and `curl`-confirmed `200` for
+    `index.html`/`roadmap.html`/`glossary.html`/`quizzes.html` and all 3 new chapter pages. Confirmed
+    both new `labs/` folders' build artifacts (`target/`) are `.gitignore`d, not tracked.
+  - **Central glossary/quiz merge** (done by the coordinator, not the agents, to avoid 3-way write
+    conflicts on shared files): extended 23 existing terms' `chapters` arrays (5 for ch31 — e.g.
+    `Identity Provider (IdP)`, `JIT provisioning`, `Social login`; 15 for ch32 — directory-services terms
+    from ch04, plus `Direct access grants`; 3 for ch33 — `Declarative User Profile`/`unmanagedAttribute-
+    Policy`/`Unmanaged attribute`) rather than duplicating them, exactly as each agent flagged. Appended
+    47 new glossary terms (15 ch31 + 17 ch32 + 15 ch33) — glossary now **523 terms, zero duplicate
+    names** (checked programmatically via Node). Appended 3 new quiz pools, 16 questions each (48 total,
+    ids prefixed `idb-`/`ldp-`/`spi-`) — quiz pools now **34 pools, 573 questions, zero duplicate ids,
+    zero malformed option arrays/out-of-range answer indices** (checked programmatically via Node).
+  - `nav-data.js`'s `built` flag flipped to `true` for chapters 31-33 only after all the above passed.
+  - **Part VI Round 1 is now complete** (chapters 31-33). **Round 2 (chapters 34-36 + new lab
+    scaffolding) is next** per the Queue.
 
 ## Verify items
 - The visual/rendered check noted above under GATE-1 ("What's NOT yet verified") — no browser tool is

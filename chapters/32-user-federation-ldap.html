@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Federation: LDAP &amp; Active Directory — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "user-federation-ldap";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~55 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>32. User Federation: LDAP &amp; Active Directory</h1>
+        <p class="lede">Almost no organization adopting Keycloak is starting from zero accounts. A bank,
+        a hospital, or a mid-size company nearly always already has a directory — LDAP or Active
+        Directory — holding every employee's account, built and maintained long before anyone proposed
+        adding Keycloak. This chapter is about the Keycloak feature that lets those two facts coexist:
+        <strong>user federation</strong>, Keycloak's native LDAP provider that reads (and optionally
+        writes) an external directory directly, so a specialist never has to choose between "migrate
+        thousands of real employee accounts into Keycloak" and "don't adopt Keycloak for workforce
+        identity at all."</p>
+
+        <h2>Why this matters</h2>
+        <p>Migrating an existing staff directory into a new identity system is slow, risky, and in a
+        regulated environment often simply not allowed — the directory of record has its own change
+        control, its own backup/DR posture, and its own owning team who did not sign up to hand their
+        data to a new system overnight. Federation is the alternative every real deployment with an
+        existing directory reaches for: Keycloak becomes a consumer of the existing directory's identities
+        rather than a second, competing copy of them. An IAM specialist who only knows how to create users
+        by hand in Keycloak's own store cannot onboard a single enterprise customer with their own AD —
+        this chapter is where that limitation ends.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 4 built the vocabulary this whole chapter assumes: a <strong>directory service</strong>
+          is a read-optimized, hierarchical data store for records about people and systems; its data lives
+          in a <strong>Directory Information Tree</strong> made of <strong>entries</strong>, each addressed
+          by a <strong>Distinguished Name</strong>; <strong>LDAP</strong> is the protocol most real
+          directories — including <strong>Active Directory</strong> — expose for talking to that tree; and a
+          <strong>bind operation</strong> is how a client proves a credential against one entry. Chapter 7
+          then named <strong>federation</strong> as connecting an IAM system to one of these existing
+          directories instead of migrating its population, with the directory itself staying the
+          authoritative source of truth. Every one of those words becomes a literal field in a Keycloak
+          admin-console screen in this chapter: the LDAP connection URL, the Bind DN, the Users DN, the
+          object classes a user entry must carry. Nothing here is a new concept — it's chapter 4's
+          vocabulary made concrete and clickable.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="architecture" data-title="Federation architecture">
+        <h2>Where the data lives, and where authentication actually happens</h2>
+        <p>The single most important mental model for this chapter: federating Keycloak against an LDAP
+        directory does not make LDAP "part of" Keycloak's database, and it does not make a user's password
+        pass through Keycloak's own credential store. Two separate things happen, on two separate
+        schedules:</p>
+        <ul>
+          <li><strong>Sync</strong> copies <em>profile</em> data — username, name, email, group membership,
+          whatever a mapper is configured to read — from LDAP into Keycloak's own user table, either once
+          on demand or on a periodic schedule. This is what makes a federated user show up in
+          <code>GET /admin/realms/{realm}/users</code> and in the Admin Console's user list at all.</li>
+          <li><strong>Authentication</strong> (a login, or — as this chapter's lab uses for verification —
+          a direct-grant token request) does <em>not</em> consult that synced copy's password field at
+          all. In the default (import, read-only) configuration this chapter's lab uses, Keycloak performs
+          a real-time LDAP <strong>bind operation</strong> against the directory itself, every time,
+          using the credential the caller just supplied. The directory, not Keycloak, is still the one
+          system that ever checks a password.</li>
+        </ul>
+        <p>This is exactly chapter 7's federation definition made concrete: the directory remains the
+        authoritative store for the credential, and Keycloak only ever borrows an answer from it.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 310" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Two separate paths between Keycloak and an LDAP directory: sync and live authentication</title>
+            <desc id="d1">A central box labeled Keycloak realm sits on the left, an LDAP directory box
+            sits on the right. A top path, labeled Sync (periodic or on-demand), runs from the LDAP
+            directory into Keycloak's own user table, copying profile attributes and group membership — a
+            one-way arrow into Keycloak, used only so federated users are visible and searchable inside
+            Keycloak. A bottom path, labeled Authentication (every login or token request), runs directly
+            from Keycloak's LDAP storage provider to the LDAP directory and back, performing a live bind
+            operation with the credential the user just supplied — this path never touches the synced
+            copy's password field, because LDAP users have none stored in Keycloak at all. A caption notes
+            the directory remains the one authoritative store for the password in both paths.</desc>
+
+            <rect x="30" y="40" width="200" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="130" y="68" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="13">Keycloak realm</text>
+            <text x="130" y="86" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">user table (synced copies)</text>
+
+            <rect x="30" y="190" width="200" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="130" y="218" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="13">Keycloak realm</text>
+            <text x="130" y="236" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">LDAP storage provider</text>
+
+            <rect x="670" y="115" width="200" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="770" y="143" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">LDAP directory</text>
+            <text x="770" y="161" text-anchor="middle" class="diagram-label-muted" font-size="10">authoritative credential store</text>
+
+            <line x1="232" y1="75" x2="668" y2="130" class="diagram-stroke" marker-end="url(#arrowF1)"/>
+            <text x="450" y="90" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Sync (periodic / on-demand)</text>
+            <text x="450" y="104" text-anchor="middle" class="diagram-label-muted" font-size="9">copies profile attrs + group membership — one way, into Keycloak</text>
+
+            <line x1="232" y1="225" x2="668" y2="165" class="diagram-stroke" marker-end="url(#arrowF2)"/>
+            <line x1="668" y1="172" x2="232" y2="232" class="diagram-stroke" marker-end="url(#arrowF2)"/>
+            <text x="450" y="255" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Authentication (every login / token request)</text>
+            <text x="450" y="270" text-anchor="middle" class="diagram-label-muted" font-size="9">live LDAP bind with the credential just supplied — never the synced copy</text>
+
+            <text x="450" y="300" text-anchor="middle" class="diagram-label-muted" font-size="10">The directory is the only system that ever checks a password, on either path.</text>
+            <defs>
+              <marker id="arrowF1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+              <marker id="arrowF2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-success"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 32.1 — Sync populates Keycloak's own user table for visibility and search;
+          authentication is a separate, live bind against the directory every time, confirmed directly in
+          this chapter's lab by a successful direct grant for an LDAP-sourced user and a rejected one for a
+          wrong password.</figcaption>
+        </figure>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>A "synced" LDAP user in Keycloak's user list is a <strong>local, searchable copy of profile
+          data</strong>, not a migrated account. Delete the federation provider and that copy becomes
+          orphaned, read-only data — the real account, and the real password, never left the directory.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="edit-modes" data-title="Edit modes">
+        <h2>Edit mode: who is allowed to write what, and to where</h2>
+        <p>Keycloak's LDAP provider has exactly three edit modes, each a different answer to "what happens
+        when an admin or the user themselves tries to change a federated user's data in Keycloak":</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak's three LDAP federation edit modes</caption>
+            <thead><tr><th>Edit mode</th><th>Writes from Keycloak reach LDAP?</th><th>Typical fit</th></tr></thead>
+            <tbody>
+              <tr><td><strong>READ_ONLY</strong></td><td>No — Keycloak cannot write back to the directory at all; a change attempted through the Keycloak Admin Console or API on a federated attribute is rejected.</td><td>The common case for workforce federation, and the mode this chapter's lab uses: the directory team owns the data, full stop.</td></tr>
+              <tr><td><strong>WRITABLE</strong></td><td>Yes — a write made through Keycloak (e.g. resetting a password, editing a profile field) is pushed back into the directory in real time.</td><td>When Keycloak is meant to be a genuine administration front-end for the directory, not just a consumer of it — rarer, and requires a bind credential with write permission.</td></tr>
+              <tr><td><strong>UNSYNCED</strong></td><td>No, but differently from READ_ONLY — Keycloak stores its own local override copy of the changed attribute instead of rejecting the write or pushing it to LDAP.</td><td>Letting Keycloak hold one or two Keycloak-only attributes (or a locally-reset password) on top of an otherwise read-only federated identity, without touching the source directory.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>This chapter's lab deliberately uses <strong>READ_ONLY</strong> — the realistic default for a
+        bank's existing staff directory, where the directory team, not Keycloak's admins, owns write access
+        to employee records.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 860 220" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Three edit modes compared by where a write made in Keycloak actually ends up</title>
+            <desc id="d2">Three side-by-side boxes. READ_ONLY: a write attempt in Keycloak is blocked with
+            an error, nothing changes anywhere. WRITABLE: a write made in Keycloak is pushed through to the
+            LDAP directory and changes the real record there. UNSYNCED: a write made in Keycloak is stored
+            only as a local override inside Keycloak's own database, leaving the LDAP directory's record
+            completely unchanged. A label below the READ_ONLY box notes it is the mode this chapter's lab
+            uses.</desc>
+            <rect x="20" y="30" width="250" height="70" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="145" y="58" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">READ_ONLY</text>
+            <text x="145" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">write attempt blocked, nothing changes</text>
+            <text x="145" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">used in this chapter's lab</text>
+
+            <rect x="305" y="30" width="250" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="430" y="58" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">WRITABLE</text>
+            <text x="430" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">write reaches the real LDAP record</text>
+
+            <rect x="590" y="30" width="250" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="715" y="58" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">UNSYNCED</text>
+            <text x="715" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">stored only as a local Keycloak override</text>
+
+            <rect x="60" y="150" width="740" height="55" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="430" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">LDAP directory's own record is changed only by WRITABLE —</text>
+            <text x="430" y="188" text-anchor="middle" class="diagram-label-muted" font-size="10">the other two modes leave it exactly as the directory team set it</text>
+          </svg>
+          <figcaption>Figure 32.2 — Only WRITABLE mode lets a Keycloak-side change reach the real directory
+          record; READ_ONLY and UNSYNCED both leave it untouched, for different reasons.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="mappers" data-title="LDAP mappers">
+        <h2>LDAP mappers: the real translation layer, and where it silently goes wrong</h2>
+        <p>Adding an LDAP provider auto-creates a handful of built-in <strong>LDAP mappers</strong> — one
+        per Keycloak user-model field (username, first name, last name, email, creation/modify dates) —
+        each pointing at one LDAP attribute to read that field from. These defaults are tuned for the
+        classic <code>inetOrgPerson</code> schema, but "tuned" does not mean "always correct for your
+        data," and this chapter's own lab hit exactly that gap, not a hypothetical one.</p>
+        <p>Keycloak's default <strong>first name</strong> mapper reads the LDAP <code>cn</code> (common
+        name) attribute — which, per the X.500/LDAP schema convention chapter 4 introduced, conventionally
+        holds a person's <em>full</em> display name, not their given name alone. A directory that instead
+        populates <code>givenName</code> with just the first name (as Meridian Trust's does, and as this
+        chapter's seed data does) will sync every federated user's full name into the <code>firstName</code>
+        field — confirmed directly in this chapter's own lab run below, not described abstractly.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">An LDAP mapper misconfiguration, found and fixed live in this chapter's lab</title>
+            <desc id="d3">Before: the built-in first name LDAP mapper is configured with LDAP attribute cn,
+            which in this directory holds a full display name. A synced user named Julia Martinez, with
+            LDAP attribute cn equal to Julia Martinez and givenName equal to Julia, ends up with Keycloak
+            firstName equal to the full string Julia Martinez and lastName correctly equal to Martinez
+            (read from the sn attribute, which was correctly configured). After: the mapper's LDAP
+            attribute is changed to givenName, a re-sync is triggered, and the same user's Keycloak
+            firstName becomes correctly just Julia, confirmed by re-reading the user from the Admin REST
+            API.</desc>
+            <rect x="20" y="20" width="400" height="95" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="220" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Before: mapper reads LDAP attribute "cn"</text>
+            <text x="220" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">LDAP cn = "Julia Martinez" (full display name)</text>
+            <text x="220" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">&#8594; Keycloak firstName = "Julia Martinez"</text>
+            <text x="220" y="98" text-anchor="middle" class="diagram-label-muted" font-size="10">confirmed live via GET .../users/{id}</text>
+
+            <rect x="480" y="20" width="400" height="95" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="680" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">After: mapper reads LDAP attribute "givenName"</text>
+            <text x="680" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">LDAP givenName = "Julia"</text>
+            <text x="680" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">&#8594; Keycloak firstName = "Julia" (correct)</text>
+            <text x="680" y="98" text-anchor="middle" class="diagram-label-muted" font-size="10">re-synced and re-confirmed live</text>
+
+            <line x1="420" y1="67" x2="478" y2="67" class="diagram-stroke" marker-end="url(#arrowM1)"/>
+            <text x="450" y="135" text-anchor="middle" class="diagram-label" font-size="10">fix mapper + re-sync</text>
+
+            <rect x="150" y="160" width="600" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="450" y="183" text-anchor="middle" class="diagram-label" font-size="11">The "last name" mapper (LDAP attribute "sn") was correct the whole time</text>
+            <text x="450" y="201" text-anchor="middle" class="diagram-label-muted" font-size="10">— only the attribute chosen for "first name" needed fixing, not the mapper mechanism itself</text>
+            <defs>
+              <marker id="arrowM1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 32.3 — A real default-mapper mismatch found in this chapter's own lab: the
+          mechanism worked correctly throughout, but the default attribute choice didn't fit this
+          directory's actual schema usage.</figcaption>
+        </figure>
+
+        <p>Beyond the built-in five, any other LDAP attribute an application cares about — this chapter's
+        lab adds one for Meridian Trust's <code>employeeType</code> attribute — needs its own explicit
+        <strong>User Attribute LDAP Mapper</strong>, and group membership needs its own separate
+        <strong>Group LDAP Mapper</strong> pointed at the directory's groups subtree. Neither exists by
+        default; both are added and proven live in this chapter's lab.</p>
+      </section>
+
+      <section class="slide" data-slide="ldap-vs-spi" data-title="LDAP federation vs. custom SPI">
+        <h2>Deciding point: native LDAP federation vs. a custom Storage SPI</h2>
+        <p>Chapter 33 covers Keycloak's <code>UserStorageProvider</code> SPI — writing real Java to federate
+        against a store that <em>isn't</em> LDAP. Before reaching for that, it's worth being explicit about
+        why this chapter's native provider is almost always the right first choice whenever the external
+        store genuinely speaks LDAP:</p>
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>Native Keycloak LDAP federation vs. a custom User Storage SPI, when the external store speaks LDAP</caption>
+            <thead><tr><th>Native LDAP federation (this chapter)</th><th>Custom User Storage SPI (chapter 33)</th></tr></thead>
+            <tbody>
+              <tr><td>Zero custom code — admin-console/REST configuration only, as this chapter's entire lab demonstrates</td><td>Requires writing, testing, packaging, and deploying real Java against Keycloak's SPI contracts</td></tr>
+              <tr><td>Maintained and patched by the Keycloak project itself</td><td>Maintained by whoever wrote it, indefinitely, including through Keycloak upgrades</td></tr>
+              <tr><td>Covers the overwhelming majority of real workforce-directory federation needs out of the box (import, mappers, edit modes, Kerberos)</td><td>Only justified when the external store is <em>not</em> LDAP-speaking at all — chapter 33's case study is a legacy non-LDAP staff database with no directory interface to federate against</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>If an external store can be reached over LDAP at all — even a non-AD, non-OpenLDAP product that
+        merely exposes an LDAP interface for interoperability (several HR and identity-governance products
+        do, per chapter 4's framing of LDAP as the common interoperability protocol) — this chapter's
+        native provider should be the first thing tried, not a custom SPI.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Meridian Trust">
+        <h2>Case study: Meridian Trust federates its existing staff directory</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank under PCI-DSS, and like
+          almost every established bank it already runs an on-premises directory holding every employee's
+          account — tellers, loan officers, fraud analysts, branch managers, IT administrators — long before
+          Keycloak enters the picture. Migrating that directory into Keycloak outright would mean asking the
+          bank's directory-operations team to hand over the one system PCI-DSS auditors already know how to
+          assess, in exchange for a brand-new one with no track record — a non-starter. Federating instead
+          means Keycloak becomes a <em>consumer</em> of the existing directory: employees keep logging in
+          with the same credential the directory has always checked, the directory team keeps full
+          ownership and write access (<code>READ_ONLY</code> edit mode, this chapter's lab setting), and
+          Keycloak gains exactly what it needs — searchable profile data and group membership — without
+          duplicating a single password. This chapter's lab stands up a realistic stand-in for that
+          directory (five staff accounts across five job-function groups) and federates a real local
+          Keycloak against it end to end.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: stack up &amp; confirm the seed">
+        <h2>Lab: a real OpenLDAP + Keycloak stack, federated for real</h2>
+        <p>Everything from here on was actually run against a real stack — <code>labs/ldap-federation/
+        docker-compose.yml</code>, this chapter's own new environment (PostgreSQL + Keycloak 26.8.2 +
+        <code>osixia/openldap:1.5.0</code>, live-verified as the newest actual release tag of that image —
+        full reasoning in that folder's README) — not narrated. The reader's own run uses the plain
+        commands below against the ports this compose file bakes in, 18132 (Keycloak) and 18389 (LDAP);
+        this chapter's own verification additionally isolated the Compose project name as
+        <code>ch32kc</code> while multiple chapters' labs were being built in parallel.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll until Keycloak is ready:</p>
+          <pre><code>cd labs/ldap-federation
+docker compose up -d
+for i in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:18132/realms/master/.well-known/openid-configuration)
+  echo "attempt $i: $code"
+  if [ "$code" = "200" ]; then break; fi
+  sleep 3
+done</code></pre>
+          <pre><code>attempt 1: 000
+...
+attempt 10: 200</code></pre></li>
+
+          <li><p>Confirm the seed LDIF actually loaded, with a real <code>ldapsearch</code> against the
+          running container (<code>ldap-utils</code> installed on the host, or run inside the container as
+          below — this chapter's own run used the container, which already ships the client):</p>
+          <pre><code>docker compose exec openldap ldapsearch -x -H ldap://localhost \
+  -b "dc=meridiantrust,dc=example" -D "cn=admin,dc=meridiantrust,dc=example" \
+  -w ldap_admin_lab_password "(uid=jmartinez)"</code></pre>
+          <pre><code># jmartinez, staff, meridiantrust.example
+dn: uid=jmartinez,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: jmartinez
+cn: Julia Martinez
+sn: Martinez
+givenName: Julia
+mail: jmartinez@meridiantrust.example
+employeeType: Teller
+userPassword:: VGVsbGVyTGRhcC0yMDI2IQ==
+
+search result
+result: 0 Success
+numEntries: 1</code></pre>
+          <p>Five real staff entries and five real <code>groupOfNames</code> groups exist at this point —
+          getting the seed to load at all took two failed attempts during this chapter's own build (a
+          single-file bind mount, then a directory bind mount that the image's bootstrap step silently
+          deleted the seed file out of); see the "Common mistakes" slide and <code>labs/ldap-federation/
+          README.md</code> for exactly what broke and the fix actually used
+          (<code>LDAP_SEED_INTERNAL_LDIF_PATH</code>, a copy-based seeding mechanism instead of the two
+          move/rename-based ones that failed).</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-provider" data-title="Lab: realm, client &amp; the LDAP provider">
+        <ol class="lab-steps" style="counter-reset: lab-step 2;">
+          <li><p>Create the <code>meridian-trust</code> realm and a public client with direct access
+          grants enabled — this chapter's lab-only technique (chapter 13's/chapter 24's pattern) for
+          proving a real login without a browser:</p>
+          <pre><code>TOKEN=$(curl -s -X POST "http://localhost:18132/realms/master/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" -d "grant_type=password" \
+  -d "username=admin" -d "password=admin_lab_password" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST "http://localhost:18132/admin/realms" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"realm":"meridian-trust","enabled":true}'
+
+curl -s -X POST "http://localhost:18132/admin/realms/meridian-trust/clients" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"meridian-teller-app","publicClient":true,
+       "directAccessGrantsEnabled":true,"standardFlowEnabled":false,"enabled":true}'</code></pre>
+          <pre><code>HTTP 201 (realm)
+HTTP 201 (client)</code></pre></li>
+
+          <li><p>Add the LDAP User Federation provider itself, pointed at the <code>openldap</code>
+          container by its Compose service name (the two containers share a Docker network — no host
+          port involved for this connection) and bound with the directory's own admin credential:</p>
+          <pre><code>curl -s -X POST "http://localhost:18132/admin/realms/meridian-trust/components" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+  "name": "meridian-trust-ldap",
+  "providerId": "ldap",
+  "providerType": "org.keycloak.storage.UserStorageProvider",
+  "parentId": "'"$REALM_ID"'",
+  "config": {
+    "enabled": ["true"], "priority": ["0"], "editMode": ["READ_ONLY"],
+    "importEnabled": ["true"], "syncRegistrations": ["false"], "vendor": ["other"],
+    "usernameLDAPAttribute": ["uid"], "rdnLDAPAttribute": ["uid"],
+    "uuidLDAPAttribute": ["entryUUID"],
+    "userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+    "connectionUrl": ["ldap://openldap:389"],
+    "usersDn": ["ou=staff,dc=meridiantrust,dc=example"],
+    "authType": ["simple"], "bindDn": ["cn=admin,dc=meridiantrust,dc=example"],
+    "bindCredential": ["ldap_admin_lab_password"], "searchScope": ["2"],
+    "pagination": ["true"]
+  }
+}'</code></pre>
+          <pre><code>HTTP/1.1 201 Created
+Location: http://localhost:18132/admin/realms/meridian-trust/components/pOH41eTdQFi-kdMrOGrZdQ</code></pre>
+          <p>Kept at this point: <code>vendor: other</code> (a correctness-over-convenience choice — the
+          "Active Directory" vendor preset turns on AD-specific behaviors this generic OpenLDAP container
+          doesn't have), and <code>searchScope: 2</code> (LDAP's standard numeric code for a subtree
+          search, matching the plain <code>ldapsearch</code> calls used throughout this lab).</p></li>
+
+          <li><p>Trigger a full sync and confirm real users landed in the realm via the Admin REST API,
+          not just a success message:</p>
+          <pre><code>COMPONENT_ID=pOH41eTdQFi-kdMrOGrZdQ
+curl -s -X POST \
+  "http://localhost:18132/admin/realms/meridian-trust/user-storage/$COMPONENT_ID/sync?action=triggerFullSync" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>{"ignored":false,"added":5,"updated":0,"removed":0,"failed":0,"status":"5 imported users, 0 updated users"}</code></pre>
+          <pre><code>curl -s "http://localhost:18132/admin/realms/meridian-trust/users?max=20" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool</code></pre>
+          <pre><code>[ { "username": "jmartinez", "firstName": "Julia Martinez", "lastName": "Martinez",
+    "email": "jmartinez@meridiantrust.example", "federationLink": "pOH41eTdQFi-kdMrOGrZdQ" }, ... ]</code></pre>
+          <p>All 5 real seeded users exist in the realm, 0 failed — but look closely at
+          <code>firstName</code>: the next slide shows why, and fixes it live.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-mapper-bug" data-title="Lab: finding &amp; fixing the mapper bug">
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p>The sync above <em>succeeded</em>, but <code>jmartinez</code>'s Keycloak
+          <code>firstName</code> is <code>"Julia Martinez"</code>, not <code>"Julia"</code> — a real bug
+          this chapter's own build hit, not a staged example. Inspecting the auto-created mappers confirms
+          the cause:</p>
+          <pre><code>curl -s "http://localhost:18132/admin/realms/meridian-trust/components?parent=$COMPONENT_ID" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import json,sys
+for m in json.load(sys.stdin):
+    if m.get('providerType','').endswith('LDAPStorageMapper'):
+        print(m['name'], m['providerId'], m['config'])"</code></pre>
+          <pre><code>first name user-attribute-ldap-mapper {'ldap.attribute': ['cn'], 'user.model.attribute': ['firstName'], ...}
+last name  user-attribute-ldap-mapper {'ldap.attribute': ['sn'], 'user.model.attribute': ['lastName'], ...}</code></pre>
+          <p>Confirmed: Keycloak's built-in "first name" mapper reads <code>cn</code> by default — this
+          directory's <code>cn</code> holds the full display name ("Julia Martinez"), while the actual
+          given name lives in <code>givenName</code> ("Julia"). The "last name" mapper was fine the whole
+          time (<code>sn</code> genuinely does hold just the surname here). Fix the one mapper that's
+          wrong and re-sync:</p>
+          <pre><code>FNM_ID=&lt;id of the "first name" mapper from the listing above&gt;
+curl -s -X PUT "http://localhost:18132/admin/realms/meridian-trust/components/$FNM_ID" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ ...same body as GET on this id, with config.ldap.attribute changed to ["givenName"]... }'
+curl -s -X POST \
+  "http://localhost:18132/admin/realms/meridian-trust/user-storage/$COMPONENT_ID/sync?action=triggerFullSync" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>{"ignored":false,"added":0,"updated":5,"removed":0,"failed":0,"status":"0 imported users, 5 updated users"}</code></pre>
+          <p>Re-reading <code>jmartinez</code> now shows <code>"firstName": "Julia"</code> — confirmed,
+          not assumed.</p></li>
+
+          <li><p>Two attributes still don't appear anywhere on the synced user: Meridian Trust's
+          <code>employeeType</code>, and LDAP group membership — neither has a mapper by default. Add a
+          User Attribute mapper for the first and a Group mapper for the second, then re-sync once more:</p>
+          <pre><code>curl -s -X POST "http://localhost:18132/admin/realms/meridian-trust/components" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+  "name": "employee-type", "providerId": "user-attribute-ldap-mapper",
+  "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+  "parentId": "'"$COMPONENT_ID"'",
+  "config": { "ldap.attribute": ["employeeType"], "user.model.attribute": ["employeeType"],
+              "read.only": ["true"], "always.read.value.from.ldap": ["true"] }
+}'
+curl -s -X POST "http://localhost:18132/admin/realms/meridian-trust/components" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+  "name": "meridian-ldap-groups", "providerId": "group-ldap-mapper",
+  "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+  "parentId": "'"$COMPONENT_ID"'",
+  "config": { "groups.dn": ["ou=groups,dc=meridiantrust,dc=example"],
+              "group.name.ldap.attribute": ["cn"], "group.object.classes": ["groupOfNames"],
+              "membership.ldap.attribute": ["member"], "membership.attribute.type": ["DN"],
+              "membership.user.ldap.attribute": ["uid"], "mode": ["READ_ONLY"],
+              "user.roles.retrieve.strategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"] }
+}'</code></pre>
+          <pre><code>curl -s "http://localhost:18132/admin/realms/meridian-trust/users/$USER_ID/groups" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>[ { "name": "tellers", "path": "/tellers" } ]</code></pre>
+          <p>All 5 LDAP groups now exist as real Keycloak groups, and <code>jmartinez</code> is correctly a
+          member of exactly <code>tellers</code> — her LDAP group membership, read live, not hand-assigned.
+          Her <code>attributes.employeeType</code> now reads <code>["Teller"]</code> too.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-auth" data-title="Lab: proving a real login">
+        <ol class="lab-steps" style="counter-reset: lab-step 7;">
+          <li><p>Prove the authentication path from Figure 32.1 for real: a direct-grant token request for
+          <code>jmartinez</code>, using the real LDAP password from the seed data — no browser, same
+          lab-only technique chapters 13/24 used:</p>
+          <pre><code>curl -s -X POST "http://localhost:18132/realms/meridian-trust/protocol/openid-connect/token" \
+  -d "client_id=meridian-teller-app" -d "grant_type=password" \
+  -d "username=jmartinez" -d "password=TellerLdap-2026!" -d "scope=openid"</code></pre>
+          <pre><code>{"access_token":"eyJ...", "token_type":"Bearer", "scope":"openid profile email", ...}</code></pre>
+          <p>Decoding the real token's payload confirms the fixed attribute mapping flowed all the way
+          into the issued claims:</p>
+          <pre><code>{
+  "preferred_username": "jmartinez",
+  "given_name": "Julia",
+  "family_name": "Martinez",
+  "email": "jmartinez@meridiantrust.example"
+}</code></pre>
+          <p>Then the negative case, to confirm this is a genuine live bind and not a cached or
+          locally-stored credential check: the same request with a wrong password is rejected by
+          Keycloak, exactly as a direct LDAP bind with that password would be rejected by the directory
+          itself:</p>
+          <pre><code>curl -s -X POST "http://localhost:18132/realms/meridian-trust/protocol/openid-connect/token" \
+  -d "client_id=meridian-teller-app" -d "grant_type=password" \
+  -d "username=jmartinez" -d "password=WrongPassword123"</code></pre>
+          <pre><code>{"error":"invalid_grant","error_description":"Invalid user credentials"}</code></pre></li>
+
+          <li><p>Tear the isolated stack down cleanly (the seed file on the host survives this, by
+          design — see the README's seeding-gotchas section):</p>
+          <pre><code>docker compose down -v</code></pre>
+          <pre><code> Container ldap-federation-keycloak-1 Removed
+ Container ldap-federation-openldap-1 Removed
+ Container ldap-federation-postgres-1 Removed
+ Volume ldap-federation_ldap_fed_pg_data Removed
+ Volume ldap-federation_ldap_fed_data Removed
+ Volume ldap-federation_ldap_fed_config Removed
+ Network ldap-federation_default Removed</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see a federated user's first name contain their <em>full</em> name, the cause is
+          Keycloak's default "first name" LDAP mapper reading <code>cn</code> — which many directories
+          (including this chapter's seed data) use for a full display name, not a given name alone.
+          Confirmed directly in this chapter's lab: the fix is repointing that one mapper's LDAP attribute
+          at whatever field your directory actually uses for a first name (commonly
+          <code>givenName</code>), then re-syncing.</li>
+          <li>If an LDAP attribute your application needs (a job title, a cost center, an employee type)
+          never shows up on the synced Keycloak user no matter how many times you sync, the cause is almost
+          always that no mapper exists for it — the five built-in mappers cover only username/first
+          name/last name/email/timestamps. Add a User Attribute LDAP Mapper for it explicitly, as this
+          chapter's lab did for <code>employeeType</code>.</li>
+          <li>If group membership doesn't appear on federated users even though the directory clearly has
+          group entries, the cause is the same gap one level up: there is no Group LDAP Mapper configured
+          by default, and without one Keycloak has no idea the directory's <code>ou=groups</code> subtree
+          exists at all.</li>
+          <li>If creating or testing an LDAP provider fails with something like
+          <code>{"errorMessage":"AuthenticationFailure"}</code> from the Admin Console's "Test
+          authentication" button (or the underlying <code>POST /admin/realms/{realm}/testLDAPConnection</code>
+          call with <code>action: testAuthentication</code>) — confirmed live in this chapter by
+          deliberately supplying a wrong bind credential and getting exactly this response, HTTP 400 — the
+          cause is the Bind DN or Bind Credential field, not the connection URL or network path. Test
+          <code>testConnection</code> (reachability) and <code>testAuthentication</code> (the bind
+          credential) as two separate checks before troubleshooting anything else.</li>
+          <li>If you see a sync report zero users with no error at all, the cause is almost always the
+          <strong>Users DN</strong> or <strong>Custom User LDAP Filter</strong> pointing above, below, or
+          beside where the real user entries actually live in the tree — a sync with a wrong Users DN
+          doesn't fail loudly, it just finds nothing to import.</li>
+          <li>If a write made through the Keycloak Admin Console on a federated attribute silently appears
+          to succeed in the UI but is gone on the next page load, the cause is very likely
+          <code>READ_ONLY</code> edit mode rejecting the underlying write — check the provider's edit mode
+          before assuming a UI bug.</li>
+          <li>If you're building your own seed/bootstrap LDIF for an OpenLDAP container like this chapter's
+          lab does, and a plain add-only file is mistakenly processed with <code>ldapmodify</code> instead
+          of <code>ldapadd</code> (error: <code>modify operation type is missing</code>), the cause —
+          hit directly while writing this chapter's own seed file — can be as simple as the literal word
+          LDAP uses to mark a modify-style record appearing anywhere in the file, including in a comment;
+          the bootstrap script's add-vs-modify detection is a plain text search, not a real LDIF parse.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>User federation lets Keycloak consume an existing LDAP/Active Directory population instead
+          of migrating it — the directory remains the authoritative store for the credential, exactly as
+          chapter 7 defined federation in the abstract.</li>
+          <li>Sync and authentication are two separate paths on two separate schedules: sync copies profile
+          data into Keycloak's own user table for visibility/search; authentication performs a live LDAP
+          bind against the directory every time, confirmed in this chapter by a successful direct grant and
+          a rejected one for a wrong password.</li>
+          <li>Keycloak's three edit modes — READ_ONLY, WRITABLE, UNSYNCED — answer "where does a write made
+          in Keycloak actually end up," not "can Keycloak read this attribute" (which sync/mappers answer
+          separately).</li>
+          <li>Only five LDAP mappers exist by default (username, first name, last name, email, two
+          timestamps); any other attribute (this chapter used <code>employeeType</code>) needs its own
+          explicit User Attribute LDAP Mapper, and group membership needs its own separate Group LDAP
+          Mapper.</li>
+          <li>A default mapper existing is not the same as a default mapper being correct for your
+          directory's actual schema usage — this chapter's own lab hit a real mismatch (first name mapper
+          defaulting to <code>cn</code>, which held a full display name in this directory) and fixed it
+          live rather than describing the fix abstractly.</li>
+          <li><code>testLDAPConnection</code>'s two actions, <code>testConnection</code> and
+          <code>testAuthentication</code>, isolate "can I reach the server" from "is my bind credential
+          correct" — confirmed live by deliberately breaking only the bind credential and getting
+          exactly the authentication-specific failure.</li>
+          <li>Native LDAP federation requires zero custom code and should be the default choice whenever
+          the external store speaks LDAP at all; chapter 33's custom Storage SPI is for stores that don't.</li>
+          <li>A real-world federated directory is operated by a separate team with its own change control —
+          Meridian Trust's case study is the realistic reason <code>READ_ONLY</code>, not
+          <code>WRITABLE</code>, is the common real-world default.</li>
+          <li>Seeding a disposable lab LDAP container has its own real gotchas independent of Keycloak
+          entirely — this chapter's own build hit two failed seeding approaches (a single-file mount, then
+          a directory mount the image silently emptied) before landing on one that actually works
+          reliably across repeated resets.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "we federated Keycloak against our AD, so now all our employee
+            passwords are stored in Keycloak." What's wrong with that statement, precisely?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It's
+            backwards. In the default import/read-only federation setup this chapter uses, Keycloak never
+            stores a federated user's password at all — there's no password field for an LDAP-sourced user
+            in Keycloak's own credential store to steal or store. Every authentication is a live LDAP bind
+            performed against the directory itself, at the moment of login, using whatever the caller just
+            typed. What Keycloak stores is a synced <em>profile</em> copy (name, email, group membership) —
+            useful for search and display, but not a credential. This chapter confirmed the distinction
+            directly: a direct-grant request with the real password succeeded, and the identical request
+            with a wrong password was rejected — exactly the behavior a live bind check produces, not a
+            locally cached one.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through why this chapter's first sync reported "5 imported users, 0 failed" and
+            yet the data was still wrong. Doesn't "0 failed" mean the sync worked correctly?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>"0
+            failed" only means every LDAP entry Keycloak tried to read and write into its own user table
+            succeeded as an operation — it says nothing about whether the *mapping* from LDAP attribute to
+            Keycloak field was the mapping you actually wanted. This chapter's sync genuinely succeeded:
+            every user really was created, with real data, straight from LDAP. The bug was a mapper
+            configuration choice (reading <code>cn</code> instead of <code>givenName</code> for "first
+            name"), not a sync failure — which is exactly why it needed inspecting the actual resulting
+            user data, not just the sync's own success/fail counters, to catch.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does a wrong Bind DN or Bind Credential typically surface as an authentication
+            error on a specific test action, while a wrong Users DN typically surfaces as "zero users
+            synced, no error at all"? What does that difference tell you about what each field controls?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The Bind
+            DN/Credential controls whether Keycloak itself is allowed to talk to the directory at all —
+            it's a precondition checked up front, so a wrong value produces an immediate, specific
+            authentication failure (confirmed live in this chapter: HTTP 400,
+            <code>{"errorMessage":"AuthenticationFailure"}</code>). The Users DN, by contrast, controls
+            <em>where in the tree</em> an otherwise-successful, otherwise-authenticated search looks for
+            user entries — a wrong value doesn't break the connection or the bind, it just means the search
+            legitimately finds nothing under that (wrong) point in the tree, which to Keycloak looks exactly
+            like "this directory happens to have no users," not an error.</p>
+          </details></li>
+          <li><details>
+            <summary>Riverside Health is considering WRITABLE edit mode so clinicians can reset their own
+            passwords through Keycloak's self-service account console. What's the real trade-off they're
+            making, and what would READ_ONLY plus a different mechanism look like instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>WRITABLE
+            mode means every password reset (and any other profile write) done through Keycloak is pushed
+            directly into the real directory in real time — convenient, but it hands Keycloak's bind
+            credential genuine write authority over a system the directory-operations team may have its own
+            change-control and audit requirements for, and it means a Keycloak misconfiguration or bug could
+            now modify real directory data, not just misread it. A READ_ONLY alternative keeps the directory
+            fully protected from any Keycloak-originated write and instead routes password resets through
+            whatever mechanism the directory team already uses (their own self-service tool, a helpdesk
+            process, or a directory-side password-reset flow) — more friction for the clinician, but zero
+            new write surface on the system of record.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter recommend trying native LDAP federation first for any
+            LDAP-speaking external store, even an unusual one, rather than reaching for chapter 33's custom
+            Storage SPI as a "more flexible" option?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The
+            native provider needs zero custom code — this entire chapter's lab, including finding and
+            fixing a real mapper bug, was done through the Admin REST API with no Java written at all — and
+            it's maintained by the Keycloak project itself across upgrades. A custom SPI, by contrast, is
+            code the adopting organization now owns forever: writing it, testing it, and re-validating it
+            against every future Keycloak upgrade. "More flexible" is only a real advantage when the native
+            provider genuinely can't express what's needed; chapter 33's own case study is deliberately a
+            store with no LDAP interface at all, which is the actual bar for reaching for a custom SPI, not
+            mere unfamiliarity with the LDAP provider's configuration fields.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_ldap">Keycloak docs — Server Administration Guide, "User storage federation" / LDAP section</a></li>
+          <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak docs — Admin REST API reference (components, user-storage, testLDAPConnection endpoints used in this chapter's lab)</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc4511">RFC 4511 — Lightweight Directory Access Protocol (LDAP): The Protocol (the Bind operation this chapter's authentication path relies on)</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc2255">RFC 2255 — The LDAP URL Format (the <code>ldap://host:port</code> connection-string syntax this chapter's provider config uses)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "user-federation-ldap", 15);
+    SlideDeck.init({ chapterSlug: "user-federation-ldap" });
+  });
+</script>
+</body>
+</html>

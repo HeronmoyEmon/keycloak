@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Riverside Health "legacy staff directory" custom User Storage SPI provider.
+
+  This is a teaching lab for chapter 33 (Custom User Storage SPI) of the IAM & Keycloak Mastery
+  course. It federates Keycloak against a toy stand-in for a legacy, proprietary HR system's own
+  user table (a bundled CSV file) — the kind of non-LDAP directory chapter 32's native LDAP
+  provider cannot talk to at all.
+
+  Dependency coordinates were live-verified against Maven Central and against the actual jars
+  bundled inside the quay.io/keycloak/keycloak:26.8.2 image before this POM was written (see the
+  chapter text for the full verification trail). As of Keycloak 26.4+, the UserStorageProvider /
+  UserStorageProviderFactory / AbstractUserAdapter classes live in keycloak-model-storage, not in
+  keycloak-server-spi(-private) alone — both artifacts are needed. Exact 26.8.2 releases of both
+  were confirmed to exist on Maven Central (no nearest-version substitute was required), and
+  running "docker run (rm, entrypoint sh) quay.io/keycloak/keycloak:26.8.2 -c find /opt/keycloak/lib ..."
+  confirmed the running server bundles exactly org.keycloak.keycloak-server-spi-26.8.2.jar and
+  org.keycloak.keycloak-model-storage-26.8.2.jar — the identical versions pinned below.
+
+  Both Keycloak dependencies are scope=provided: the server supplies these classes at runtime from
+  its own /opt/keycloak/lib; bundling them into this provider's JAR would duplicate classes already
+  on the server's classpath and risks classloading conflicts (see the chapter's "common mistakes"
+  section). Nothing else needs shading or an assembly plugin — this JAR has no other runtime
+  dependencies at all.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.riversidehealth.keycloak</groupId>
+  <artifactId>legacy-staff-directory-spi</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Riverside Health Legacy Staff Directory User Storage SPI</name>
+  <description>
+    A custom Keycloak User Storage SPI provider that federates Keycloak against a toy stand-in for
+    Riverside Health's legacy, proprietary HR staff directory (a bundled CSV file), for chapter 33
+    of the IAM &amp; Keycloak Mastery course.
+  </description>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. -->
+    <keycloak.version>26.8.2</keycloak.version>
+  </properties>
+
+  <dependencies>
+    <!-- org.keycloak.credential.*, org.keycloak.storage.user.UserLookupProvider, org.keycloak.models.*,
+         org.keycloak.component.ComponentModel, org.keycloak.models.credential.PasswordCredentialModel,
+         org.keycloak.storage.StorageId -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- org.keycloak.storage.UserStorageProvider, UserStorageProviderFactory,
+         org.keycloak.storage.adapter.AbstractUserAdapter (moved here from keycloak-server-spi-private
+         as of Keycloak 26.4+, confirmed live for 26.8.2 as described above). -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-model-storage</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>legacy-staff-directory-spi-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

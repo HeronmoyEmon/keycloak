@@ -1,0 +1,4 @@
+username,password,firstName,lastName,email,employeeId,department
+jmartinez,Clinic#2026,Jordan,Martinez,jmartinez@riversidehealth.example,RH-10234,Cardiology
+awong,Nursing$88,Amara,Wong,awong@riversidehealth.example,RH-10391,Nursing
+dkhan,OnCall!55,Dalia,Khan,dkhan@riversidehealth.example,RH-10477,Emergency Medicine

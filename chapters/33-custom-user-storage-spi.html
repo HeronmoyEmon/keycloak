@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom User Storage SPI — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "custom-user-storage-spi";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~70 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>33. Custom User Storage SPI</h1>
+        <p class="lede">Chapter 32 federated Keycloak against LDAP using a provider Keycloak already ships —
+        no Java, no JAR, just configuration. This chapter covers the path that exists for everything LDAP
+        doesn't cover: writing a real <code>UserStorageProvider</code> in Java against Keycloak's Service
+        Provider Interface (SPI), packaging it as a JAR, and deploying it into a running server. Every piece
+        of this chapter's lab was actually built, compiled, and run against a real Keycloak 26.8.2 instance —
+        including the real mistakes hit along the way, kept in rather than edited out, because they're some of
+        the most useful material here.</p>
+
+        <h2>Why this matters</h2>
+        <p>Real organizations rarely keep every user in LDAP. A 20-year-old proprietary HR system, a SaaS
+        vendor's own customer database, a mainframe-era membership system — none of these speak LDAP, and
+        none of them can realistically be migrated into Keycloak overnight just so Keycloak can authenticate
+        against them. An IAM specialist who only knows "click through the admin console" or "configure the
+        built-in LDAP provider" hits a wall the moment a client's real directory isn't one of those two shapes.
+        The User Storage SPI is Keycloak's answer: write a thin Java bridge once, and every protocol this
+        course has already covered — direct grant, authorization code, SAML, the Admin REST API — works
+        against that external store exactly as if it were native Keycloak data, with no changes anywhere
+        else.</p>
+
+        <p>Sources for this chapter: Keycloak's own <a
+        href="https://www.keycloak.org/docs/latest/server_development/index.html#_user-storage-spi">Server
+        Developer Guide — User Storage SPI</a> (version 26.8.2, fetched live for this chapter); Maven Central
+        (<code>search.maven.org</code> and <code>repo1.maven.org</code>), queried live to pin exact dependency
+        coordinates; and this chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17
+        Docker Compose stack this chapter owns (<code>labs/custom-user-storage-spi/</code>).</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 1 named <strong>extensibility</strong> — "a plugin or SPI-style architecture so an
+          organization can add custom authentication steps, custom data sources, or custom branding without
+          forking the product" — as one of the common features a mature IAM system provides, and pointed
+          forward to Part VIII for the details. Chapter 4 named the deeper reason federation exists at all:
+          "an organization almost never wants to migrate an existing directory's population into a separate IAM
+          product," so the IAM system should connect to whatever already holds the truth instead. Chapter 19
+          (Keycloak's architecture) did <strong>not</strong>, on inspection, cover the SPI concept itself in any
+          depth — it's a gap this chapter's "What concept is this?" recall would normally point back to, but
+          there's honestly nothing substantial there to recall yet. This chapter is where "custom data source,
+          added without forking the product" (chapter 1) and "connect to the store that's already authoritative
+          instead of migrating it" (chapter 4) finally meet code: a <strong>Service Provider Interface</strong>
+          is a set of Java interfaces a vendor defines and a third party implements, discovered automatically at
+          server boot through the standard Java <code>ServiceLoader</code> mechanism — Keycloak's own built-in
+          LDAP provider (chapter 32) is written against this exact same SPI; it is not special-cased.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="spi-shape" data-title="Provider and Factory: the required shape">
+        <h2>Two classes, one lifecycle: Factory and Provider</h2>
+        <p>Every Keycloak SPI follows the same two-class pattern, and the User Storage SPI is no exception.
+        Per Keycloak's own developer guide, confirmed directly against the real interfaces on Maven Central for
+        this chapter (see the next slide):</p>
+        <ul>
+          <li>A <strong>Factory</strong> class, implementing <code>UserStorageProviderFactory&lt;T&gt;</code>, is
+          discovered <strong>once</strong>, at server boot, via <code>ServiceLoader</code> — the mechanism behind
+          the plain-text <code>META-INF/services/org.keycloak.storage.UserStorageProviderFactory</code> file this
+          chapter's JAR bundles, listing nothing but the factory's fully qualified class name. Its
+          <code>getId()</code> is the id that shows up as an option wherever a realm picks a User Federation
+          provider; its <code>init(Config.Scope)</code> runs once and is where this chapter's factory loads the
+          toy CSV directory into memory.</li>
+          <li>A <strong>Provider</strong> class, implementing <code>UserStorageProvider</code> (plus whichever
+          optional capability interfaces it needs), is created <strong>per Keycloak transaction</strong> by the
+          factory's <code>create(KeycloakSession, ComponentModel)</code> — cheap to construct, because the real
+          work (loading the directory) already happened once in the factory.</li>
+        </ul>
+        <p>"Capability interfaces" are how a provider opts into only the behavior it actually supports. This
+        chapter's provider implements exactly two, deliberately kept minimal per this chapter's own scope:
+        <code>UserLookupProvider</code> (resolve a user by username/id/email) and
+        <code>CredentialInputValidator</code> (check whether a submitted password is correct). It does
+        <strong>not</strong> implement <code>UserQueryMethodsProvider</code> — the capability that would let the
+        Admin Console's user-search screen or a <code>GET /admin/realms/{realm}/users?username=...</code> partial
+        search enumerate users from this provider. That specific, real gap is confirmed live in this chapter's
+        lab below, not assumed.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The Factory/Provider lifecycle of a Keycloak User Storage SPI provider</title>
+            <desc id="d1">A UserStorageProviderFactory box, discovered once at server boot via ServiceLoader,
+            connects via a labeled arrow "create(session, model) -- called per transaction" to a
+            UserStorageProvider instance box. That instance box has two arrows fanning out to two capability-
+            interface boxes it implements: UserLookupProvider (getUserByUsername, getUserById, getUserByEmail)
+            and CredentialInputValidator (isValid, isConfiguredFor). A separate box above, labeled "Keycloak
+            core: login flow, direct grant, Admin REST," has an arrow pointing down into the provider instance,
+            labeled "calls these interface methods when it needs to resolve a user or validate a password" --
+            showing that Keycloak core never calls the factory directly at request time, only the instance it
+            already created.</desc>
+            <rect x="330" y="10" width="220" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="440" y="33" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Keycloak core</text>
+            <text x="440" y="49" text-anchor="middle" class="diagram-label-muted" font-size="9">login flow / direct grant / Admin REST</text>
+            <line x1="440" y1="70" x2="440" y2="108" class="diagram-stroke" marker-end="url(#arrowSPI1)"/>
+            <text x="440" y="96" text-anchor="middle" class="diagram-label-muted" font-size="8">calls into the instance below</text>
+
+            <rect x="20" y="110" width="190" height="70" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="115" y="134" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">UserStorageProvider</text>
+            <text x="115" y="148" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Factory</text>
+            <text x="115" y="164" text-anchor="middle" class="diagram-label-muted" font-size="8">discovered once, at boot</text>
+            <text x="115" y="175" text-anchor="middle" class="diagram-label-muted" font-size="8">via ServiceLoader</text>
+
+            <line x1="212" y1="145" x2="328" y2="145" class="diagram-stroke" marker-end="url(#arrowSPI1)"/>
+            <text x="270" y="130" text-anchor="middle" class="diagram-label-muted" font-size="8">create(session,</text>
+            <text x="270" y="162" text-anchor="middle" class="diagram-label-muted" font-size="8">model) -- per transaction</text>
+
+            <rect x="330" y="110" width="210" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="435" y="140" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">UserStorageProvider</text>
+            <text x="435" y="156" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">instance (this chapter's class)</text>
+            <text x="435" y="170" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="8">created fresh per transaction</text>
+
+            <line x1="542" y1="130" x2="658" y2="65" class="diagram-stroke" marker-end="url(#arrowSPI1)"/>
+            <line x1="542" y1="150" x2="658" y2="215" class="diagram-stroke" marker-end="url(#arrowSPI1)"/>
+
+            <rect x="660" y="30" width="220" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="770" y="53" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">UserLookupProvider</text>
+            <text x="770" y="68" text-anchor="middle" class="diagram-label-muted" font-size="8">getUserByUsername / getUserById /</text>
+            <text x="770" y="80" text-anchor="middle" class="diagram-label-muted" font-size="8">getUserByEmail</text>
+
+            <rect x="660" y="180" width="220" height="70" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="770" y="203" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">CredentialInputValidator</text>
+            <text x="770" y="218" text-anchor="middle" class="diagram-label-muted" font-size="8">isValid / isConfiguredFor /</text>
+            <text x="770" y="230" text-anchor="middle" class="diagram-label-muted" font-size="8">supportsCredentialType</text>
+
+            <text x="440" y="280" text-anchor="middle" class="diagram-label-muted" font-size="10">Two capability interfaces implemented here, deliberately -- not UserQueryMethodsProvider (see text).</text>
+            <defs>
+              <marker id="arrowSPI1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 33.1 — A Factory, discovered once at boot, creates a fresh Provider instance per
+          transaction; Keycloak core only ever calls the capability interfaces that instance actually
+          implements.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="three-paths" data-title="Three ways Keycloak resolves a user">
+        <h2>Three ways Keycloak resolves "who is this user," side by side</h2>
+        <p>This chapter's provider is a third option sitting alongside two this course has already covered,
+        not a replacement for either:</p>
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Three sources Keycloak can resolve a UserModel from</title>
+            <desc id="d2">A central Keycloak core box with three incoming sources, each feeding the same
+            internal UserModel interface: Local database (chapter 22, Keycloak's own user table, read-write,
+            native), LDAP federation (chapter 32, Keycloak's built-in provider, no custom code, configuration
+            only), and Custom User Storage SPI (this chapter, hand-written Java, used when the external store
+            speaks neither Keycloak's native format nor LDAP). The custom SPI box is visually highlighted as
+            this chapter's subject.</desc>
+            <rect x="350" y="95" width="200" height="70" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="450" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Keycloak core</text>
+            <text x="450" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">one UserModel interface</text>
+            <text x="450" y="152" text-anchor="middle" class="diagram-label-muted" font-size="9">no matter the source below</text>
+
+            <rect x="20" y="20" width="220" height="60" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="130" y="43" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Local database</text>
+            <text x="130" y="58" text-anchor="middle" class="diagram-label-muted" font-size="9">ch. 22, native, read-write</text>
+            <line x1="200" y1="80" x2="370" y2="100" class="diagram-stroke" marker-end="url(#arrowSPI2)"/>
+
+            <rect x="340" y="20" width="220" height="60" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="450" y="43" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">LDAP federation</text>
+            <text x="450" y="58" text-anchor="middle" class="diagram-label-muted" font-size="9">ch. 32, built-in, no code</text>
+            <line x1="450" y1="80" x2="450" y2="93" class="diagram-stroke" marker-end="url(#arrowSPI2)"/>
+
+            <rect x="660" y="20" width="220" height="60" rx="7" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="770" y="43" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Custom User Storage SPI</text>
+            <text x="770" y="58" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">this chapter -- hand-written Java</text>
+            <line x1="700" y1="80" x2="530" y2="100" class="diagram-stroke" marker-end="url(#arrowSPI2)"/>
+
+            <text x="450" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">Pick whichever fits the real store: neither of the first two is "more correct" than the third.</text>
+            <defs>
+              <marker id="arrowSPI2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 33.2 — Keycloak's internal <code>UserModel</code> interface is identical regardless
+          of which of these three sources actually backs a given user.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="maven-coordinates" data-title="Live-verifying the Maven coordinates">
+        <h2>Live-verifying the Maven coordinates, not guessing them</h2>
+        <p>Keycloak 26.4 split several SPI-adjacent classes out of <code>keycloak-server-spi</code> /
+        <code>keycloak-server-spi-private</code> into a newer <code>keycloak-model-storage</code> module, per Red
+        Hat's own migration guide. Rather than assume which module this chapter's two classes
+        (<code>UserStorageProvider</code>, <code>UserStorageProviderFactory</code>) actually live in for
+        26.8.2 — the exact version this course's shared lab stack runs — this chapter checked, twice,
+        independently:</p>
+        <ol>
+          <li><strong>Maven Central's metadata</strong>, queried live: <code>26.8.2</code> is published for
+          <em>all three</em> of <code>keycloak-server-spi</code>, <code>keycloak-server-spi-private</code>, and
+          <code>keycloak-model-storage</code> — an exact match for this course's pinned server version, no
+          nearest-version substitute needed.</li>
+          <li><strong>The real running image's own jars</strong>: <code>docker run (rm, entrypoint sh)
+          quay.io/keycloak/keycloak:26.8.2 -c "find /opt/keycloak/lib -iname '*server-spi*' -o -iname
+          '*model-storage*'"</code> listed, among others, exactly
+          <code>org.keycloak.keycloak-server-spi-26.8.2.jar</code> and
+          <code>org.keycloak.keycloak-model-storage-26.8.2.jar</code> — the server genuinely bundles the same
+          versions this chapter's POM pins.</li>
+        </ol>
+        <p>Unzipping both downloaded jars and listing their contents (<code>unzip -l</code>, then
+        <code>javap -p</code> on the classes of interest) settled exactly where each class actually lives:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Where this chapter's required classes actually live in Keycloak 26.8.2, confirmed by inspecting the real jars</caption>
+            <thead><tr><th>Artifact (version 26.8.2, scope <code>provided</code>)</th><th>What this chapter's code needs from it</th></tr></thead>
+            <tbody>
+              <tr><td><code>keycloak-server-spi</code></td><td><code>KeycloakSession</code>, <code>RealmModel</code>, <code>UserModel</code>, <code>ComponentModel</code>, <code>CredentialInput</code>, <code>CredentialInputValidator</code>, <code>PasswordCredentialModel</code>, <code>StorageId</code>, <code>UserLookupProvider</code></td></tr>
+              <tr><td><code>keycloak-model-storage</code></td><td><code>UserStorageProvider</code>, <code>UserStorageProviderFactory</code>, <code>AbstractUserAdapter</code>, <code>AbstractUserAdapterFederatedStorage</code>, <code>UserCredentialManager</code> (confirmed <strong>not</strong> present in either <code>keycloak-server-spi</code> or <code>keycloak-server-spi-private</code> — a real, confirmed absence, not an assumption)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Both dependencies are declared <code>&lt;scope&gt;provided&lt;/scope&gt;</code> in this chapter's
+        <code>pom.xml</code>: the server already supplies these exact classes from its own
+        <code>/opt/keycloak/lib</code> at runtime, so this provider's JAR should contain <em>only</em> this
+        chapter's own five classes plus its CSV resource and service-registration file — nothing from Keycloak
+        itself. Confirmed directly: <code>unzip -l target/legacy-staff-directory-spi-1.0.0.jar</code> lists 19
+        entries totalling under 21&nbsp;KB, none of them a Keycloak class.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 250" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Scope=provided: the server supplies the SPI classes, the provider JAR supplies only its own classes</title>
+            <desc id="d3">A box representing the running Keycloak server process, containing its own
+            /opt/keycloak/lib with keycloak-server-spi-26.8.2.jar and keycloak-model-storage-26.8.2.jar already
+            loaded on the server's classloader. A second, smaller box representing this chapter's own provider
+            JAR, mounted into /opt/keycloak/providers/, contains only five small classes plus a CSV file and a
+            service-registration file -- no Keycloak classes at all. An arrow from the provider JAR box into the
+            server box is labeled "loaded onto the same classloader at boot -- scope=provided means this JAR
+            does not duplicate the classes the server already has." A separate, crossed-out warning note states
+            that bundling (shading) those dependencies into the JAR instead would place two copies of the same
+            classes on the classpath, a real, documented source of classloading conflicts.</desc>
+            <rect x="420" y="20" width="440" height="170" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="640" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Running Keycloak server process</text>
+            <rect x="445" y="60" width="390" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="640" y="84" text-anchor="middle" class="diagram-label" font-size="10">/opt/keycloak/lib/.../keycloak-server-spi-26.8.2.jar</text>
+            <rect x="445" y="110" width="390" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="640" y="134" text-anchor="middle" class="diagram-label" font-size="10">/opt/keycloak/lib/.../keycloak-model-storage-26.8.2.jar</text>
+            <text x="640" y="170" text-anchor="middle" class="diagram-label-muted" font-size="9">both already on the server's own classloader</text>
+
+            <rect x="20" y="60" width="330" height="90" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="185" y="83" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">legacy-staff-directory-spi-1.0.0.jar</text>
+            <text x="185" y="100" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">/opt/keycloak/providers/ (this chapter's JAR)</text>
+            <text x="185" y="116" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">5 classes + CSV + META-INF/services only</text>
+            <text x="185" y="132" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">zero Keycloak classes bundled inside</text>
+
+            <line x1="350" y1="100" x2="418" y2="100" class="diagram-stroke" marker-end="url(#arrowSPI3)"/>
+            <text x="385" y="212" text-anchor="middle" class="diagram-label-muted" font-size="9">loaded onto the same classloader at boot</text>
+            <text x="385" y="226" text-anchor="middle" class="diagram-label-muted" font-size="9">scope=provided avoids duplicating the classes above</text>
+            <defs>
+              <marker id="arrowSPI3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 33.3 — <code>scope=provided</code> means this provider's own JAR carries none of the
+          classes the running server already supplies, avoiding a real classloading-conflict failure mode.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="toy-store" data-title="The toy store: StaffRecord and the CSV">
+        <h2>The toy external store: a CSV standing in for a real legacy system</h2>
+        <p>The point of this lab is the Keycloak-facing code, not the external store underneath it — so the
+        store is kept as simple as it can be while still being genuinely external and genuinely not LDAP. A
+        bundled classpath resource, <code>riverside-legacy-staff.csv</code>, stands in for Riverside Health's
+        real proprietary HR system's own user table:</p>
+        <pre><code>username,password,firstName,lastName,email,employeeId,department
+jmartinez,Clinic#2026,Jordan,Martinez,jmartinez@riversidehealth.example,RH-10234,Cardiology
+awong,Nursing$88,Amara,Wong,awong@riversidehealth.example,RH-10391,Nursing
+dkhan,OnCall!55,Dalia,Khan,dkhan@riversidehealth.example,RH-10477,Emergency Medicine</code></pre>
+        <p><code>LegacyStaffDirectoryStore.loadFromClasspath()</code> parses this file exactly once, in the
+        factory's <code>init()</code>, into two read-only <code>Map</code>s (by username, by email) shared across
+        every provider instance for this deployment's lifetime — no re-parsing per request:</p>
+        <pre><code>public static LegacyStaffDirectoryStore loadFromClasspath(String resourcePath) {
+    Map&lt;String, StaffRecord&gt; byUsername = new HashMap&lt;&gt;();
+    Map&lt;String, StaffRecord&gt; byEmail = new HashMap&lt;&gt;();
+    try (InputStream in = LegacyStaffDirectoryStore.class.getResourceAsStream(resourcePath)) {
+        // ...read header, then one StaffRecord per CSV row...
+        byUsername.put(record.username().toLowerCase(), record);
+        byEmail.put(record.email().toLowerCase(), record);
+    }
+    return new LegacyStaffDirectoryStore(Map.copyOf(byUsername), Map.copyOf(byEmail));
+}</code></pre>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">A real, intentional risk, named honestly</div>
+          <p>The password column is <strong>plaintext</strong>, on purpose. That is an honest stand-in for a
+          genuinely common real-world failure mode, not a shortcut taken to save code: a decades-old internal HR
+          system built long before argon2/bcrypt were standard practice really can store plaintext or
+          weakly-reversible credentials, and a hospital cannot simply "turn it off" overnight. A custom User
+          Storage SPI provider is exactly how Keycloak sits in front of a store like that without being able to
+          fix what's inside it — the provider bridges the store; it does not, and cannot, repair it.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="user-adapter" data-title="AbstractUserAdapter: read-only by default">
+        <h2><code>AbstractUserAdapter</code>: read-only is the default, not a restriction added on top</h2>
+        <p><code>LegacyStaffUserAdapter</code> adapts one <code>StaffRecord</code> into the <code>UserModel</code>
+        shape Keycloak core actually works with, by extending <code>AbstractUserAdapter</code> (from
+        <code>keycloak-model-storage</code>). Per Keycloak's own javadoc, this class "provides implementations
+        for everything but <code>getUsername()</code>," and — critically for a bridge to a legacy system this
+        provider has no way to write back into — <strong>every update method throws
+        <code>ReadOnlyException</code> unless explicitly overridden</strong>. This lab overrides nothing on the
+        write side at all, because there is genuinely nothing to override: the read-only default behavior
+        <em>is</em> the correct behavior here, not a corner this lab cut.</p>
+        <pre><code>public class LegacyStaffUserAdapter extends AbstractUserAdapter {
+    private final StaffRecord record;
+    public LegacyStaffUserAdapter(KeycloakSession session, RealmModel realm,
+                                   ComponentModel storageProviderModel, StaffRecord record) {
+        super(session, realm, storageProviderModel);
+        this.record = record;
+    }
+    @Override public String getUsername()  { return record.username(); }
+    @Override public String getFirstName() { return record.firstName(); }
+    @Override public String getEmail()     { return record.email(); }
+    // getAttributes() also returns "legacyEmployeeId" and "department" -- fields the
+    // legacy system carries that Keycloak's built-in UserModel has no dedicated slot for.
+}</code></pre>
+        <p>One thing <code>AbstractUserAdapter</code> does <strong>not</strong> provide a default for, confirmed
+        the hard way during this chapter's own build (see the lab below):
+        <code>UserModel.credentialManager()</code>. Keycloak's newer credential-manager API left this method
+        abstract all the way down even on this "provides everything but <code>getUsername()</code>" base class.
+        The fix is Keycloak core's own bridge class, <code>org.keycloak.credential.UserCredentialManager</code>
+        (also in <code>keycloak-model-storage</code>), which forwards <code>isValid()</code>/
+        <code>isConfiguredFor()</code> calls straight through to this provider's own
+        <code>CredentialInputValidator</code> — a federated, legacy-style provider like this one never has to
+        implement <code>SubjectCredentialManager</code>'s full surface itself:</p>
+        <pre><code>@Override
+public SubjectCredentialManager credentialManager() {
+    return new UserCredentialManager(session, realm, this);
+}</code></pre>
+
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>Pros and cons of writing a custom User Storage SPI provider instead of migrating data into Keycloak's own store</caption>
+            <thead><tr><th>Pros</th><th>Cons</th></tr></thead>
+            <tbody>
+              <tr><td>The legacy system stays the single source of truth — no migration project, no risk of two copies of staff data drifting apart</td><td>No admin-console configuration screen exists unless you build one yourself — LDAP federation's rich settings UI (chapter 32) is specific to that provider</td></tr>
+              <tr><td>Exposes organization-specific fields natively (e.g. <code>legacyEmployeeId</code>, <code>department</code>) without configuring attribute mappers the way LDAP federation needs</td><td>No built-in sync/caching behavior — LDAP federation's periodic sync and cache policy are specific to that provider; a custom provider must build its own if it needs one</td></tr>
+              <tr><td>Works for any external store at all, not just ones that happen to speak LDAP</td><td>Real code to write, test, version, and redeploy — a config mistake in LDAP federation is a realm setting; a mistake here is a Java bug in a JAR</td></tr>
+              <tr><td>Can implement exactly the capabilities needed (here: lookup + password check) and nothing more</td><td>You own the classloading and version-compatibility risk against the specific Keycloak version running it — confirmed directly in this chapter's own Maven-coordinate research</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Riverside Health">
+        <h2>Case study: Riverside Health's legacy HR directory</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p><span class="org-chip riverside">Riverside Health</span> runs a hospital network whose clinical and
+          administrative staff accounts have lived for two decades in an internal HR system built in-house —
+          its own proprietary database schema, its own (dated) password storage, no LDAP interface, no REST API,
+          and no realistic budget or appetite to replace it just to satisfy a new identity platform. Riverside
+          still wants every clinician and administrator logging into the new patient-portal-adjacent tooling
+          (chapters 46-47 build the fuller HIPAA patient-portal case study later) through one centralized
+          Keycloak realm, with the same MFA and session policies (chapter 30) applied uniformly — but migrating
+          every staff account's credentials into Keycloak's own store is explicitly off the table: it's a legacy
+          system HR still actively uses day to day, and a one-way migration would immediately create two
+          diverging copies of "who currently works here." A custom User Storage SPI provider — exactly this
+          chapter's lab, scaled up — is how Riverside Health's IAM specialist would actually bridge the two
+          systems: Keycloak brokers every login through the provider, HR's system remains the untouched source
+          of truth, and nothing about Keycloak's downstream configuration (clients, roles, MFA policy) has to
+          know the difference.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-build" data-title="Lab: building the provider — for real">
+        <h2>Lab: building this provider for real, including the real failures</h2>
+        <p>Everything below actually happened, in this order, while writing this chapter — not cleaned up
+        after the fact. The point of showing both failures is that a custom SPI provider is ordinary Java and
+        Maven, with ordinary Java and Maven failure modes, not some opaque Keycloak-specific magic.</p>
+        <ol class="lab-steps">
+          <li><p><strong>First attempt: a broken POM.</strong> The <code>pom.xml</code>'s own explanatory comment
+          happened to include a real shell command containing <code>--rm</code> inside an XML comment — and XML
+          comments cannot contain two consecutive hyphens anywhere in their body, not just at the boundary.
+          <code>mvn clean package</code> failed before compiling a single line of Java:</p>
+          <pre><code>[ERROR] Non-parseable POM .../pom.xml: in comment after two dashes (--) next
+character must be &gt; not r (position: START_DOCUMENT seen ...no nearest-version
+substitute was required), and\n  `docker run --r... @16:18) @ line 16, column 18</code></pre>
+          <p>Fixed by rewriting the comment's prose to avoid any <code>--</code> sequence at all (not just
+          escaping it — XML comments have no escape mechanism for this). A second, identical failure appeared
+          immediately after on a different comment a few lines down, for the exact same reason, and got the
+          same fix.</p></li>
+
+          <li><p><strong>Second attempt: a real compile error.</strong> With the POM fixed, <code>mvn clean
+          package</code> got all the way to compiling Java and stopped on <code>LegacyStaffUserAdapter</code>:</p>
+          <pre><code>[ERROR] LegacyStaffUserAdapter.java:[25,8] com.riversidehealth.keycloak.legacyhr.LegacyStaffUserAdapter
+is not abstract and does not override abstract method credentialManager() in org.keycloak.models.UserModel</code></pre>
+          <p>This is the exact gap the previous slide named: <code>AbstractUserAdapter</code> does not implement
+          <code>credentialManager()</code> on a subclass's behalf, despite implementing almost everything else.
+          Fixed by adding the <code>credentialManager()</code> override shown on the previous slide, bridging to
+          Keycloak core's own <code>UserCredentialManager</code>.</p></li>
+
+          <li><p><strong>Clean build, for real:</strong></p>
+          <pre><code>$ mvn clean package
+...
+[INFO] Compiling 5 source files with javac [debug release 21] to target/classes
+[INFO] .../LegacyStaffUserAdapter.java uses or overrides a deprecated API.
+[INFO] --- maven-jar-plugin:3.4.1:jar (default-jar) ---
+[INFO] Building jar: .../target/legacy-staff-directory-spi-1.0.0.jar
+[INFO] BUILD SUCCESS</code></pre>
+          <p>The deprecation warning is real too, and minor: <code>AbstractUserAdapter.getAttribute(String)</code>
+          (which this provider overrides, to serve <code>legacyEmployeeId</code>/<code>department</code>) is
+          marked deprecated in favor of the newer stream-based attribute methods — it still works correctly, and
+          this chapter kept the override rather than chase a cosmetic warning, but a reader extending this
+          provider for real should check the current stream-based alternative first.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-compose-up" data-title="Lab: deploying the JAR — a real Docker gotcha">
+        <ol class="lab-steps" style="counter-reset: lab-step 3;">
+          <li><p><strong>Bring up this chapter's own isolated stack</strong> (<code>labs/custom-user-storage-spi/
+          docker-compose.yml</code>, project name <code>ch33kc</code>, Keycloak published on host port 18133 —
+          isolated from the shared <code>labs/docker/</code> stack every other chapter uses):</p>
+          <pre><code>cd labs/custom-user-storage-spi
+docker compose -p ch33kc up -d</code></pre>
+          <p>Then, to confirm the JAR actually mounted, inside the container:</p>
+          <pre><code>docker compose -p ch33kc exec keycloak ls -la /opt/keycloak/providers/</code></pre>
+          <pre><code>drwxr-xr-x 2 root     root     4096 ...  legacy-staff-directory-spi-1.0.0.jar
+-rw-rw-r-- 1 keycloak root      256 ...  README.md</code></pre>
+          <p><strong>A real, genuinely instructive bug</strong>: that first column, <code>drwxr-xr-x</code>, is a
+          directory listing, not a file. Checking the host side confirmed it: the path
+          <code>target/legacy-staff-directory-spi-1.0.0.jar</code> had become a <em>directory, owned by
+          root</em>, on the host filesystem too. The cause, confirmed by checking the actual sequence of events:
+          Docker's own bind-mount behavior silently creates an empty directory at the bind-mount source path (on
+          <em>both</em> the host and inside the container) if that path doesn't exist as a file at the moment
+          the container is created — and in this chapter's own run, an earlier <code>mvn clean package</code>
+          had briefly left the path absent between its "clean" and "package" phases relative to when
+          <code>docker compose up</code> happened to run. There is no error message anywhere pointing at this;
+          the provider simply never loads, silently.</p>
+          <p>Fixed by tearing the stack down, removing the now-wrong directory, rebuilding the real JAR, and
+          <em>confirming it exists as a file on the host before</em> bringing the stack back up:</p>
+          <pre><code>docker compose -p ch33kc down -v
+rm -rf target/legacy-staff-directory-spi-1.0.0.jar
+mvn clean package
+ls -la target/legacy-staff-directory-spi-1.0.0.jar   # must print a real file, not a directory
+docker compose -p ch33kc up -d
+docker compose -p ch33kc exec keycloak ls -la /opt/keycloak/providers/</code></pre>
+          <pre><code>-rw-rw-r-- 1 keycloak 1000 11689 ...  legacy-staff-directory-spi-1.0.0.jar</code></pre>
+          <p>11689 bytes, a real file — matching the host-side JAR's own size exactly.</p></li>
+        </ol>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 230" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Docker bind-mount order-of-operations: build the file before the container needs it</title>
+            <desc id="d4">Two side-by-side sequences. Wrong order: docker compose up runs while the JAR path
+            does not yet exist on the host, so Docker silently creates an empty directory at that path on both
+            host and container, and the result is "provider never loads, no error." Right order: mvn clean
+            package runs first and is confirmed to produce a real file via ls, then docker compose up runs, and
+            the result is "JAR mounted correctly, provider loads."</desc>
+            <rect x="20" y="20" width="400" height="30" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="220" y="40" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Wrong order</text>
+            <rect x="20" y="65" width="400" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="220" y="89" text-anchor="middle" class="diagram-label" font-size="10">docker compose up (JAR path missing on host)</text>
+            <line x1="220" y1="105" x2="220" y2="118" class="diagram-stroke" marker-end="url(#arrowSPI4)"/>
+            <rect x="20" y="123" width="400" height="40" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="220" y="141" text-anchor="middle" class="diagram-label" font-size="10">Docker creates an empty directory instead</text>
+            <text x="220" y="155" text-anchor="middle" class="diagram-label" font-size="10">(host AND container) -- silently</text>
+            <line x1="220" y1="163" x2="220" y2="176" class="diagram-stroke" marker-end="url(#arrowSPI4)"/>
+            <text x="220" y="195" text-anchor="middle" class="diagram-label-muted" font-weight="700" font-size="10">Provider never loads. No error anywhere.</text>
+
+            <rect x="480" y="20" width="400" height="30" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="680" y="40" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Right order</text>
+            <rect x="480" y="65" width="400" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="680" y="83" text-anchor="middle" class="diagram-label" font-size="10">mvn clean package, THEN confirm with ls</text>
+            <text x="680" y="97" text-anchor="middle" class="diagram-label" font-size="10">that a real file exists</text>
+            <line x1="680" y1="105" x2="680" y2="118" class="diagram-stroke" marker-end="url(#arrowSPI4)"/>
+            <rect x="480" y="123" width="400" height="40" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="680" y="147" text-anchor="middle" class="diagram-label" font-size="10">docker compose up (JAR already a real file)</text>
+            <line x1="680" y1="163" x2="680" y2="176" class="diagram-stroke" marker-end="url(#arrowSPI4)"/>
+            <text x="680" y="195" text-anchor="middle" class="diagram-label-muted" font-weight="700" font-size="10">JAR mounts correctly. Provider loads.</text>
+            <defs>
+              <marker id="arrowSPI4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 33.4 — The exact Docker bind-mount failure this chapter's own lab hit: build and
+          confirm the file exists before the container that mounts it is created.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="lab-build-restart" data-title="Lab: kc.sh build, restart, and confirmation">
+        <ol class="lab-steps" style="counter-reset: lab-step 4;">
+          <li><p><strong>Re-augment the server</strong> so it picks up the new provider, then restart:</p>
+          <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kc.sh build</code></pre>
+          <pre><code>Updating the configuration and installing your custom providers, if any. Please wait.
+2026-11-11 05:02:34,394 WARN  [org.keycloak.common.Profile] Deprecated features identity-brokering-api:v1,
+twitter-broker:v1 enabled by default. Check the upgrading guide for steps to use later versions if available.
+2026-11-11 05:02:38,530 INFO  [io.quarkus.deployment.QuarkusAugmentor] Quarkus augmentation completed in 7709ms
+Server configuration updated and persisted.</code></pre>
+          <pre><code>docker compose -p ch33kc restart keycloak</code></pre>
+          <p>This stack runs <code>start-dev</code> (matching every other chapter's lab stack, to avoid an
+          unrelated TLS/hostname setup detour) — which actually re-augments automatically on its own at every
+          boot. Running <code>kc.sh build</code> explicitly here still matters for two honest reasons: it is the
+          exact command a production deployment (started with plain <code>start</code>, not
+          <code>start-dev</code>) genuinely requires before the new provider is picked up at all, and running it
+          by hand makes the "re-augment, then restart" mechanism visible instead of invisible.</p></li>
+
+          <li><p><strong>Confirm the provider is genuinely known to the server</strong>, before touching any
+          realm, via the Admin REST API's own server-info endpoint — the same endpoint the Admin Console's own
+          "Add provider" dropdown under User Federation reads from:</p>
+          <pre><code>curl -s "http://localhost:18133/admin/serverinfo" -H "Authorization: Bearer $TOKEN" \
+  | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+for p in d['componentTypes']['org.keycloak.storage.UserStorageProvider']:
+    print(p['id'], '-', p['helpText'])
+"</code></pre>
+          <pre><code>kerberos -
+ldap -
+riverside-legacy-staff-directory - Bridges Keycloak to Riverside Health's legacy, proprietary
+HR staff directory (a bundled CSV standing in for the real system) for read-only lookup and
+password validation, without migrating or rewriting that system.</code></pre>
+          <p>Confirmed live: this provider shows up as a genuine third option, listed right alongside Keycloak's
+          own built-in <code>kerberos</code> and <code>ldap</code> providers — with this provider factory's own
+          <code>getHelpText()</code> string, word for word.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-register" data-title="Lab: registering the provider — a real parentId mistake">
+        <ol class="lab-steps" style="counter-reset: lab-step 6;">
+          <li><p><strong>Create a fresh realm</strong> for this chapter's case study, and authenticate
+          <code>kcadm.sh</code> the same way chapter 27 established:</p>
+          <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh create realms \
+  -s realm=riverside-health -s enabled=true</code></pre>
+          <pre><code>Created new realm with id 'riverside-health'</code></pre></li>
+
+          <li><p><strong>First attempt at registering the provider — looked fine, wasn't</strong>:</p>
+          <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh create components -r riverside-health \
+  -s name="riverside-legacy-staff-directory" \
+  -s providerId="riverside-legacy-staff-directory" \
+  -s providerType="org.keycloak.storage.UserStorageProvider" \
+  -s parentId="riverside-health" \
+  -o</code></pre>
+          <pre><code>{
+  "id" : "7f4c3ff8-3a42-4b67-b6b8-931c48bf0554",
+  "name" : "riverside-legacy-staff-directory",
+  "providerId" : "riverside-legacy-staff-directory",
+  "providerType" : "org.keycloak.storage.UserStorageProvider",
+  "parentId" : "riverside-health",
+  "config" : { }
+}</code></pre>
+          <p>That returned 201 with no error at all — and a direct-grant login attempt for a user who only
+          exists in the CSV still failed with <code>user_not_found</code>. The cause, found by checking the
+          realm's own representation: a realm's REST <code>id</code> is a generated UUID, <strong>not</strong>
+          its human-readable <code>realm</code> name — <code>kcadm.sh get realms/riverside-health --fields
+          id,realm</code> returned <code>id: "433abc72-0aed-435c-9f95-0427c530adb7"</code>. Every other
+          realm-level component (key providers, client-registration policies — confirmed by listing them all)
+          genuinely uses that UUID as its own <code>parentId</code>. This chapter's component, created with the
+          realm's <em>name</em> string as its <code>parentId</code>, was never actually attached to the realm at
+          all — it existed, but as an orphaned record Keycloak's federation machinery never consulted. No error,
+          no warning, just silent inertness.</p>
+          <p>Fixed by deleting the orphaned component and recreating it with the real UUID:</p>
+          <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh delete \
+  components/7f4c3ff8-3a42-4b67-b6b8-931c48bf0554 -r riverside-health
+docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh create components -r riverside-health \
+  -s name="riverside-legacy-staff-directory" \
+  -s providerId="riverside-legacy-staff-directory" \
+  -s providerType="org.keycloak.storage.UserStorageProvider" \
+  -s parentId="433abc72-0aed-435c-9f95-0427c530adb7" \
+  -o</code></pre>
+          <pre><code>{
+  "id" : "f3e51733-6415-4651-9d0e-981be9d39f38",
+  "parentId" : "433abc72-0aed-435c-9f95-0427c530adb7",
+  ...
+}</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-auth" data-title="Lab: real authentication, and a real attribute gotcha">
+        <ol class="lab-steps" style="counter-reset: lab-step 8;">
+          <li><p><strong>Direct grant against a user who exists only in the CSV</strong> — no Keycloak-local
+          account for <code>jmartinez</code> exists anywhere:</p>
+          <pre><code>curl -s -X POST "http://localhost:18133/realms/riverside-health/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" -d "grant_type=password" \
+  -d "username=jmartinez" -d "password=Clinic#2026"</code></pre>
+          <pre><code>{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "expires_in": 300,
+  "token_type": "Bearer",
+  "scope": "kc-admin-api email profile"
+}</code></pre>
+          <p>A real, valid access token, issued for a user this provider's <code>getUserByUsername</code> and
+          <code>isValid</code> resolved entirely from the CSV. The exact same call with the wrong password:</p>
+          <pre><code>{"error":"invalid_grant","error_description":"Invalid user credentials"}</code></pre>
+          <p>And a direct GET by the federated id Keycloak assigns (<code>f:&lt;componentId&gt;:&lt;username&gt;</code>,
+          the convention <code>org.keycloak.storage.StorageId</code> defines) confirms the full profile round-trips
+          correctly:</p>
+          <pre><code>curl -s ".../admin/realms/riverside-health/users/f:f3e51733-6415-4651-9d0e-981be9d39f38:jmartinez" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>{
+  "id": "f:f3e51733-6415-4651-9d0e-981be9d39f38:jmartinez",
+  "username": "jmartinez", "firstName": "Jordan", "lastName": "Martinez",
+  "email": "jmartinez@riversidehealth.example", "emailVerified": true,
+  "federationLink": "f3e51733-6415-4651-9d0e-981be9d39f38"
+}</code></pre></li>
+
+          <li><p><strong>A second real gotcha: the custom attributes went missing.</strong> That representation
+          above has no <code>attributes</code> key at all — despite <code>LegacyStaffUserAdapter.getAttributes()</code>
+          genuinely returning <code>legacyEmployeeId</code> and <code>department</code>. The cause, confirmed by
+          checking the realm's own Declarative User Profile (chapters 22/24's concept, recalled here) directly:</p>
+          <pre><code>curl -s ".../admin/realms/riverside-health/users/profile" -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>{"unmanagedAttributePolicy": null, "attributes": [... only username, email, firstName, lastName ...]}</code></pre>
+          <p>Exactly chapter 22/24's lesson, now hit for a third time, from a federated provider instead of a
+          local user: an attribute not declared in the realm's User Profile schema is an "unmanaged attribute,"
+          and with <code>unmanagedAttributePolicy</code> unset (the effective default), it is silently dropped
+          from the Admin REST representation — a custom SPI provider's <code>getAttributes()</code> is not
+          exempt from this policy just because the data came from Java instead of a form field. Fixed by setting
+          the policy explicitly, then re-checking:</p>
+          <pre><code>curl -s -X PUT ".../admin/realms/riverside-health/users/profile" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{...(the existing profile config)..., "unmanagedAttributePolicy":"ADMIN_VIEW"}'</code></pre>
+          <pre><code>{
+  "id": "f:f3e51733-6415-4651-9d0e-981be9d39f38:jmartinez",
+  "attributes": { "department": ["Cardiology"], "legacyEmployeeId": ["RH-10234"] },
+  ...
+}</code></pre>
+          <p>Both custom fields now round-trip correctly. The provider's code never needed to change at all —
+          this was entirely a realm-configuration gap, confirmed by fixing it with configuration alone.</p></li>
+
+          <li><p>Tear the stack down cleanly:</p>
+          <pre><code>docker compose -p ch33kc down -v</code></pre>
+          <pre><code> Container ch33kc-keycloak-1 Removed
+ Container ch33kc-postgres-1 Removed
+ Volume ch33kc_ch33_pg_data Removed
+ Network ch33kc_default Removed</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see an XML parse error in a POM pointing at a comment, the cause is very often two
+          consecutive hyphens (<code>--</code>) somewhere inside that comment's text — XML comments cannot
+          contain that sequence anywhere in their body, with no escape mechanism; this chapter's own
+          <code>pom.xml</code> hit this exact error twice while documenting a shell command.</li>
+          <li>If you see <code>"is not abstract and does not override abstract method credentialManager()"</code>
+          while extending <code>AbstractUserAdapter</code>, the cause is that class's own real gap: it implements
+          almost all of <code>UserModel</code> except that one method, which Keycloak's newer credential-manager
+          API left abstract. Bridge it with <code>new UserCredentialManager(session, realm, this)</code>.</li>
+          <li>If a bind-mounted provider JAR shows up as a <strong>directory</strong> inside the container
+          (confirm with <code>ls -la</code> — a <code>d</code> in the permissions column, not a <code>-</code>),
+          the cause is that the source file didn't exist on the host at the moment the container was created.
+          Docker silently creates an empty directory at that path, on both sides, rather than failing — rebuild
+          the real JAR, confirm it with <code>ls</code> on the host first, then bring the container up.</li>
+          <li>If a <code>kcadm.sh create components</code> call for a User Federation provider returns 201 with
+          no error, but the provider never actually resolves any user, the cause is very often a
+          <code>parentId</code> set to the realm's <em>name</em> instead of its real UUID <code>id</code> — list
+          any of the realm's other default components (<code>kcadm.sh get components -r &lt;realm&gt;</code>) to
+          see the real UUID every other component actually uses.</li>
+          <li>If a custom attribute your provider's <code>getAttributes()</code> genuinely returns doesn't show
+          up anywhere in the Admin REST API's user representation, the cause is almost always the realm's
+          Declarative User Profile: an attribute not declared in its schema is dropped unless
+          <code>unmanagedAttributePolicy</code> is set to allow it — the same gap chapters 22 and 24 already hit
+          for ordinary local users, not something specific to federated providers.</li>
+          <li>If you see Keycloak throw a <code>ClassCastException</code> or silently fail to find your provider
+          after a version upgrade, a frequent cause (not personally reproduced in this chapter's run, since the
+          coordinates were verified live before writing the POM — see two slides back) is a provider JAR built
+          against a different Keycloak minor version than the one actually running it, or a provider JAR that
+          <em>shades</em> (bundles) its <code>provided</code>-scope Keycloak dependencies instead of leaving them
+          out — either way putting two different copies of the same SPI classes on the server's classpath at
+          once.</li>
+          <li>If your provider never appears at all in <code>serverinfo</code>'s <code>componentTypes</code>,
+          with no error anywhere, double-check the exact filename
+          <code>META-INF/services/org.keycloak.storage.UserStorageProviderFactory</code> and its contents (one
+          fully qualified class name, no leading/trailing whitespace issues) — <code>ServiceLoader</code> fails
+          this kind of registration silently, by simply not finding the provider, rather than with a loud error.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A Keycloak User Storage SPI provider is two classes: a <code>Factory</code> (discovered once, at
+          boot, via Java's standard <code>ServiceLoader</code> mechanism) and a <code>Provider</code> (created
+          fresh per transaction by the factory), and nothing more exotic than that.</li>
+          <li>A provider implements only the "capability interfaces" it actually needs —
+          <code>UserLookupProvider</code> and <code>CredentialInputValidator</code> here, deliberately not
+          <code>UserQueryMethodsProvider</code>, which is why this provider's users don't show up in the Admin
+          Console's search but do authenticate correctly, confirmed live.</li>
+          <li>As of Keycloak 26.4+, <code>UserStorageProvider</code>/<code>UserStorageProviderFactory</code>/
+          <code>AbstractUserAdapter</code> live in <code>keycloak-model-storage</code>, not
+          <code>keycloak-server-spi</code> alone — confirmed for the exact 26.8.2 version this course runs by
+          inspecting both Maven Central's metadata and the real jars inside the running server image, with no
+          nearest-version substitute needed.</li>
+          <li>Both Keycloak dependencies belong at <code>scope=provided</code>: the server supplies these exact
+          classes at runtime, and bundling them into the provider's own JAR risks a real classloading conflict.</li>
+          <li><code>AbstractUserAdapter</code> implements nearly all of <code>UserModel</code> with sensible
+          read-only defaults — except <code>credentialManager()</code>, which must be bridged explicitly via
+          Keycloak core's own <code>UserCredentialManager</code>, confirmed the hard way via a real compile
+          error in this chapter's own build.</li>
+          <li>A Docker bind-mounted provider JAR that doesn't exist on the host at container-creation time
+          becomes a silently-created, empty directory on both sides — build and confirm the real file exists
+          with <code>ls</code> before bringing the stack up, not after.</li>
+          <li>A realm-level component's <code>parentId</code> must be the realm's actual UUID <code>id</code>,
+          never its human-readable <code>realm</code> name — getting this wrong creates a 201-returning,
+          silently orphaned component that Keycloak's federation machinery never consults.</li>
+          <li>A federated provider's custom attributes are subject to the exact same Declarative User Profile
+          <code>unmanagedAttributePolicy</code> gate as any local user's attributes (chapters 22/24) — confirmed
+          live by watching <code>legacyEmployeeId</code>/<code>department</code> vanish from, then reappear in,
+          the Admin REST representation purely by changing a realm setting, with zero code changes.</li>
+          <li>A custom User Storage SPI provider and Keycloak's built-in LDAP federation (chapter 32) are two
+          options for the same job, not a hierarchy — reach for LDAP federation when the store actually speaks
+          LDAP, and for a custom SPI provider when it doesn't and can't realistically be migrated.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Why does a minimal custom User Storage SPI provider need two classes — a Factory and a
+            Provider — rather than just one?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They solve
+            different lifecycle problems. The Factory is discovered exactly once, at server boot, via
+            <code>ServiceLoader</code>, and is the right place to do expensive one-time setup — this chapter's
+            factory loads the entire CSV directory into memory in its <code>init()</code>. The Provider is
+            created fresh by the factory's <code>create()</code> for every Keycloak transaction, which has to be
+            cheap, because it happens constantly; it's cheap here specifically because the expensive work
+            already happened once in the factory and is simply shared, read-only, with every provider instance.
+            Collapsing both into one class would force either repeated expensive setup per transaction, or an
+            awkward static/singleton workaround instead of the lifecycle Keycloak already manages correctly.</p>
+          </details></li>
+          <li><details>
+            <summary>Why did it matter, concretely, that <code>UserStorageProvider</code>/
+            <code>UserStorageProviderFactory</code> moved from <code>keycloak-server-spi</code> into
+            <code>keycloak-model-storage</code> as of Keycloak 26.4+?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A POM written
+            against only <code>keycloak-server-spi</code>/<code>keycloak-server-spi-private</code> — a
+            reasonable guess based on earlier Keycloak versions, or based on the names alone — would fail to
+            compile against 26.8.2, because the two classes this provider's factory directly implements
+            (<code>UserStorageProvider</code>, <code>UserStorageProviderFactory</code>) genuinely aren't in
+            either of those jars anymore; confirmed directly by unzipping both and finding no such classes
+            inside. This chapter's POM instead declares both <code>keycloak-server-spi</code> (for
+            <code>KeycloakSession</code>, <code>CredentialInputValidator</code>, etc.) and
+            <code>keycloak-model-storage</code> (for the two classes that moved), both pinned to the exact
+            26.8.2 version confirmed to exist on Maven Central and inside the real running image.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk through why <code>LegacyStaffUserAdapter</code> had to override
+            <code>credentialManager()</code> even though it extends <code>AbstractUserAdapter</code>, which is
+            documented as implementing "everything but <code>getUsername()</code>."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>That
+            documentation turned out to have one real exception, found by the compiler rather than by reading
+            ahead: <code>UserModel.credentialManager()</code> is left abstract all the way down through
+            <code>AbstractUserAdapter</code>, because Keycloak's newer credential-manager API was added after
+            that base class's original "everything but getUsername" design. Without an override, the class
+            failed to compile with <code>javac</code> naming the missing method directly. The fix bridges to
+            Keycloak core's own <code>org.keycloak.credential.UserCredentialManager</code>, constructed with
+            this adapter's own <code>session</code>/<code>realm</code>/<code>this</code>, which forwards
+            <code>isValid()</code> calls straight through to this class's own <code>CredentialInputValidator</code>
+            implementation — so the adapter never has to implement <code>SubjectCredentialManager</code>'s much
+            larger surface itself.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague registers your provider with <code>-s parentId="riverside-health"</code>
+            instead of the realm's actual UUID. What goes wrong, and why does it fail silently instead of with a
+            clear error?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A realm's REST
+            <code>id</code> field is a generated UUID, distinct from its human-readable <code>realm</code> name
+            field — confirmed directly in this chapter by querying <code>kcadm.sh get realms/riverside-health
+            --fields id,realm</code> and seeing two genuinely different values. The component creation call
+            still succeeds (HTTP 201) because nothing in the Admin REST API validates that a given
+            <code>parentId</code> actually corresponds to a real realm before accepting it — the component is
+            created, but as an orphaned record with no real parent, so Keycloak's federation machinery never
+            consults it when resolving a login. The failure mode downstream (a direct-grant login returning
+            <code>user_not_found</code> for a user who genuinely exists in the CSV) looks exactly like the
+            provider itself is broken, when the actual bug is one misidentified field in the registration call.</p>
+          </details></li>
+          <li><details>
+            <summary>A teammate says "I added <code>legacyEmployeeId</code> to <code>getAttributes()</code>, so
+            of course it shows up in the Admin REST API's response" — and it doesn't. What's actually going on,
+            and how do you fix it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Returning an
+            attribute from a <code>UserModel</code>'s <code>getAttributes()</code> is necessary but not
+            sufficient for it to appear in the REST representation — the realm's Declarative User Profile
+            (chapters 22/24's concept) governs which attributes are exposed at all. An attribute not declared in
+            that schema is an "unmanaged attribute," and with the realm's <code>unmanagedAttributePolicy</code>
+            left unset (the effective default), it is silently dropped from the representation with no error —
+            confirmed directly in this chapter by watching <code>legacyEmployeeId</code> and
+            <code>department</code> vanish from a federated user's JSON despite the provider genuinely returning
+            them. The fix is a realm configuration change, not a code change: <code>PUT
+            /admin/realms/{realm}/users/profile</code> with <code>unmanagedAttributePolicy</code> set to
+            <code>ADMIN_VIEW</code> (or a broader option), after which both attributes reappeared with zero
+            changes to the provider itself.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter's provider extend <code>AbstractUserAdapter</code> rather than
+            <code>AbstractUserAdapterFederatedStorage</code>, and when would the opposite choice be the right
+            one?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>
+            <code>AbstractUserAdapter</code> fits a provider whose backing store already holds every field the
+            adapter needs to expose (username, name, email, custom attributes) and that has no way to accept
+            writes back from Keycloak at all — exactly this chapter's situation, where the legacy HR system is
+            read-only from Keycloak's point of view and every update method throwing <code>ReadOnlyException</code>
+            by default is the <em>correct</em> behavior, not a limitation worked around. Per Keycloak's own
+            javadoc, <code>AbstractUserAdapterFederatedStorage</code> instead stores profile fields as attributes
+            in Keycloak's own federated-storage tables, which is the right choice when a provider's external
+            store is missing some fields Keycloak itself needs to track (session-related metadata, data a
+            read-only external system has no field for) — letting Keycloak's own database fill the gap around an
+            external store that's deliberately only partially authoritative, rather than fully authoritative the
+            way this chapter's CSV is treated.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_user-storage-spi">Keycloak Server Developer Guide — User Storage SPI (version 26.8.2, includes the "Simple read-only, lookup example")</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_implementing_spi">Keycloak Server Developer Guide — "Implementing an SPI" (the general Factory/Provider/ServiceLoader pattern every Keycloak SPI follows)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#user-profile">Keycloak Server Administration Guide — "User profile" (the Declarative User Profile and <code>unmanagedAttributePolicy</code> mechanism this chapter's attribute-exposure gotcha ran into)</a></li>
+          <li><a href="https://central.sonatype.com/artifact/org.keycloak/keycloak-model-storage">Maven Central — org.keycloak:keycloak-model-storage (the module this chapter's live coordinate research confirmed holds UserStorageProvider/UserStorageProviderFactory as of Keycloak 26.4+)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "custom-user-storage-spi", 15);
+    SlideDeck.init({ chapterSlug: "custom-user-storage-spi" });
+  });
+</script>
+</body>
+</html>

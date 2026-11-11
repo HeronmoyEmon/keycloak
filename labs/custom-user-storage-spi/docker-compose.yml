@@ -1,0 +1,62 @@
+# Chapter 33's own, isolated Keycloak + PostgreSQL stack.
+#
+# This is deliberately a SEPARATE compose file from labs/docker/docker-compose.yml, not an override
+# of it: this chapter needs a Keycloak instance with a custom provider JAR mounted into
+# /opt/keycloak/providers/, which the shared lab stack every other Keycloak chapter uses should
+# never be asked to carry around permanently. Bring it up with its own project name so it never
+# collides with the shared stack or any other chapter's isolated stack:
+#
+#   cd labs/custom-user-storage-spi
+#   mvn clean package
+#   docker compose -p ch33kc up -d
+#
+# Keycloak is published on host port 18133 (http://localhost:18133), matching every other Part VI
+# chapter's pattern of giving each new, chapter-owned stack its own port so it can run alongside the
+# shared labs/docker stack without a port clash.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch33_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev (not production "start" mode) to match every other chapter's lab stack -- no TLS/
+    # hostname configuration needed for a local teaching lab. start-dev also auto-detects and
+    # re-augments for a changed providers/ directory on its own at each boot; this chapter's lab
+    # still runs `kc.sh build` explicitly as its own step, both because that is the command a
+    # production deployment (started with plain `start`) genuinely requires, and because it makes
+    # the "re-augment, then restart" mechanism visible rather than invisible. See the chapter text
+    # for what was actually observed running build explicitly under start-dev.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18133:8080"
+    volumes:
+      # The built provider JAR, mounted read-only into Keycloak's own providers directory -- the
+      # one piece of real deployment mechanics this whole lab exists to exercise. Build it first
+      # (mvn clean package); this bind mount will fail silently (an empty/missing file inside the
+      # container, not a compose error) if the JAR doesn't exist yet at this host path.
+      - ./target/legacy-staff-directory-spi-1.0.0.jar:/opt/keycloak/providers/legacy-staff-directory-spi-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch33_pg_data:

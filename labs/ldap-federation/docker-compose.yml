@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ldap_fed_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  openldap:
+    # osixia/openldap:1.5.0 live-verified 2026-11-11 against Docker Hub + the upstream GitHub repo
+    # (now renamed osixia/container-openldap, 110M+ pulls, still actively maintained — most recent
+    # push 2026-11-02). 1.5.0 (OpenLDAP 2.4.57) is the newest *stable, final* release tag; the
+    # project's v2 line (2.6.15) exists only as alpha/beta/rc prereleases as of this date and carries
+    # an explicit "v2 is a breaking release" warning in its own README, so 1.5.0 is the tag this lab
+    # pins rather than an unreleased prerelease.
+    image: osixia/openldap:1.5.0
+    hostname: ldap.meridiantrust.example
+    environment:
+      LDAP_ORGANISATION: "Meridian Trust"
+      LDAP_DOMAIN: "meridiantrust.example"
+      LDAP_BASE_DN: "dc=meridiantrust,dc=example"
+      LDAP_ADMIN_PASSWORD: "ldap_admin_lab_password"
+      LDAP_TLS: "false"
+      # Seeding method found to actually work after testing two others that failed real startup runs
+      # (see labs/ldap-federation/README.md "Seeding gotchas" for what broke and why): this image's own
+      # "seed from internal path" feature, which COPIES whatever is in this directory into its default
+      # seeding location rather than consuming/moving the source files — the only approach confirmed to
+      # leave ./seed/50-meridian-seed.ldif untouched on the host across repeated `down -v && up -d` runs.
+      LDAP_SEED_INTERNAL_LDIF_PATH: "/ldap-seed-src"
+    ports:
+      - "18389:389"
+    volumes:
+      - ./seed:/ldap-seed-src
+      - ldap_fed_data:/var/lib/ldap
+      - ldap_fed_config:/etc/ldap/slapd.d
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+    ports:
+      - "18132:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openldap:
+        condition: service_started
+
+volumes:
+  ldap_fed_pg_data:
+  ldap_fed_data:
+  ldap_fed_config:

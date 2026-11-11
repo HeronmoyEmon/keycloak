@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Identity Brokering — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "identity-brokering";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VI — Federation &amp; Integration</span>
+          <span class="badge minutes">~50 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>31. Identity Brokering</h1>
+        <p class="lede">Chapter 7 defined identity brokering in the abstract: delegating the act of
+        authentication to an external Identity Provider the user already has an account with, rather than
+        storing or checking a password locally. This chapter builds exactly that, for real, inside a single
+        running Keycloak instance — one realm playing the external corporate IdP, a second realm brokering
+        to it — and proves the full round trip with nothing but <code>curl</code> and a cookie jar: a real
+        login at the external IdP, a real redirect back, and a real, just-in-time-provisioned user record
+        confirmed afterward through the Admin REST API.</p>
+
+        <h2>Why this matters</h2>
+        <p>"Can our enterprise customers log in with their own corporate identity instead of a password we
+        issue them?" is one of the most common requests an IAM specialist fields, and identity brokering is
+        the feature that answers it. Getting it wrong is expensive in a specific way: a misconfigured
+        redirect URI or a mismatched issuer doesn't fail loudly in a code review, it fails at 2am when a
+        real enterprise customer's engineers can't log in, with an error message that points at the wrong
+        layer of the stack. This chapter's lab deliberately walks through the exact failure this course's
+        own authoring process hit while drafting it, not just the happy path, because debugging a broken
+        brokering integration is a core, recurring task for this role.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 7 named the formal roles — Identity Provider (IdP), the relying Service Provider (SP)
+          or Relying Party (RP) — and drew a hard line between <strong>brokering</strong> (delegating one
+          login event to an external IdP the user already has an account with) and <strong>federation</strong>
+          (reusing an existing directory, chapter 32's subject). It also introduced <strong>JIT (just-in-time)
+          provisioning</strong>: the first successful brokered login silently creates a matching local
+          identity, through the same "federated/brokered creation" door chapter 2's identity lifecycle
+          named and deferred. Everything in this chapter is that vocabulary made concrete: Keycloak's
+          <strong>Identity Provider</strong> resource is the trust configuration chapter 7 said has to exist
+          before brokering can work at all, and this chapter's lab is JIT provisioning witnessed directly,
+          not described.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="broker-sequence" data-title="The full brokering sequence">
+        <h2>The full brokering sequence, end to end</h2>
+        <p>Before touching any configuration, here is the complete shape this chapter's lab reproduces with
+        real HTTP calls: a user tries to log into <span class="org-chip northwind">Northwind Apps</span>'s
+        <code>northwind-apps</code> realm, gets redirected to their own employer's identity provider instead
+        of seeing a Northwind-issued password form, authenticates there for real, and lands back in
+        <code>northwind-apps</code> with a brand-new local user record nobody at Northwind had to create by
+        hand.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 380" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The full identity brokering sequence, from login attempt to JIT-provisioned user</title>
+            <desc id="d1">A browser at the top connects down to two realms on the same Keycloak instance:
+            northwind-apps on the lower left (playing the broker/SP role) and northwind-corporate-idp on the
+            lower right (playing the external corporate IdP). Step 1: the browser requests authorization at
+            northwind-apps with a hint naming the corporate IdP. Step 2: northwind-apps redirects to
+            northwind-corporate-idp's own authorize endpoint. Step 3: the browser logs in for real directly
+            against northwind-corporate-idp, with a real login form and real credentials. Step 4: northwind-
+            corporate-idp redirects back to northwind-apps's broker endpoint with an authorization code.
+            Step 5: northwind-apps runs its First Broker Login flow and either links to an existing local
+            account or, as in this chapter's lab, just-in-time provisions a brand-new one. Step 6: the
+            browser completes a final redirect and receives real northwind-apps tokens for the requesting
+            client, northwind-dashboard.</desc>
+            <rect x="370" y="20" width="170" height="54" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="455" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">BROWSER</text>
+            <text x="455" y="60" text-anchor="middle" class="diagram-label-muted" font-size="10">(Ben Carter, Acme Corp)</text>
+
+            <rect x="70" y="140" width="230" height="72" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="185" y="164" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">NORTHWIND-APPS</text>
+            <text x="185" y="181" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak realm — broker / SP</text>
+            <text x="185" y="197" text-anchor="middle" class="diagram-label-muted" font-size="10">client: northwind-dashboard</text>
+
+            <rect x="600" y="140" width="230" height="72" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="715" y="164" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">NORTHWIND-CORPORATE-IDP</text>
+            <text x="715" y="181" text-anchor="middle" class="diagram-label-muted" font-size="10">Keycloak realm — Acme Corp's own IdP</text>
+            <text x="715" y="197" text-anchor="middle" class="diagram-label-muted" font-size="10">real user: ben.carter</text>
+
+            <rect x="50" y="275" width="270" height="68" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="185" y="298" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">JIT-PROVISIONED USER</text>
+            <text x="185" y="315" text-anchor="middle" class="diagram-label-muted" font-size="10">local record in northwind-apps,</text>
+            <text x="185" y="330" text-anchor="middle" class="diagram-label-muted" font-size="10">linked to the federated identity</text>
+
+            <rect x="580" y="275" width="270" height="68" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="715" y="298" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">SIGNED IN</text>
+            <text x="715" y="315" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">real northwind-apps tokens</text>
+            <text x="715" y="330" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">issued for northwind-dashboard</text>
+
+            <line x1="400" y1="65" x2="215" y2="138" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="260" y="105" text-anchor="middle" class="diagram-label-muted" font-size="10">1. authorize +</text>
+            <text x="260" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">kc_idp_hint</text>
+
+            <line x1="300" y1="175" x2="598" y2="175" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="450" y="166" text-anchor="middle" class="diagram-label-muted" font-size="10">2. redirect to Acme's own login</text>
+
+            <line x1="500" y1="65" x2="650" y2="138" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="618" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">3. real login:</text>
+            <text x="618" y="113" text-anchor="middle" class="diagram-label-muted" font-size="10">GET form, POST creds</text>
+
+            <path d="M 660,214 Q 440,250 232,214" fill="none" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="440" y="246" text-anchor="middle" class="diagram-label-muted" font-size="10">4. redirect back, code, to the broker endpoint</text>
+
+            <line x1="185" y1="212" x2="185" y2="273" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="185" y="240" text-anchor="middle" class="diagram-label-muted" font-size="9">5. First Broker</text>
+            <text x="185" y="252" text-anchor="middle" class="diagram-label-muted" font-size="9">Login: create/link</text>
+
+            <line x1="320" y1="309" x2="578" y2="309" class="diagram-stroke" marker-end="url(#arrowIB1)"/>
+            <text x="450" y="300" text-anchor="middle" class="diagram-label-muted" font-size="10">6. final redirect + code</text>
+
+            <defs>
+              <marker id="arrowIB1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 31.1 — The full brokering sequence this chapter's lab reproduces with real curl
+          calls: authorize with a hint, redirect to the external IdP, real login, redirect back, JIT
+          provisioning, final tokens.</figcaption>
+        </figure>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>Nothing about this sequence requires two different companies' servers. Brokering is a protocol
+          relationship between an IdP and an SP/RP — it doesn't care whether those two roles happen to be
+          two realms on the <em>same</em> Keycloak instance (this chapter's lab, for scriptability) or two
+          servers run by two different organizations (the real Acme Corp scenario this lab stands in for).
+          The trust configuration and the redirect chain are identical either way.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="idp-resource" data-title="Keycloak's Identity Provider resource">
+        <h2>Keycloak's Identity Provider resource: chapter 7's trust triangle, made concrete</h2>
+        <p>Chapter 7 said trust between an IdP and an SP/RP has three ingredients, configured in advance,
+        never assumed: metadata, certificates/signing keys, and registered redirect URIs. A Keycloak
+        <strong>Identity Provider</strong> — a realm-scoped resource identified by an <strong>alias</strong>
+        (this chapter uses <code>northwind-corporate-idp</code>, matching the realm it points at, though the
+        two names don't have to match) — is exactly that trust configuration, with each ingredient landing
+        on a specific field.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 290" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Chapter 7's three trust ingredients, mapped onto Keycloak's Identity Provider fields</title>
+            <desc id="d2">A box labeled northwind-apps's Identity Provider resource on the left and a box
+            labeled northwind-corporate-idp realm on the right, bridged by three stacked middle boxes:
+            Metadata, concretely the authorizationUrl, tokenUrl and jwksUrl fields pointing at the other
+            realm's real OIDC endpoints; Certificates and signing keys, concretely the jwksUrl plus
+            useJwksUrl equals true, so signatures are verified against live keys rather than a one-time
+            copy; and Registered redirect URI, concretely the fixed convention realms slash northwind-apps
+            slash broker slash northwind-corporate-idp slash endpoint, which must be registered as a valid
+            redirect URI on the northwind-apps-broker client inside northwind-corporate-idp. A caption
+            states that none of this is optional or inferred — every field was set explicitly in this
+            chapter's lab.</desc>
+            <rect x="20" y="110" width="160" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="100" y="145" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">northwind-apps's</text>
+            <text x="100" y="162" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Identity Provider</text>
+            <text x="100" y="178" text-anchor="middle" class="diagram-label-muted" font-size="9">alias: northwind-corporate-idp</text>
+
+            <rect x="580" y="110" width="160" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="660" y="145" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">northwind-corporate-idp</text>
+            <text x="660" y="162" text-anchor="middle" class="diagram-label-muted" font-size="10">realm</text>
+            <text x="660" y="178" text-anchor="middle" class="diagram-label-muted" font-size="9">client: northwind-apps-broker</text>
+
+            <rect x="240" y="20" width="280" height="54" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="380" y="38" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Metadata</text>
+            <text x="380" y="55" text-anchor="middle" class="diagram-label-muted" font-size="9">authorizationUrl / tokenUrl / jwksUrl</text>
+            <text x="380" y="68" text-anchor="middle" class="diagram-label-muted" font-size="9">— the other realm's real endpoints</text>
+
+            <rect x="240" y="108" width="280" height="54" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="380" y="126" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Certificates / signing keys</text>
+            <text x="380" y="143" text-anchor="middle" class="diagram-label-muted" font-size="9">jwksUrl + useJwksUrl=true</text>
+            <text x="380" y="156" text-anchor="middle" class="diagram-label-muted" font-size="9">— verified against live keys</text>
+
+            <rect x="240" y="196" width="280" height="54" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="380" y="214" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Registered redirect URI</text>
+            <text x="380" y="231" text-anchor="middle" class="diagram-label-muted" font-size="9">.../realms/northwind-apps/broker/</text>
+            <text x="380" y="244" text-anchor="middle" class="diagram-label-muted" font-size="9">northwind-corporate-idp/endpoint</text>
+
+            <line x1="180" y1="150" x2="238" y2="47" class="diagram-stroke"/>
+            <line x1="180" y1="150" x2="238" y2="135" class="diagram-stroke"/>
+            <line x1="180" y1="150" x2="238" y2="223" class="diagram-stroke"/>
+
+            <line x1="522" y1="47" x2="580" y2="150" class="diagram-stroke"/>
+            <line x1="522" y1="135" x2="580" y2="150" class="diagram-stroke"/>
+            <line x1="522" y1="223" x2="580" y2="150" class="diagram-stroke"/>
+
+            <text x="380" y="275" text-anchor="middle" class="diagram-label-muted" font-size="11">Every field is explicit configuration, confirmed live in this chapter's lab — nothing is inferred.</text>
+          </svg>
+          <figcaption>Figure 31.2 — Chapter 7's three trust ingredients, each landing on a specific Keycloak
+          Identity Provider field, confirmed against this chapter's own live lab run.</figcaption>
+        </figure>
+
+        <p>A fourth field doesn't map to any of chapter 7's three ingredients, but every OIDC Identity
+        Provider needs it anyway: <strong>clientId/clientSecret</strong> — the confidential client
+        credentials <code>northwind-apps</code> itself authenticates with when it calls
+        <code>northwind-corporate-idp</code>'s token endpoint, exactly the OAuth client-credentials
+        mechanics chapter 13 already covered, now reused for one realm to talk to another.</p>
+      </section>
+
+      <section class="slide" data-slide="first-broker-login" data-title="First Broker Login &amp; JIT provisioning">
+        <h2>First Broker Login: where JIT provisioning actually happens</h2>
+        <p>Chapter 25 already named the <strong>First Broker Login flow</strong> as one of Keycloak's
+        built-in flows, run exactly once per user the first time they authenticate through a given broker.
+        This chapter is where that flow's actual decision logic matters: a successful external login does
+        not automatically mean a new local account gets created. Keycloak checks for an existing link first.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 300" role="img" aria-labelledby="t3 d3">
+            <title id="t3">The First Broker Login decision: recognize, link, or just-in-time provision</title>
+            <desc id="d3">A flowchart with three stages, top to bottom. Stage 1: external IdP login
+            succeeds. Stage 2, a decision: does a federated identity record already link this external
+            user to a local northwind-apps user? If yes, branch left to "recognized immediately, First
+            Broker Login does not run again." If no, branch right into the First Broker Login flow itself.
+            Stage 3, a second decision inside that flow: does the returned email match an existing local
+            account, with Trust Email enabled for this IdP? If yes, branch to "link to the existing local
+            account." If no, branch to "just-in-time provision a brand-new local user" — the path this
+            chapter's lab actually takes, since Ben Carter never had an account in northwind-apps before.</desc>
+            <rect x="330" y="15" width="240" height="50" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">External IdP login succeeds</text>
+
+            <rect x="300" y="95" width="300" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="450" y="118" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Federated identity already linked</text>
+            <text x="450" y="135" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">to a local user?</text>
+
+            <rect x="20" y="195" width="220" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="130" y="218" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">YES</text>
+            <text x="130" y="235" text-anchor="middle" class="diagram-label-muted" font-size="10">Recognized immediately —</text>
+            <text x="130" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">First Broker Login skipped</text>
+
+            <rect x="520" y="195" width="360" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="700" y="217" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">NO — First Broker Login flow runs</text>
+            <text x="700" y="236" text-anchor="middle" class="diagram-label-muted" font-size="10">Email matches an existing local user</text>
+            <text x="700" y="250" text-anchor="middle" class="diagram-label-muted" font-size="10">+ Trust Email on? → link to it.</text>
+            <text x="700" y="268" text-anchor="middle" class="diagram-label" font-weight="700" font-size="10">Otherwise → JIT-provision new user</text>
+            <text x="700" y="282" text-anchor="middle" class="diagram-label-muted" font-size="9">(this chapter's lab path, for Ben Carter)</text>
+
+            <line x1="450" y1="65" x2="450" y2="93" class="diagram-stroke" marker-end="url(#arrowIB2)"/>
+            <line x1="310" y1="140" x2="150" y2="193" class="diagram-stroke" marker-end="url(#arrowIB2)"/>
+            <line x1="590" y1="140" x2="700" y2="193" class="diagram-stroke" marker-end="url(#arrowIB2)"/>
+
+            <defs>
+              <marker id="arrowIB2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 31.3 — First Broker Login's real decision: an existing federated link means no
+          replay of this flow at all; a brand-new external identity means link-or-provision, not an
+          automatic new account every time.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Every brokered login leaves a <strong>federated identity</strong> record — confirmed directly
+          in this chapter's lab via <code>GET users/{id}/federated-identity</code> — pairing the local
+          user's id with the external IdP's own user id and username. That record, not anything stored on
+          the user object itself, is what lets Keycloak recognize "this is the same external person logging
+          in again" on every subsequent login.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="kc-idp-hint" data-title="Skipping the picker: kc_idp_hint">
+        <h2>Skipping the picker: <code>kc_idp_hint</code> and the default Identity Provider</h2>
+        <p>With an Identity Provider configured and not hidden, Keycloak's realm login page normally shows a
+        picker: the realm's own username/password form, plus a button per configured external IdP. For
+        Northwind's actual enterprise-SSO use case — Acme Corp's employees should <em>always</em> land
+        straight at Acme's own login, never see a Northwind-issued password field at all — that picker is
+        the wrong default. Two real mechanisms skip it, and this chapter's lab uses the first one directly.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 860 240" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Two ways to skip the Identity Provider picker page</title>
+            <desc id="d4">Left column, labeled no hint: a user hits the realm's login page and sees a
+            picker — a username/password form plus a button for each configured external IdP — and must
+            click the right one. Right column, labeled kc_idp_hint equals the IdP's alias: the exact same
+            authorization request, but with that one query parameter added, skips the picker entirely and
+            redirects straight to the named external IdP, which is the mechanism this chapter's own lab
+            curl calls used. A caption notes a third option, marking the IdP as the realm's Default Identity
+            Provider, achieves the same skip for every login to that realm without any caller needing to
+            pass the hint at all.</desc>
+            <rect x="20" y="10" width="380" height="24" rx="4" class="diagram-fill-warning"/>
+            <text x="210" y="27" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">NO HINT — PICKER SHOWN</text>
+
+            <rect x="460" y="10" width="380" height="24" rx="4" class="diagram-fill-success"/>
+            <text x="650" y="27" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">kc_idp_hint=northwind-corporate-idp</text>
+
+            <rect x="40" y="60" width="150" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="115" y="92" text-anchor="middle" class="diagram-label-muted" font-size="11">User (browser)</text>
+
+            <rect x="230" y="60" width="150" height="55" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="305" y="84" text-anchor="middle" class="diagram-label" font-size="11">Picker page:</text>
+            <text x="305" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">form + IdP buttons</text>
+
+            <line x1="192" y1="87" x2="228" y2="87" class="diagram-stroke" marker-end="url(#arrowIB3)"/>
+            <text x="210" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">User must choose</text>
+            <text x="210" y="165" text-anchor="middle" class="diagram-label-muted" font-size="10">the right button, every time</text>
+
+            <rect x="480" y="60" width="150" height="55" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="555" y="92" text-anchor="middle" class="diagram-label-muted" font-size="11">User (browser)</text>
+
+            <rect x="670" y="60" width="150" height="55" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="745" y="84" text-anchor="middle" class="diagram-label" font-size="11">Straight to Acme's</text>
+            <text x="745" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">own login — no picker</text>
+
+            <line x1="632" y1="87" x2="668" y2="87" class="diagram-stroke" marker-end="url(#arrowIB3)"/>
+            <text x="650" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">This chapter's lab:</text>
+            <text x="650" y="165" text-anchor="middle" class="diagram-label-muted" font-size="10">the curl request passes this param directly</text>
+
+            <text x="430" y="215" text-anchor="middle" class="diagram-label-muted" font-size="10">A per-realm "Default Identity Provider" setting achieves the same skip for every login, with no caller-side hint at all.</text>
+
+            <defs>
+              <marker id="arrowIB3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 31.4 — <code>kc_idp_hint</code> on a single authorization request versus marking
+          an IdP as the realm's unconditional default — two different ways to skip the picker, this
+          chapter's lab uses the first.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>A misspelled or nonexistent <code>kc_idp_hint</code> value does not error — Keycloak silently
+          falls back to the ordinary picker page instead. If you see a brokering integration that seems to
+          "just not redirect," check the hint value against the IdP's actual configured
+          <strong>alias</strong> character for character before assuming anything else is broken.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="idp-mappers" data-title="Mappers, sync mode &amp; account linking">
+        <h2>What travels with a brokered login: mappers, sync mode, linking</h2>
+        <p>A successful brokered login hands <code>northwind-apps</code> whatever claims
+        <code>northwind-corporate-idp</code>'s ID token and (optionally) UserInfo response carry — this
+        chapter's lab used <code>given_name</code>/<code>family_name</code>/<code>email</code> directly, the
+        same claims chapter 15 already named. Three settings decide what Keycloak does with that data and
+        with the identity it represents:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Three Identity Provider settings this chapter's lab relied on or should know about</caption>
+            <thead><tr><th>Setting</th><th>What it controls</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Identity Provider mapper</strong></td><td>A realm-scoped rule that copies an
+              external claim/attribute into a local user attribute, role, or group — the Keycloak mechanism
+              behind "map the external IdP's <code>department</code> claim onto a Northwind group." This
+              chapter's lab used none (the default attribute import already populated name/email), but any
+              real enterprise rollout mapping group membership or roles needs these explicitly.</td></tr>
+              <tr><td><strong>Sync mode</strong> (<code>IMPORT</code> / <code>LEGACY</code> /
+              <code>FORCE</code>)</td><td><code>IMPORT</code> (this chapter's setting) copies attributes
+              from the external IdP once, at first login, and never again automatically. <code>FORCE</code>
+              re-syncs them on every login instead — the difference between "Ben's name as of his first
+              login" and "Ben's name as Acme's own directory currently has it."</td></tr>
+              <tr><td><strong>Trust Email</strong></td><td>Whether Keycloak treats the external IdP's email
+              claim as already verified. Combined with a matching existing local account, this is what
+              triggers <strong>account linking</strong> instead of a brand-new JIT-provisioned user — the
+              "YES" branch in Figure 31.3.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Two more real, per-IdP settings are worth knowing even though this chapter's lab left them at
+        their Keycloak defaults: <strong>First Login Flow</strong> (which authentication flow runs the first
+        time a user logs in via this IdP — defaults to the realm's own First Broker Login flow, but can be
+        pointed at a different one per IdP) and <strong>Post Login Flow</strong> (a flow Keycloak runs
+        <em>after</em> the external IdP login finishes, on every login, not just the first) — the mechanism
+        a realm would use to demand an extra MFA step for brokered logins specifically, the kind of step-up
+        pattern <span class="org-chip meridian">Meridian Trust</span> would reasonably want layered on top
+        of trusting an external bank-partner IdP.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps brokers Acme Corp">
+        <h2>Case study: Northwind Apps brokers to Acme Corp's own identity provider</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p>Chapter 27's bulk-onboarding script manually created a <code>tenant-admin</code> account named
+          <code>acme-admin</code> for <strong>Acme Corp</strong>, one of Northwind's named enterprise
+          customers — a real, necessary step at the time, but one that doesn't scale past Acme's first
+          handful of users, and one Northwind's ops team has to repeat, by hand, every time Acme hires
+          someone new or someone leaves. This chapter's lab is the fix: once <code>northwind-apps</code>
+          trusts Acme's own corporate identity provider (<code>northwind-corporate-idp</code> standing in
+          for it here), any Acme employee with a real account there — this chapter used <code>ben.carter</code>,
+          a newly hired Acme engineer who never had a Northwind-issued password at all — gets a working
+          <code>northwind-apps</code> identity automatically on their very first login, with zero manual
+          provisioning on Northwind's side. Acme's own IT department keeps managing who counts as "a current
+          Acme employee" in their own directory, exactly the separation of responsibility chapter 7's
+          brokering-versus-federation distinction predicts: Northwind never stores or sees Ben's real Acme
+          password, it only trusts Acme's assertion that he is who he says he is.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: stack, realms &amp; clients">
+        <h2>Lab: brokering one Keycloak realm to another, for real</h2>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack — the same
+        <code>labs/docker/docker-compose.yml</code> environment every Part IV+ chapter uses — not narrated.
+        Every claimed outcome is confirmed with a separate read.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the stack up and poll until Keycloak is ready, the same pattern every lab chapter
+          since 20 has used:</p>
+          <pre><code>cd labs/docker
+docker compose up -d
+for i in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:8080/realms/master/.well-known/openid-configuration)
+  echo "attempt $i: $code"
+  if [ "$code" = "200" ]; then break; fi
+  sleep 3
+done</code></pre>
+          <pre><code>attempt 1: 000
+...
+attempt 9: 200</code></pre></li>
+
+          <li><p>Authenticate <code>kcadm.sh</code> against <code>master</code>, then create <strong>two</strong>
+          realms: <code>northwind-apps</code> (the broker/SP side, the realm every Part IV+ chapter has used)
+          and a brand-new <code>northwind-corporate-idp</code> (a real, fully scriptable stand-in for Acme
+          Corp's own corporate identity provider):</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-apps -s enabled=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-corporate-idp -s enabled=true</code></pre>
+          <pre><code>Created new realm with id 'northwind-apps'
+Created new realm with id 'northwind-corporate-idp'</code></pre></li>
+
+          <li><p>Create a public client in <code>northwind-apps</code> for the browser side of this lab, and
+          a confidential client in <code>northwind-corporate-idp</code> for <code>northwind-apps</code>'s
+          own backend to authenticate with when it calls back to exchange a code for tokens. The redirect
+          URI on this second client is <strong>not arbitrary</strong> — it's Keycloak's fixed broker-endpoint
+          convention, <code>/realms/&lt;broker realm&gt;/broker/&lt;IdP alias&gt;/endpoint</code>:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps \
+  -s clientId=northwind-dashboard -s publicClient=true -s standardFlowEnabled=true \
+  -s 'redirectUris=["https://dashboard.northwindapps.internal/callback"]'
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-corporate-idp \
+  -s clientId=northwind-apps-broker -s publicClient=false -s standardFlowEnabled=true \
+  -s 'redirectUris=["http://localhost:8080/realms/northwind-apps/broker/northwind-corporate-idp/endpoint"]'</code></pre>
+          <pre><code>Created new client with id '3c6d5b9f-b02a-4a68-8d1d-3d8d8e4d16a1'
+Created new client with id 'd9eadc30-e026-4be2-8087-62b7e7ad5d8d'</code></pre>
+          <p>Fetch that second client's real secret — <code>northwind-apps</code>'s Identity Provider config
+          needs it in the next slide:</p>
+          <pre><code>CID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r northwind-corporate-idp \
+  -q clientId=northwind-apps-broker --fields id --format csv --noquotes)
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/$CID/client-secret" -r northwind-corporate-idp</code></pre>
+          <pre><code>{
+  "type" : "secret",
+  "value" : "kRUzFACWXLPEj3xxViciua01irVEc3hy0YVeflvGEjbZlkPxaPu2Kgw79WXZbyi1R8zPHkuiAM77UZYBVV3CJo"
+}</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-idp-config" data-title="Lab: the user &amp; the Identity Provider">
+        <h2>Lab: a real Acme employee, and the Identity Provider that trusts their realm</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 3;">
+          <li><p>Create a real user in <code>northwind-corporate-idp</code> — Ben Carter, an Acme Corp
+          engineer who has never had any <code>northwind-apps</code> account at all:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-corporate-idp \
+  -s username=ben.carter -s enabled=true -s firstName=Ben -s lastName=Carter \
+  -s email=ben.carter@acmecorp.example -s emailVerified=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-corporate-idp \
+  --username ben.carter --new-password 'Acme-Corp-Pw-2026!'</code></pre>
+          <pre><code>Created new user with id '13ed5d5a-3cbe-4602-8e3d-33a08fad65a7'</code></pre></li>
+
+          <li><p>Create the OIDC Identity Provider in <code>northwind-apps</code>, pointing at
+          <code>northwind-corporate-idp</code>'s real OIDC endpoints — every field below is the concrete
+          instantiation of Figure 31.2:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create identity-provider/instances \
+  -r northwind-apps -s alias=northwind-corporate-idp -s providerId=oidc -s enabled=true \
+  -s 'config.clientId=northwind-apps-broker' \
+  -s 'config.clientSecret=kRUzFACWXLPEj3xxViciua01irVEc3hy0YVeflvGEjbZlkPxaPu2Kgw79WXZbyi1R8zPHkuiAM77UZYBVV3CJo' \
+  -s 'config.authorizationUrl=http://localhost:8080/realms/northwind-corporate-idp/protocol/openid-connect/auth' \
+  -s 'config.tokenUrl=http://localhost:8080/realms/northwind-corporate-idp/protocol/openid-connect/token' \
+  -s 'config.userInfoUrl=http://localhost:8080/realms/northwind-corporate-idp/protocol/openid-connect/userinfo' \
+  -s 'config.jwksUrl=http://localhost:8080/realms/northwind-corporate-idp/protocol/openid-connect/certs' \
+  -s 'config.issuer=http://localhost:8080/realms/northwind-corporate-idp' \
+  -s 'config.useJwksUrl=true' -s 'config.syncMode=IMPORT' -s 'config.clientAuthMethod=client_secret_post'</code></pre>
+          <pre><code>Created new instance with id 'northwind-corporate-idp'</code></pre>
+          <p>Every URL above came straight from <code>northwind-corporate-idp</code>'s own live discovery
+          document (<code>GET /realms/northwind-corporate-idp/.well-known/openid-configuration</code>) —
+          not guessed, not assumed from convention.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-roundtrip-1" data-title="Lab: the round trip, part 1">
+        <h2>Lab: the headless round trip, part 1 — authorize and hit the real login form</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p>Request authorization at <code>northwind-apps</code> with <code>kc_idp_hint</code>, cookie
+          jar fresh — this is Figure 31.1's step 1:</p>
+          <pre><code>curl -s -i -c cookies.txt -b cookies.txt \
+  "http://localhost:8080/realms/northwind-apps/protocol/openid-connect/auth?\
+client_id=northwind-dashboard&amp;response_type=code&amp;scope=openid&amp;\
+redirect_uri=https://dashboard.northwindapps.internal/callback&amp;state=readerstate&amp;\
+kc_idp_hint=northwind-corporate-idp"</code></pre>
+          <pre><code>HTTP/1.1 303 See Other
+Location: http://localhost:8080/realms/northwind-apps/broker/northwind-corporate-idp/login?\
+session_code=0orvKFfbeJsy4OVOdH2uo4z_egqFeee96rnj4HvGbF4&amp;client_id=northwind-dashboard&amp;...</code></pre>
+          <p>No picker, no Northwind login form — exactly Figure 31.4's right-hand path. Follow that
+          <code>Location</code> (same cookie jar) — Keycloak itself redirects a second time, straight to
+          <code>northwind-corporate-idp</code>'s own authorize endpoint (Figure 31.1's step 2):</p>
+          <pre><code>HTTP/1.1 303 See Other
+Location: http://localhost:8080/realms/northwind-corporate-idp/protocol/openid-connect/auth?\
+scope=openid&amp;state=...&amp;response_type=code&amp;client_id=northwind-apps-broker&amp;\
+redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Frealms%2Fnorthwind-apps%2Fbroker%2F\
+northwind-corporate-idp%2Fendpoint&amp;nonce=4GxWh9RKDYE736LYleVZEQ</code></pre>
+          <p>Note the <code>redirect_uri</code> in that URL: it's exactly the broker-endpoint convention
+          registered on <code>northwind-apps-broker</code> back in the setup slide, URL-encoded by
+          Keycloak itself.</p></li>
+
+          <li><p>Follow that second redirect (same cookie jar) and read the real HTML that comes back — a
+          genuine <code>northwind-corporate-idp</code> login form, with its own fresh session code baked
+          into the form action:</p>
+          <pre><code>curl -s -c cookies.txt -b cookies.txt "&lt;the auth URL above&gt;" | grep -o 'action="[^"]*"'</code></pre>
+          <pre><code>action="http://localhost:8080/realms/northwind-corporate-idp/login-actions/authenticate?\
+session_code=r88alPA7l3UI3yQlILA9n9x4Ye6gM547As4cO9pC92k&amp;execution=72bf4da7-cc8f-4fd9-bebe-e1f2a961b1ae&amp;\
+client_id=northwind-apps-broker&amp;tab_id=vfWc1nuvRa4&amp;client_data=..."</code></pre>
+          <p>This is a real form belonging to a realm the browser has never visited before in this session —
+          its own, independent <code>AUTH_SESSION_ID</code>/<code>KC_RESTART</code> cookies, scoped to
+          <code>/realms/northwind-corporate-idp/</code>, get set on the same cookie jar alongside
+          <code>northwind-apps</code>'s own cookies without conflicting.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-roundtrip-2" data-title="Lab: the round trip, part 2">
+        <h2>Lab: the headless round trip, part 2 — real login, and the trip back</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 7;">
+          <li><p>POST Ben Carter's real credentials to that exact form action (Figure 31.1's step 3):</p>
+          <pre><code>curl -s -i -c cookies.txt -b cookies.txt \
+  --data-urlencode "username=ben.carter" --data-urlencode "password=Acme-Corp-Pw-2026!" \
+  --data-urlencode "credentialId=" "&lt;form action URL above&gt;"</code></pre>
+          <pre><code>HTTP/1.1 302 Found
+Set-Cookie: KEYCLOAK_IDENTITY=eyJhbGciOiJIUzUxMiIs...;Path=/realms/northwind-corporate-idp/;...
+Set-Cookie: KEYCLOAK_SESSION=...;Path=/realms/northwind-corporate-idp/;Max-Age=36000;...
+Location: http://localhost:8080/realms/northwind-apps/broker/northwind-corporate-idp/endpoint?\
+state=...&amp;session_state=2n1RgDXaxyPBJQDl5e0tqCN0&amp;\
+iss=http%3A%2F%2Flocalhost%3A8080%2Frealms%2Fnorthwind-corporate-idp&amp;\
+code=320ff09a-3449-9eb1-c312-7de5ea08f84b.2n1RgDXaxyPBJQDl5e0tqCN0.d9eadc30-e026-4be2-8087-62b7e7ad5d8d</code></pre>
+          <p>A real authorization code from <code>northwind-corporate-idp</code>, addressed straight at
+          <code>northwind-apps</code>'s broker endpoint — Figure 31.1's step 4.</p></li>
+
+          <li><p>Follow that redirect. This single request is where Keycloak's <strong>backend</strong>
+          quietly does the real work: it calls <code>northwind-corporate-idp</code>'s token endpoint itself
+          (server to server, never visible to the browser), validates the returned ID token's signature and
+          issuer, and then runs First Broker Login:</p>
+          <pre><code>curl -s -i -c cookies.txt -b cookies.txt "&lt;the broker endpoint URL above&gt;"</code></pre>
+          <pre><code>HTTP/1.1 302 Found
+Location: http://localhost:8080/realms/northwind-apps/login-actions/first-broker-login?\
+client_id=northwind-dashboard&amp;tab_id=pjh_zKeW2gk&amp;client_data=...</code></pre>
+          <p>Follow <em>that</em> redirect too — Ben has no existing local account and no requires-input
+          required actions configured, so First Broker Login completes without showing any form:</p>
+          <pre><code>HTTP/1.1 302 Found
+Location: http://localhost:8080/realms/northwind-apps/broker/after-first-broker-login?\
+session_code=SFLbO_kKETZVyTrm-WuGDsfqtBuAjB3-A6G5TsN_k3Y&amp;client_id=northwind-dashboard&amp;...</code></pre>
+          <p>And follow that one final internal redirect — this is where the new local user actually gets
+          written, and the browser finally lands back at the originally requested client:</p>
+          <pre><code>HTTP/1.1 302 Found
+Set-Cookie: KEYCLOAK_SESSION=OqANgpPl0VpeoBuFM-n3U4Fr67sKFP35LGnB7PP4uL5EkZJwgssTmlvAWoyb1lXP;\
+Path=/realms/northwind-apps/;Max-Age=36000;...
+Location: https://dashboard.northwindapps.internal/callback?state=readerstate&amp;\
+session_state=w2CKXmcts8excshUKIMxtN7A&amp;iss=http%3A%2F%2Flocalhost%3A8080%2Frealms%2Fnorthwind-apps&amp;\
+code=31ef05f5-e37e-ec23-ba62-e72ebf1ece65.w2CKXmcts8excshUKIMxtN7A.3c6d5b9f-b02a-4a68-8d1d-3d8d8e4d16a1</code></pre>
+          <p>A real <code>KEYCLOAK_SESSION</code> cookie for <code>northwind-apps</code> itself, and a final
+          authorization code addressed to <code>northwind-dashboard</code> — the exact same shape chapter
+          29's SSO-across-clients lab produced, now arrived at via an external login instead of a direct
+          one.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-roundtrip-3" data-title="Lab: the round trip, part 3">
+        <h2>Lab: the headless round trip, part 3 — real tokens for Ben Carter</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 9;">
+          <li><p>Exchange that final code for real <code>northwind-apps</code> tokens, exactly chapter 13's
+          authorization-code mechanics:</p>
+          <pre><code>curl -s -X POST "http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=authorization_code" \
+  --data-urlencode "client_id=northwind-dashboard" \
+  --data-urlencode "code=31ef05f5-e37e-ec23-ba62-e72ebf1ece65.w2CKXmcts8excshUKIMxtN7A.3c6d5b9f-b02a-4a68-8d1d-3d8d8e4d16a1" \
+  --data-urlencode "redirect_uri=https://dashboard.northwindapps.internal/callback"</code></pre>
+          <p>Decoding the real <code>id_token</code> that came back (base64url, not guessed):</p>
+          <pre><code>{
+  "iss": "http://localhost:8080/realms/northwind-apps",
+  "aud": "northwind-dashboard",
+  "sub": "199b2759-fe58-41f6-a36c-7789150a7fa8",
+  "typ": "ID",
+  "azp": "northwind-dashboard",
+  "name": "Ben Carter",
+  "preferred_username": "ben.carter",
+  "given_name": "Ben",
+  "family_name": "Carter",
+  "email": "ben.carter@acmecorp.example"
+}</code></pre>
+          <p>The issuer is <code>northwind-apps</code>, not <code>northwind-corporate-idp</code> — this is a
+          real <code>northwind-apps</code> ID token, for a real local user, carrying attributes that were
+          imported from Acme's own realm on first login (chapter 31's <code>syncMode=IMPORT</code> setting
+          from the earlier slide).</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-verify" data-title="Lab: verify &amp; tear down">
+        <h2>Lab: confirming the JIT-provisioned user, then tearing down</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 10;">
+          <li><p>Nobody ran <code>kcadm.sh create users -r northwind-apps ... ben.carter</code> at any point
+          in this lab. Confirm the user exists anyway, and that it's linked back to
+          <code>northwind-corporate-idp</code>, purely through the Admin REST API:</p>
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users -r northwind-apps -q username=ben.carter
+USER_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users -r northwind-apps \
+  -q username=ben.carter --fields id --format csv --noquotes)
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get "users/$USER_ID/federated-identity" -r northwind-apps</code></pre>
+          <pre><code>[ {
+  "id" : "199b2759-fe58-41f6-a36c-7789150a7fa8",
+  "username" : "ben.carter",
+  "firstName" : "Ben",
+  "lastName" : "Carter",
+  "email" : "ben.carter@acmecorp.example",
+  "enabled" : true,
+  "createdTimestamp" : 1794373239901
+} ]
+[ {
+  "identityProvider" : "northwind-corporate-idp",
+  "userId" : "13ed5d5a-3cbe-4602-8e3d-33a08fad65a7",
+  "userName" : "ben.carter"
+} ]</code></pre>
+          <p>Two independently confirmed facts, not one assumed from the other: a real local user record
+          exists in <code>northwind-apps</code> (<code>createdTimestamp</code> matching the exact moment
+          this lab's round trip ran), <strong>and</strong> it carries a federated-identity link back to
+          <code>northwind-corporate-idp</code>'s own user id for Ben — the same id that realm's own
+          <code>kcadm.sh create users</code> call returned back in the setup slide.</p></li>
+
+          <li><p>Tear the stack down cleanly:</p>
+          <pre><code>docker compose down -v</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see a broker login that silently falls through to the realm's own password form
+          instead of redirecting to the external IdP, the cause is almost always a misspelled or stale
+          <code>kc_idp_hint</code> value — it fails open to the picker rather than erroring, so check it
+          against the IdP's actual <strong>alias</strong> character for character.</li>
+          <li>If you see <code>invalid_redirect_uri</code> at the external IdP's own authorize step, the
+          cause is the broker-endpoint convention
+          (<code>/realms/&lt;broker realm&gt;/broker/&lt;alias&gt;/endpoint</code>) not being registered,
+          byte for byte, as a valid redirect URI on the client the external realm's own admin created for
+          the broker to use.</li>
+          <li><strong>A real finding from writing this chapter</strong>: an earlier draft of this lab ran
+          the browser-facing authorize request through one host/port and configured the Identity Provider's
+          backend-facing <code>tokenUrl</code>/<code>userInfoUrl</code> through a different one (an artifact
+          of this chapter's own isolated test environment, remapped off the standard port for parallel
+          testing). That split produced a real <code>Wrong issuer from token</code> error, followed by a
+          second, independent <code>Invalid token issuer</code> rejection from the UserInfo endpoint itself
+          — because Keycloak's realm issuer is tied to whichever host the browser's original request used,
+          not to whichever host a later backend call happens to use. If you see either error with a
+          Keycloak instance running behind a reverse proxy, the cause is almost always a mismatch between
+          the proxy's externally visible hostname and whatever hostname Keycloak's backend-to-backend calls
+          actually resolve — not a broken broker configuration otherwise. This chapter's own working lab
+          avoids the problem entirely by using one consistent <code>http://localhost:8080/...</code> base
+          URL for every field, browser-facing and backend-facing alike.</li>
+          <li>If you see a brokered user's local account reappear with completely stale name/email data
+          after their information changed at the external IdP, the cause is <code>syncMode=IMPORT</code> —
+          it copies attributes once, at first login, and never again automatically. <code>FORCE</code>
+          re-syncs on every login instead.</li>
+          <li>If you see a brokered login silently <strong>link</strong> to an existing local account
+          instead of creating a new one, the cause is usually working as designed, not a bug: the external
+          IdP's email matched an existing local user and <strong>Trust Email</strong> is enabled for that
+          IdP — check the First Broker Login decision (Figure 31.3) before assuming something is broken.</li>
+          <li>If you see someone try to query or manage an external IdP's users directly from the broker
+          realm's Admin Console, the cause is forgetting that brokering never gives one realm visibility
+          into another's user store — the only connection is the federated-identity link record, confirmed
+          after the fact, not a live read-through.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A Keycloak Identity Provider resource is chapter 7's abstract IdP/SP trust relationship made
+          concrete: its authorizationUrl/tokenUrl/jwksUrl fields are the metadata, jwksUrl+useJwksUrl is the
+          certificate/signing-key trust, and the fixed broker-endpoint URL convention is the registered
+          redirect URI — none of it optional or inferred.</li>
+          <li>Brokering works identically whether the external IdP is a separate company's server or, as in
+          this chapter's lab, a second realm on the same Keycloak instance — the trust relationship is a
+          protocol concept, not a deployment-topology one.</li>
+          <li>JIT provisioning is not unconditional: Keycloak checks for an existing federated-identity link
+          first, then — only for a genuinely new external identity — runs First Broker Login, which itself
+          chooses between linking to a matching existing local account (if Trust Email is on and the email
+          matches) and creating a brand-new local user.</li>
+          <li>Every brokered login leaves a federated-identity record pairing the local user's id with the
+          external IdP's own user id — confirmed live via <code>GET users/{id}/federated-identity</code> —
+          and that record, not anything on the user object, is what later logins are recognized against.</li>
+          <li><code>kc_idp_hint</code> on a single authorization request, or marking an IdP as a realm's
+          Default Identity Provider, are the two real mechanisms that skip Keycloak's IdP picker page; a
+          bad hint value fails open to the picker rather than erroring.</li>
+          <li>Sync mode (<code>IMPORT</code> vs. <code>FORCE</code>) decides whether a brokered user's
+          attributes update on every subsequent login or only ever reflect what the external IdP returned
+          the very first time.</li>
+          <li>This chapter's own authoring process hit a real <code>Wrong issuer from token</code> error
+          from configuring browser-facing and backend-facing Identity Provider URLs through two different
+          hostnames — a genuine, production-relevant gotcha for Keycloak deployed behind a reverse proxy,
+          not a hypothetical.</li>
+          <li>Brokering never gives the broker realm visibility into the external IdP's own user store —
+          the only artifact that crosses the boundary is the federated-identity link, confirmed after the
+          fact via the Admin REST API.</li>
+          <li>Northwind Apps brokering to Acme Corp's own identity provider replaces chapter 27's manual,
+          repeated <code>acme-admin</code>-style bulk onboarding with zero-touch provisioning for any real
+          Acme employee — Acme's own IT department remains the authority on who counts as a current
+          employee, exactly the responsibility split chapter 7 predicted for brokering.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Ben Carter logs into northwind-apps via the broker for the first time ever. Walk through, in order, which Keycloak decision points his login actually passes through before a token is issued, and why each one resolves the way it does for him specifically.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>First, the federated-identity check: since Ben has never logged in before, no link exists, so First Broker Login actually runs (Figure 31.3's "NO" branch) rather than being skipped. Inside that flow, the second decision checks whether his email matches an existing local <code>northwind-apps</code> user with Trust Email enabled — it doesn't, because Ben never had a Northwind account at all — so the flow takes the "otherwise" branch and just-in-time provisions a brand-new local user rather than linking to anything existing. Only after that does Keycloak mint real <code>northwind-apps</code> tokens for the originally requested client.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, concretely, what the registered redirect URI on the northwind-apps-broker client (inside northwind-corporate-idp) actually has to equal, and why getting even one path segment wrong breaks the whole flow at a specific, identifiable step.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It has to equal Keycloak's fixed broker-endpoint convention exactly: <code>/realms/northwind-apps/broker/northwind-corporate-idp/endpoint</code>, on whatever host/port the browser is actually using. This is the URL northwind-corporate-idp redirects the browser back to after a successful login there, carrying the real authorization code. If even one segment is wrong — the realm name, the IdP alias, or "endpoint" itself — northwind-corporate-idp's own authorize step rejects the request immediately with an invalid-redirect-uri error, before the user ever sees a login form, not sometime later in the flow.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague says "brokering means northwind-apps can see and manage all of Acme Corp's employee accounts now." Correct this, precisely.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>That's wrong — brokering delegates one login event at a time; it does not give northwind-apps any visibility into northwind-corporate-idp's user store at all. The only thing that crosses the boundary is a federated-identity record, created per user, per IdP, only after that specific person has actually logged in through the broker at least once — confirmed in this chapter by querying <code>GET users/{id}/federated-identity</code> after the fact, not by querying Acme's realm directly, which northwind-apps has no standing access to do.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's own lab hit a real "Wrong issuer from token" error during an earlier draft. What specifically caused it, and why did switching every Identity Provider URL to one consistent host/port fix it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The browser-facing authorize request went through one host/port (an isolated test port), while the Identity Provider's backend-facing tokenUrl/userInfoUrl fields were configured through a different one (the container's internal port). Keycloak's realm issuer is tied to whichever host the browser's original request used, not to whichever host a later backend call happens to use — so the id_token's actual <code>iss</code> claim didn't match the issuer value a request arriving through the other port expected. Using one consistent base URL for every field removed the mismatch entirely, because every request — browser-facing and backend-facing — then resolved to the exact same issuer.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does northwind-corporate-idp's own OIDC discovery document matter for this lab, given that northwind-apps's Identity Provider config sets authorizationUrl/tokenUrl/jwksUrl by hand rather than pointing at a discovery URL directly?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Even configured by hand, every one of those URLs has to match the real, live endpoints northwind-corporate-idp actually serves — the discovery document is where those real values were read from in this chapter's lab (<code>GET /realms/northwind-corporate-idp/.well-known/openid-configuration</code>), rather than guessed from a naming convention. A hand-configured field that drifts from what the realm's real discovery document says — after a realm rename, say — would fail exactly like a wrong redirect URI does: silently, at whichever specific step tries to reach the stale URL, not with an obvious top-level error.</p>
+          </details></li>
+          <li><details>
+            <summary>If Northwind's Acme Corp customer later disables Ben Carter's account in their own corporate directory, does that automatically disable his northwind-apps account too? Why or why not, and what does this imply operationally?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>No, not automatically. Brokering with <code>syncMode=IMPORT</code> only copies attributes at first login and establishes a federated-identity link; it does not continuously synchronize account status, and this chapter's lab never configured any live deprovisioning hook back to northwind-corporate-idp. Operationally, this means Northwind needs a separate, deliberate offboarding mechanism for brokered accounts (disabling the local user directly, or configuring something that reacts to the external IdP's own signals) rather than assuming "Acme disabled him there" automatically means "he can't log into northwind-apps anymore" — the two account lifecycles are linked by one login event, not kept in ongoing lockstep.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_identity_broker">Keycloak Server Administration Guide — Identity Brokering</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0 — ID tokens and claims, the data that travels across a brokered login</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-discovery-1_0.html">OpenID Connect Discovery 1.0 — the discovery document this chapter's lab read its real endpoint URLs from</a></li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749 — The OAuth 2.0 Authorization Framework (the authorization code grant underlying the backend token exchange in this chapter)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "identity-brokering", 16);
+    SlideDeck.init({ chapterSlug: "identity-brokering" });
+  });
+</script>
+</body>
+</html>
