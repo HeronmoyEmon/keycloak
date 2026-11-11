@@ -1,0 +1,60 @@
+# Ephemeral, development-only PostgreSQL for the Keycloak Operator lab (chapter 42).
+# Copied in structure from https://www.keycloak.org/operator/basic-deployment's own
+# "Dev PostgreSQL Database" example (same StatefulSet/Service shape, same emptyDir
+# storage — data is lost if the pod restarts, which is fine for this lab since the
+# whole kind cluster gets deleted at the end anyway). Namespaced to `keycloak` to
+# match the operator's default namespace-scoped install.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-db
+  namespace: keycloak
+spec:
+  serviceName: postgresql-db-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql-db
+  template:
+    metadata:
+      labels:
+        app: postgresql-db
+    spec:
+      containers:
+        - name: postgresql-db
+          image: postgres:15
+          volumeMounts:
+            - mountPath: /data
+              name: cache-volume
+          env:
+            - name: POSTGRES_USER
+              value: testuser
+            - name: POSTGRES_PASSWORD
+              value: testpassword
+            - name: PGDATA
+              value: /data/pgdata
+            - name: POSTGRES_DB
+              value: keycloak
+          ports:
+            - containerPort: 5432
+      volumes:
+        - name: cache-volume
+          emptyDir: {}
+---
+# NOTE: the Service Keycloak actually connects to is named `postgres-db` (not
+# `postgresql-db`, the StatefulSet's name) -- the docs' own example has this same
+# one-letter naming mismatch between the two objects, and it is easy to typo when
+# copying by hand. `type: LoadBalancer` stays <pending> on kind (no cloud LB
+# controller), but the ClusterIP it also gets assigned is all Keycloak needs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+  namespace: keycloak
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgresql-db

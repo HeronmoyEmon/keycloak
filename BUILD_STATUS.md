@@ -57,7 +57,11 @@ secure a real backend/frontend/service account (Part VI) *and* configure fine-gr
 subagents per the drafted briefs, each with a real Java-SPI Docker lab (`ch39kc`/18139,
 `ch40kc`/18140), then centrally merged and independently re-verified — see the Done entry below for
 full detail. No gate sits immediately after Part VIII — **Part IX (production, scale & hardening,
-chapters 41-45) is next per the Queue.**
+chapters 41-45) is now in progress.** Round 1 (ch41 HA/clustering, ch42 Keycloak-on-Kubernetes — the two
+lab-bearing chapters) is **complete** — both built, merged, and independently re-verified; see the Done
+entry below for full detail (a real two-node session-replication proof for ch41, a real `kind`+Operator
+deployment for ch42, both torn down clean, disk actually *improved* during the work). **Round 2
+(ch43-45, no-lab/research-heavy) is next.**
 
 **Shell fixes (2026-11-11, user-requested, off-queue):** the site-wide sidebar nav (`.sidebar`/
 `#sidebar-nav` in `book.js`/`book.css`, used by `roadmap.html`/`glossary.html`/`quizzes.html`/
@@ -136,12 +140,49 @@ visuals/examples where it helps, not just re-chunk existing prose.
 ### Part VIII (extending Keycloak) — DONE
 14-15. ~~Chapters 39-40~~ — done 2026-11-11, see Done below.
 
-### Part IX (production, scale, hardening) — **next**
-16. Chapters 41-45 — briefs to be drafted here when started, per CLAUDE.md §6-7. Per CLAUDE.md §5: ch41
-    HA/clustering (Infinispan, multi-node, partial lab — single-node sim), ch42 Keycloak on Kubernetes
-    (Operator/Helm, optional kind/minikube lab), ch43 performance tuning/DB considerations (no lab), ch44
-    backup/DR/multi-region (no lab), ch45 security hardening checklist & upgrade/migration strategy (no
-    lab). No gate sits here — the next one is the Final QA gate, after Part XI.
+### Part IX (production, scale, hardening) — **current unit**
+16. Chapters 41-45. No gate sits after Part IX — the next one is the Final QA gate, after Part XI.
+    ~~Round 1 (ch41, ch42)~~ — done 2026-11-11, see Done below. **Round 2 (ch43-45) — briefs below.**
+
+**Chapter 43 — Performance Tuning & Database Considerations. Lab: no.**
+- "What concept is this?" recall: ties back to chapter 19's architecture (where the DB and caches sit)
+  and chapter 29's sessions (what actually drives load).
+- Live-verify: Keycloak 26.8.2's officially supported/tested database list and versions (don't assume an
+  older support matrix still holds), current official guidance on JVM heap/GC tuning for the Quarkus
+  distribution, and connection-pool (Agroal/HikariCP — confirm which one Keycloak's Quarkus distribution
+  actually uses) sizing guidance.
+- Content: where load actually concentrates (token issuance, event writes, admin REST calls under
+  automation), DB indexing/connection-pool tuning, cache-tuning trade-offs building on chapter 41.
+- Case-study tie-in: Meridian Trust (high-volume banking traffic) or Northwind Apps (multi-tenant SaaS
+  noisy-neighbor concerns) — pick whichever the live-verified tuning knobs illustrate most concretely.
+- Diagrams (3+); Glossary 10+ terms; Self-check (5+), takeaways (8+), quiz (15+, 50%+ scenario).
+
+**Chapter 44 — Backup, Disaster Recovery & Multi-Region Strategies. Lab: no.**
+- "What concept is this?" recall: chapter 10's governance/audit material and chapter 11's compliance
+  material both assume data survives — this is how.
+- Live-verify: Keycloak's current official export/import mechanics (`kc.sh export`/`import`, realm JSON
+  shape, any current caveats e.g. what isn't captured) and whatever current guidance exists on multi-
+  region Keycloak topologies (active-passive vs. active-active, and the real complication of replicating
+  Infinispan/session state across regions — chapter 41 is the natural callback).
+- Content: DB backup/restore as the real source of truth vs. realm export/import as a narrower config-
+  level tool; RTO/RPO framing; multi-region trade-offs, honestly scoped (don't overstate what's easy).
+- Case-study tie-in: Riverside Health (HIPAA's data-availability requirements) fits well.
+- Diagrams (3+); Glossary 10+ terms; Self-check (5+), takeaways (8+), quiz (15+, 50%+ scenario).
+
+**Chapter 45 — Security Hardening Checklist & Upgrade/Migration Strategy. Lab: no.**
+- "What concept is this?" recall: a capstone-adjacent synthesis chapter pulling together hardening advice
+  scattered across chapters 9, 18, 30, and others into one checklist, plus new upgrade-specific content.
+- Live-verify: Keycloak's own current official security hardening recommendations and current upgrade/
+  migration guide notes (what changed in recent majors, any documented breaking-change patterns) —
+  current as of 26.8.2, cite the actual source rather than general IAM hardening advice relabeled.
+- Content: a genuine checklist (not just a bullet restating prior chapters) tied to where each item was
+  actually covered; a safe-upgrade procedure (backup first per chapter 44, test in a non-prod realm,
+  read release notes for breaking changes, staged rollout).
+- Case-study tie-in: whichever org's compliance pressure (ch11) most naturally motivates a hardening
+  checklist — Meridian Trust (PCI-DSS) is a strong fit.
+- Diagrams (2+ — this is a checklist-style chapter, lower diagram pressure is fine, note it); Glossary
+  (lower count expected, mostly cross-references — note it rather than padding); Self-check (5+),
+  takeaways (8+), quiz (15+, 50%+ scenario).
 
 ### Part X (case studies & capstone)
 17. `case-studies.html` index + `case-studies/cs01-cs03` (chapters 46-48's full write-ups).
@@ -472,6 +513,61 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Part IX Round 1: chapters 41-42, HA/clustering and Keycloak on Kubernetes (2026-11-11)
+- Dev-machine tooling confirmed before dispatch: Docker 29.6.2, `kind` 0.24.0, `kubectl` v1.31.3, `helm`
+  v3.16.3 present (no `minikube`, but `kind` satisfies the curriculum's lab requirement for real, not
+  narrated). Disk was tight going in (7.6G free of 94G, 92% used) — both agents were told to check free
+  space, clean up promptly, and degrade honestly if space got critical. Neither had to degrade: disk
+  ended at **16G free (83% used)**, better than the starting point, mostly thanks to ch42's `docker
+  builder prune -af` freeing ~7GB of build cache as its first move.
+- Built as two parallel subagents against the drafted briefs, then centrally merged
+  (`glossary-data.js`, `quiz-data.js`, `nav-data.js`) and independently re-verified by the coordinator
+  (html.parser tag-balance on both files, both mount points + deck markup present, HTTP 200 served, zero
+  duplicate glossary terms/quiz ids after merge, all 9 unique deep-dive links across both chapters
+  live-curled to 200 — including one `http://` link, `jgroups.org`, caught by re-checking with a
+  protocol-agnostic grep after the first pass missed it — `docker ps -a`/`kind get clusters`/`docker
+  volume ls` confirmed clean for both).
+- **Chapter 41 — High Availability & Clustering** (`chapters/41-high-availability-clustering.html`, 18
+  slides, 4 diagrams). Honestly scoped as the curriculum's own "partial (single-node sim)" label
+  requires: two real Keycloak 26.8.2 containers on one Docker host (`ch41kc`, ports 18141/18142), one
+  shared Postgres, real JGroups/Infinispan clustering — a genuine multi-node simulation, explicitly not
+  real multi-host failover (the chapter and its new "Split-brain" glossary entry both say so directly).
+  Live-verified Keycloak 26.8.2's real `--cache`/`--cache-stack` defaults and deprecations directly from
+  `start --help-all` rather than assuming older-version docs: `jdbc-ping` is the current non-Kubernetes
+  default (not a static TCP/UDP host list), `--cache=local` (start-dev's own default) silently disables
+  clustering with no warning, and JGroups traffic is mTLS-encrypted by default with auto-rotated ephemeral
+  certs. Real two-node proof, run fresh twice: a refresh-token grant against node B for a session created
+  only on node A returned a fresh token with the identical `sid`; a session revoked through node B was
+  confirmed gone via node A while untouched sessions remained visible on both — bidirectional replication
+  (read and write), not narrated. Two real bugs found: the recurring `VERIFY_PROFILE` dynamic-required-
+  action trap (a 4th chapter to hit it, confirmed unrelated to clustering), and a genuinely new one — a
+  cross-node token-issuer mismatch from each node computing `iss` off its own `Host` header, fixed by
+  forcing one shared `KC_HOSTNAME`, modeling "behind one load balancer."
+- **Chapter 42 — Keycloak on Kubernetes** (`chapters/42-keycloak-on-kubernetes.html`, 16 slides, 3
+  diagrams). Live-verified the current (2026-11-11) officially-recommended deployment path directly from
+  Keycloak's own docs rather than an old blog post: the modern Keycloak Operator via `kubectl apply -k`
+  (OLM is the docs' own "recommended" label but needs OLM already running, judged unnecessary weight for
+  a one-off teaching cluster) over the Bitnami Helm chart, whose free images moved to a legacy/paid
+  repository around August 2025 — a real, dated maturity gap, not a style preference. Real lab: a `kind`
+  cluster, the Operator installed, an ephemeral Postgres StatefulSet, a self-signed dev cert, and a
+  Keycloak CR — real boot log (`Bootstrap completed in 23.153 seconds`, `Ready: True`), real `kubectl
+  port-forward` verification (admin console 200, live OIDC discovery doc, a real signed token from a
+  password-grant call), real `kind delete cluster` teardown. Four real gotchas documented: `kind`'s node
+  has its own containerd image store separate from the host's (re-pulls images even when host-cached); the
+  Operator issues a one-time `temp-admin` bootstrap account via a generated Secret, not chapter 20's
+  persistent env-var admin; a one-letter Service/StatefulSet name mismatch in the docs' own example
+  manifest; and the docs not covering a local/offline-friendly hostname setup at all (this build's own
+  judgment call, flagged as such).
+- Glossary: merged 25 new terms (13 from ch41's JGroups/Infinispan/clustering vocabulary; 12 from ch42's
+  Operator/CRD/Kubernetes vocabulary) plus extensions to 5 existing terms (`Infinispan`, `Clustering
+  (Keycloak)`, `High availability (Keycloak context)`, and `VERIFY_PROFILE (dynamic required action)` for
+  ch41; `Kubernetes deployment (Keycloak)` for ch42) — each enriched with the chapter's own live-verified
+  findings rather than just appending a chapter slug. Glossary grew 612 → 637 terms, zero duplicates.
+- Quiz: merged 2 new pools (`high-availability-clustering`: 18 questions; `keycloak-on-kubernetes`: 18
+  questions), both independently confirmed at exactly/over 50% scenario-framed with no coordinator fix
+  needed this round. Quiz pools grew 41 → 43, questions 690 → 726, zero duplicate ids.
+- `nav-data.js`: `built` flipped `true` for chapters 41 and 42.
 
 ### Part VIII complete: chapters 39-40, extending Keycloak via custom SPIs (2026-11-11)
 - Built as two parallel subagents against the full briefs drafted into the Queue above, then centrally

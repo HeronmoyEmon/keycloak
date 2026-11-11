@@ -92,9 +92,9 @@ window.COURSE_NAV = [
   { number: 40, slug: "custom-idp-and-required-actions", title: "Custom Identity Providers & Required Actions", part: "Part VIII — Extending Keycloak", minutes: 60, hasLab: true, built: true,
     blurb: "Advanced SPI: a proprietary SSO integration and a custom required action." },
 
-  { number: 41, slug: "high-availability-clustering", title: "High Availability & Clustering", part: "Part IX — Production, Scale & Hardening", minutes: 50, hasLab: true, built: false,
+  { number: 41, slug: "high-availability-clustering", title: "High Availability & Clustering", part: "Part IX — Production, Scale & Hardening", minutes: 50, hasLab: true, built: true,
     blurb: "Infinispan caching, multi-node deployments." },
-  { number: 42, slug: "keycloak-on-kubernetes", title: "Keycloak on Kubernetes", part: "Part IX — Production, Scale & Hardening", minutes: 60, hasLab: true, built: false,
+  { number: 42, slug: "keycloak-on-kubernetes", title: "Keycloak on Kubernetes", part: "Part IX — Production, Scale & Hardening", minutes: 60, hasLab: true, built: true,
     blurb: "The Keycloak Operator and Helm, on kind/minikube." },
   { number: 43, slug: "performance-tuning", title: "Performance Tuning & Database Considerations", part: "Part IX — Production, Scale & Hardening", minutes: 40, hasLab: false, built: false,
     blurb: "Where Keycloak's bottlenecks actually are, and what to tune." },

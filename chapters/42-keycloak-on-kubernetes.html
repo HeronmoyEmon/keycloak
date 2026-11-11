@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keycloak on Kubernetes — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "keycloak-on-kubernetes";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IX — Production, Scale &amp; Hardening</span>
+          <span class="badge minutes">~60 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>42. Keycloak on Kubernetes</h1>
+        <p class="lede">Chapter 20 ran Keycloak as a single container under Docker Compose. This chapter runs
+        the same Keycloak 26.8.2 under Kubernetes instead — not by hand-writing Deployment YAML, but through
+        the <strong>Keycloak Operator</strong>, the officially recommended way to run Keycloak on Kubernetes.
+        Every command below was actually run against a real local <code>kind</code> cluster, deleted the
+        moment verification finished — not narrated.</p>
+
+        <h2>Why this matters</h2>
+        <p>Docker Compose is a fine way to run one Keycloak instance on one machine, which is exactly why
+        chapter 20 used it. It stops being enough the moment an organization needs Keycloak to survive a node
+        failure, scale out under load, or live inside the same Kubernetes platform every other production
+        service already runs on — which, for most organizations past a certain size, is the actual deployment
+        target. An IAM specialist who can only "run Keycloak" via <code>docker compose up</code> cannot answer
+        the question a platform team will actually ask: <em>how does this fit into the cluster we already
+        operate?</em> This chapter also puts this course's "live-verify, don't trust an old blog post" rule
+        under real pressure — Keycloak's Kubernetes story has visibly changed over the product's history, and
+        a popular third-party path (the Bitnami Helm chart) turned out, on live verification, to no longer be
+        the safe default it once was.</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="Recall before you install it">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 19 placed Keycloak's deployment options on a spectrum — standalone process, containerized
+          (chapter 20's Docker Compose), and Kubernetes — and chapter 20 is the "What concept is this?" anchor
+          this chapter keeps pointing back at: everything that was a <code>docker-compose.yml</code> service,
+          an environment variable, and a bind-mounted volume there becomes a Kubernetes custom resource, a
+          Secret, and a PersistentVolume (or, in this lab's dev-only case, an <code>emptyDir</code>) here. The
+          actual Keycloak server underneath is unchanged — same image, same realms-and-tokens behavior chapters
+          21-30 already covered — only the thing orchestrating it is different. Chapter 41's Infinispan
+          clustering material is the other direct callback: once this chapter's <code>spec.instances</code>
+          field goes above 1, chapter 41's session-replication concerns stop being theoretical.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="live-verify" data-title="Operator vs. Helm chart, live-verified">
+        <h2>Live-verified, 2026-11-11: Operator vs. Bitnami Helm chart</h2>
+        <p>This is exactly the kind of claim CLAUDE.md's "no invented facts" rule exists for — the honest
+        answer in 2026 is not the same answer a 2022 blog post would give. Checked directly against
+        Keycloak's own current documentation (<code>keycloak.org/operator/installation</code> and
+        <code>/operator/basic-deployment</code>) and current reporting on Bitnami's catalog changes:</p>
+        <ul>
+          <li>The <strong>Keycloak Operator</strong> is Keycloak's own project, versioned and released
+          alongside the server itself — the 26.8.2 Operator install commands below are pinned to the exact
+          same version as this course's Keycloak image. It is actively maintained and is the path this
+          chapter uses.</li>
+          <li>The <strong>Bitnami Keycloak Helm chart</strong>, a long-popular community path, genuinely
+          degraded: Bitnami (now part of Broadcom) moved its free public container image catalog to a
+          "legacy" repository starting around August 2025 that no longer receives updates or security
+          patches — new images now require a paid subscription. This isn't a style preference against
+          Bitnami; it's a real, dated maturity gap this chapter's live-verification turned up.</li>
+        </ul>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak-on-Kubernetes install paths, their current (2026-11-11) status, and what this chapter used</caption>
+            <thead><tr><th>Install path</th><th>Current status (live-verified)</th><th>Used here?</th></tr></thead>
+            <tbody>
+              <tr><td>OLM (Operator Lifecycle Manager)</td><td>The Operator docs' own "recommended" path — but requires OLM already installed in-cluster, and the docs themselves recommend <code>installPlanApproval: Manual</code> to avoid silent upgrades</td><td>No — unnecessary extra moving part for a one-off teaching cluster</td></tr>
+              <tr><td>kubectl + Kustomize, namespace-scoped</td><td>Fully supported, default install target; version pinned exactly via <code>?ref=26.8.2</code></td><td><strong>Yes — this chapter's lab</strong></td></tr>
+              <tr><td>kubectl + Kustomize, cluster-wide</td><td>Supported but explicitly labeled a preview; one Keycloak version per Operator, and <code>podTemplate.spec.serviceAccountName</code> is ignored</td><td>No</td></tr>
+              <tr><td>Helm (<code>oci://quay.io/keycloak/keycloak-operator-helm</code>)</td><td>Explicitly labeled an "Experimental" chart by the Operator's own docs; cluster-wide only</td><td>No</td></tr>
+              <tr><td>Bitnami Helm chart (community)</td><td>Free images moved to a legacy/paid repository since ~Aug 2025; no longer receives free security updates</td><td>No — not recommended for new work as of this live-verification</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 300" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Decision: Keycloak Operator versus the Bitnami Helm chart, as of this chapter's live-verification</title>
+            <desc id="d1">A root box, "Need to run Keycloak on Kubernetes," branches to two outcomes. The left branch, the Keycloak Operator installed via kubectl/kustomize, OLM, or the preview Helm chart, is labeled as actively maintained and versioned per Keycloak release, and is the path used in this chapter's lab. The right branch, the Bitnami Helm chart, is labeled as having moved its free images to a legacy, paid repository since August 2025 with no more free security updates, and is marked as one to avoid for new deployments.</desc>
+            <rect x="250" y="20" width="200" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="350" y="42" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">Need to run Keycloak</text>
+            <text x="350" y="58" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">on Kubernetes</text>
+
+            <line x1="300" y1="70" x2="200" y2="140" class="diagram-stroke"></line>
+            <line x1="400" y1="70" x2="530" y2="140" class="diagram-stroke"></line>
+
+            <rect x="60" y="140" width="280" height="80" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="200" y="163" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Keycloak Operator</text>
+            <text x="200" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">kubectl/kustomize, OLM, or preview Helm</text>
+            <text x="200" y="193" text-anchor="middle" class="diagram-label-muted" font-size="10">Actively maintained, versioned</text>
+            <text x="200" y="207" text-anchor="middle" class="diagram-label-muted" font-size="10">per Keycloak release (26.8.2 here)</text>
+            <text x="200" y="236" text-anchor="middle" class="diagram-label" font-size="11" font-weight="600">&rarr; used in this chapter's lab</text>
+
+            <rect x="420" y="140" width="220" height="80" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="530" y="163" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Bitnami Helm chart</text>
+            <text x="530" y="179" text-anchor="middle" class="diagram-label-muted" font-size="10">Free images moved to a</text>
+            <text x="530" y="193" text-anchor="middle" class="diagram-label-muted" font-size="10">legacy/paid repo since Aug 2025 —</text>
+            <text x="530" y="207" text-anchor="middle" class="diagram-label-muted" font-size="10">no more free security updates</text>
+            <text x="530" y="236" text-anchor="middle" class="diagram-label" font-size="11" font-weight="600">&rarr; avoid for new work</text>
+          </svg>
+          <figcaption>Figure 42.1 — The two live-verified paths for running Keycloak on Kubernetes, and why this
+          chapter picked the one it did.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="operator-pattern" data-title="The Operator pattern">
+        <h2>What an Operator actually does</h2>
+        <p>A Kubernetes <strong>Operator</strong> is an ordinary controller program plus one or more
+        <strong>Custom Resource Definitions (CRDs)</strong> that teach the Kubernetes API server a new resource
+        type — here, <code>Keycloak</code>, <code>KeycloakRealmImport</code>, <code>KeycloakOIDCClient</code>,
+        and <code>KeycloakSAMLClient</code>. You never create a StatefulSet or a Service for Keycloak by hand;
+        you create one <code>Keycloak</code> custom resource (CR) describing what you want, and the Operator's
+        control loop does the rest, continuously, not just once at apply time.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 680 360" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The Keycloak Operator's reconciliation loop</title>
+            <desc id="d2">A clockwise loop of four boxes. Top left: you run kubectl apply on the Keycloak custom resource. Top right: the Kubernetes API server stores that custom resource as the desired state. Bottom right: the Operator's controller watches Keycloak custom resources, notices the new or changed one, and begins reconciling. Bottom left: the Operator creates or updates the StatefulSet, Services, and Secrets needed to match that desired state, and a line back up to the top right box represents status conditions being written back onto the custom resource, closing the loop.</desc>
+            <rect x="40" y="30" width="240" height="60" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="160" y="55" text-anchor="middle" class="diagram-label" font-size="12">You run</text>
+            <text x="160" y="71" text-anchor="middle" class="diagram-label" font-size="11">kubectl apply -f example-kc.yaml</text>
+
+            <rect x="400" y="30" width="240" height="60" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="520" y="55" text-anchor="middle" class="diagram-label" font-size="12">API server stores the</text>
+            <text x="520" y="71" text-anchor="middle" class="diagram-label" font-size="12">Keycloak CR as desired state</text>
+
+            <rect x="400" y="260" width="240" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="520" y="285" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12">Operator watches Keycloak CRs,</text>
+            <text x="520" y="301" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12">notices this one, reconciles</text>
+
+            <rect x="40" y="260" width="240" height="70" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="160" y="285" text-anchor="middle" class="diagram-label" font-size="12">Creates/updates the</text>
+            <text x="160" y="301" text-anchor="middle" class="diagram-label" font-size="12">StatefulSet, Services, Secrets</text>
+
+            <line x1="280" y1="60" x2="398" y2="60" class="diagram-stroke" marker-end="url(#arrowk1)"></line>
+            <line x1="520" y1="90" x2="520" y2="258" class="diagram-stroke" marker-end="url(#arrowk1)"></line>
+            <line x1="398" y1="295" x2="282" y2="295" class="diagram-stroke" marker-end="url(#arrowk1)"></line>
+            <line x1="160" y1="258" x2="160" y2="92" class="diagram-stroke" marker-end="url(#arrowk1)"></line>
+            <defs>
+              <marker id="arrowk1" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <text x="340" y="180" text-anchor="middle" class="diagram-label-muted" font-size="12" font-style="italic">Reconciliation loop —</text>
+            <text x="340" y="196" text-anchor="middle" class="diagram-label-muted" font-size="12" font-style="italic">runs continuously, not once</text>
+          </svg>
+          <figcaption>Figure 42.2 — The Operator's reconciliation loop: desired state in, continuously
+          reconciled cluster state out, status reported back onto the same custom resource.</figcaption>
+        </figure>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>A plain <code>kubectl apply -f deployment.yaml</code> is a one-time instruction. A CR plus an
+          Operator is a standing contract: if a pod dies, if the StatefulSet drifts, if the CR changes, the
+          Operator notices and corrects it on its own, continuously — the same "declare desired state, let a
+          controller enforce it" idea every built-in Kubernetes controller (Deployments, StatefulSets
+          themselves) already uses, extended to a resource type (<code>Keycloak</code>) Kubernetes never shipped
+          with.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: cluster and Operator install">
+        <h2>Hands-on: a real kind cluster and a real Operator install</h2>
+        <p>This machine had only ~7.6GB free of 94GB when this lab started — tight enough to matter. The single
+        highest-leverage fix, run before anything else, was reclaiming Docker's build cache (not images, not
+        volumes — just build cache, which nothing running depends on):</p>
+        <pre><code>$ docker builder prune -af
+Total:	11.78GB
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2   94G   73G   16G  83% /</code></pre>
+        <p>That freed roughly 7GB with zero risk to any other running container or project. With real headroom
+        back, the cluster and Operator install:</p>
+        <pre><code>$ kind create cluster --name kc42
+ • Ensuring node image (kindest/node:v1.31.0) ...
+ ✓ Starting control-plane, installing CNI, installing StorageClass
+real	1m16.180s
+
+$ kubectl create namespace keycloak
+namespace/keycloak created
+
+$ kubectl apply -k 'github.com/keycloak/keycloak-k8s-resources/kubernetes?ref=26.8.2'
+customresourcedefinition.apiextensions.k8s.io/keycloaks.k8s.keycloak.org created
+customresourcedefinition.apiextensions.k8s.io/keycloakrealmimports.k8s.keycloak.org created
+customresourcedefinition.apiextensions.k8s.io/keycloakoidcclients.k8s.keycloak.org created
+customresourcedefinition.apiextensions.k8s.io/keycloaksamlclients.k8s.keycloak.org created
+serviceaccount/keycloak-operator created
+... 5 ClusterRoles, 5 RoleBindings, 1 ClusterRoleBinding ...
+service/keycloak-operator created
+deployment.apps/keycloak-operator created
+
+$ kubectl -n keycloak rollout status deployment/keycloak-operator --timeout=180s
+deployment "keycloak-operator" successfully rolled out</code></pre>
+        <p>This is the namespace-scoped install: the Operator lands in the <code>keycloak</code> namespace and
+        watches only that namespace for <code>Keycloak</code> CRs — the right default for a single-team teaching
+        cluster, versus the cluster-wide variant (its own separate kustomization, into a
+        <code>keycloak-operator</code> namespace) that the docs still mark as preview.</p>
+      </section>
+
+      <section class="slide" data-slide="lab-db-tls" data-title="Lab: dev database and TLS">
+        <h2>Hands-on: ephemeral Postgres, a DB secret, and a dev TLS cert</h2>
+        <p>The Operator docs' own example uses an ephemeral, <code>emptyDir</code>-backed PostgreSQL StatefulSet
+        for development — data doesn't survive a restart, which is fine here since the whole cluster gets
+        deleted at the end anyway (full manifest in <code>labs/keycloak-on-kubernetes/example-postgres.yaml</code>):</p>
+        <pre><code>$ kubectl apply -f example-postgres.yaml
+statefulset.apps/postgresql-db created
+service/postgres-db created
+
+$ kubectl -n keycloak create secret generic keycloak-db-secret \
+    --from-literal=username=testuser --from-literal=password=testpassword
+secret/keycloak-db-secret created</code></pre>
+        <p>The Operator's HTTPS configuration (<code>http.tlsSecret</code>) needs a real certificate — the docs
+        themselves give this exact <code>openssl</code> one-liner as their own "for development purposes"
+        shortcut, so this isn't an invented workaround:</p>
+        <pre><code>$ openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 3 \
+    -out cert.pem -subj "/CN=localhost"
+$ kubectl -n keycloak create secret tls example-tls-secret --cert cert.pem --key key.pem
+secret/example-tls-secret created</code></pre>
+      </section>
+
+      <section class="slide" data-slide="lab-deploy" data-title="Lab: the Keycloak custom resource">
+        <h2>Hands-on: applying the Keycloak CR</h2>
+        <pre><code>apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: example-kc
+  namespace: keycloak
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: postgres-db
+    usernameSecret: {name: keycloak-db-secret, key: username}
+    passwordSecret: {name: keycloak-db-secret, key: password}
+  http:
+    tlsSecret: example-tls-secret
+  hostname:
+    hostname: localhost      # deviation from the docs' own test.keycloak.org — see labs/README
+  ingress:
+    enabled: false           # kind ships no Ingress controller by default</code></pre>
+        <pre><code>$ kubectl apply -f example-kc.yaml
+keycloak.k8s.keycloak.org/example-kc created
+
+$ kubectl -n keycloak wait --for=condition=ready pod/example-kc-0 --timeout=180s
+pod/example-kc-0 condition met
+
+$ kubectl -n keycloak get keycloaks/example-kc -o go-template='...'
+CONDITION: Ready
+  STATUS: True
+CONDITION: HasErrors
+  STATUS: False
+  MESSAGE: warning: A ServiceMonitor will not be created because `metrics-enabled` is not true.
+CONDITION: RollingUpdate
+  STATUS: False</code></pre>
+        <p>And a real boot in the pod's own logs — Keycloak 26.8.2, on Quarkus, talking to the real Postgres
+        pod it was pointed at:</p>
+        <pre><code>2026-11-11 12:03:25,162 INFO  [io.quarkus] (main) Keycloak 26.8.2 on JVM (powered by Quarkus 3.40.1.1)
+  started in 5.057s. Listening on: https://0.0.0.0:8443. Management interface listening on https://0.0.0.0:9000.
+2026-11-11 12:03:48,103 INFO  [org.keycloak.services] Created temporary admin user with username temp-admin
+2026-11-11 12:03:48,233 INFO  [org.keycloak.services.resources.KeycloakApplication] Bootstrap completed in 23.153000 seconds</code></pre>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Notice the admin account: <code>temp-admin</code>, not <code>admin</code>. Unlike chapter 20's
+          Docker Compose install (a persistent admin from fixed <code>KC_BOOTSTRAP_ADMIN_*</code> env vars), the
+          Operator issues a one-time temporary admin with a random password, delivered in a generated
+          <code>example-kc-initial-admin</code> Secret. Trying <code>admin</code>/<code>admin</code> here will
+          simply fail — that's expected behavior, not a broken lab.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-verify" data-title="Lab: proving it's really running">
+        <h2>Hands-on: port-forward, admin console, a real token</h2>
+        <p>With no Ingress controller in this <code>kind</code> cluster, <code>kubectl port-forward</code>
+        straight to the Keycloak Service is the Operator docs' own documented way to reach a deployment "for
+        debugging and development purposes":</p>
+        <pre><code>$ kubectl -n keycloak port-forward service/example-kc-service 18443:8443 &
+
+$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://localhost:18443/admin/master/console/
+HTTP 200
+
+$ curl -sk https://localhost:18443/realms/master/.well-known/openid-configuration
+{"issuer":"https://localhost:18443/realms/master","authorization_endpoint":"https://localhost:18443/realms/master/protocol/openid-connect/auth", ...}
+
+$ curl -sk -X POST https://localhost:18443/realms/master/protocol/openid-connect/token \
+    -d grant_type=password -d client_id=admin-cli \
+    -d username=temp-admin -d password=&lt;decoded from the initial-admin secret&gt;
+{"access_token":"eyJhbGciOiJSUzI1NiIs...", "token_type":"Bearer", ...}</code></pre>
+        <p>All three real: the admin console answers HTTP 200, the OIDC discovery document is genuine (correct
+        issuer, correct endpoints), and the password-grant call against <code>admin-cli</code> returned a real,
+        signed access token — proof the Operator-deployed server is a fully functioning Keycloak, not just a
+        pod that happens to be "Running."</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 420" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Where the Operator's pods and Services sit inside the kind cluster, and how this chapter's lab reached them</title>
+            <desc id="d3">A large box represents the kind cluster, a single Docker container acting as one Kubernetes node. Inside it, a smaller box for the keycloak namespace contains three stacked pods: keycloak-operator, example-kc-0, and postgresql-db-0. To their right, two Service boxes: example-kc-service, aligned with the example-kc-0 pod, and postgres-db, aligned with the postgresql-db-0 pod, each connected to its pod by a short horizontal line. A separate, visually muted box inside the namespace notes that an Ingress was not deployed in this lab since kind ships no controller. Outside the cluster boundary, to the right and level with the example-kc-service box, a box labeled Your laptop is connected to that service by a horizontal line labeled kubectl port-forward 18443 to 8443, then curl https colon slash slash localhost 18443.</desc>
+            <rect x="20" y="20" width="630" height="380" rx="10" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="335" y="44" text-anchor="middle" class="diagram-label" font-size="13" font-weight="700">kind cluster (one Docker container = one Kubernetes node)</text>
+
+            <rect x="50" y="70" width="570" height="300" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="335" y="92" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Namespace: keycloak</text>
+
+            <rect x="70" y="112" width="220" height="45" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="180" y="138" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Pod: keycloak-operator</text>
+
+            <rect x="70" y="178" width="220" height="45" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="180" y="204" text-anchor="middle" class="diagram-label" font-size="11">Pod: example-kc-0</text>
+
+            <rect x="70" y="238" width="220" height="45" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="180" y="264" text-anchor="middle" class="diagram-label" font-size="11">Pod: postgresql-db-0</text>
+
+            <rect x="360" y="178" width="230" height="55" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="475" y="200" text-anchor="middle" class="diagram-label" font-size="11">Svc: example-kc-service</text>
+            <text x="475" y="216" text-anchor="middle" class="diagram-label-muted" font-size="10">ClusterIP :8443, :9000</text>
+
+            <rect x="360" y="243" width="230" height="35" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="475" y="265" text-anchor="middle" class="diagram-label" font-size="11">Svc: postgres-db :5432</text>
+
+            <line x1="290" y1="202" x2="358" y2="205" class="diagram-stroke"></line>
+            <line x1="290" y1="260" x2="358" y2="260" class="diagram-stroke"></line>
+
+            <rect x="360" y="300" width="230" height="45" rx="6" class="diagram-fill-surface diagram-stroke" stroke-dasharray="4 3"></rect>
+            <text x="475" y="318" text-anchor="middle" class="diagram-label-muted" font-size="10">Ingress — not deployed here</text>
+            <text x="475" y="332" text-anchor="middle" class="diagram-label-muted" font-size="10">(kind has no controller by default)</text>
+
+            <rect x="680" y="175" width="190" height="80" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="775" y="196" text-anchor="middle" class="diagram-label-on-accent" font-size="11" font-weight="700">Your laptop</text>
+            <text x="775" y="212" text-anchor="middle" class="diagram-label-on-accent" font-size="9">kubectl port-forward</text>
+            <text x="775" y="224" text-anchor="middle" class="diagram-label-on-accent" font-size="9">18443 &rarr; 8443</text>
+            <text x="775" y="240" text-anchor="middle" class="diagram-label-on-accent" font-size="9">curl https://localhost:18443</text>
+
+            <line x1="590" y1="204" x2="678" y2="210" class="diagram-stroke" marker-end="url(#arrowk2)"></line>
+            <defs>
+              <marker id="arrowk2" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 42.3 — Pods and Services inside the cluster, and the real port-forward path this
+          chapter's lab used to reach them from outside it.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="lab-cleanup" data-title="Lab: cleanup">
+        <h2>Hands-on: cleaning up — before moving on, not after</h2>
+        <pre><code>$ kill %1                              # stop the port-forward
+$ kind delete cluster --name kc42
+Deleting cluster "kc42" ...
+Deleted nodes: ["kc42-control-plane"]
+
+$ kind get clusters
+No kind clusters found.
+$ docker ps -a | grep kc42
+(no output)
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2   94G   74G   15G  84% /</code></pre>
+        <p>Everything <code>kind</code> pulled — the node image, the Operator image, Postgres — lived entirely
+        inside that one node container and was reclaimed the moment it was deleted. Disk ended up <strong>better
+        off</strong> than when this lab started (15GB free vs. 7.6GB at the very start), because the build-cache
+        prune in the setup step freed far more than the lab itself used.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>A real gotcha hit while building this: <code>kind</code>'s node runs its <em>own</em> containerd
+          inside the node container, entirely separate from the host's Docker image store. Having
+          <code>quay.io/keycloak/keycloak:26.8.2</code> already cached on the host (from chapter 20's lab) did
+          not stop the node from pulling it fresh again from the internet. <code>kind load docker-image</code>
+          exists to pre-seed a node from a host-side image if that matters for your bandwidth or disk budget —
+          not needed here once the build-cache prune created enough headroom.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps">
+        <h2>Case study: Northwind Apps' production target</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> is the B2B SaaS company whose growth is the
+          whole reason this chapter exists. Chapter 20's <code>docker compose up -d</code> was the right choice
+          for a first realm and a first lab; it is not the right choice for a company onboarding new enterprise
+          customers every week, each expecting SSO, federation, and uptime that survives a single node dying at
+          2am. Northwind's actual platform team would not hand-write a Deployment for Keycloak — they'd commit
+          a <code>Keycloak</code> custom resource, the same shape as this chapter's <code>example-kc.yaml</code>,
+          to the same GitOps repo every other service's manifests live in, point <code>db</code> at their real
+          managed Postgres, set <code>instances</code> above 1 once chapter 41's Infinispan session-replication
+          story is wired up, and let the Operator's reconciliation loop keep it that way — the exact mechanism
+          this chapter's lab just watched happen on a throwaway <code>kind</code> cluster, at real production
+          scale instead.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="mistakes" data-title="Common mistakes">
+        <h2>Common mistakes and pitfalls</h2>
+        <ul>
+          <li><strong>If you see</strong> a fresh "Pulling image" event inside <code>kind</code> for an image
+          you swear you already have — <strong>the cause is</strong> the node's own containerd, separate from
+          your host Docker's image store; pre-seed it with <code>kind load docker-image</code> if that matters.</li>
+          <li><strong>If you see</strong> the Keycloak pod stuck in <code>CrashLoopBackOff</code> complaining it
+          can't reach host <code>postgres-db</code> — <strong>the cause is</strong> likely a typo between the
+          Service name (<code>postgres-db</code>) and the StatefulSet name (<code>postgresql-db</code>); only
+          the Service name belongs in <code>db.host</code>.</li>
+          <li><strong>If</strong> <code>admin</code>/<code>admin</code> doesn't work against an Operator-deployed
+          instance — <strong>the cause is</strong> there is no such account; read the real one-time credentials
+          from the generated <code>&lt;cr-name&gt;-initial-admin</code> Secret instead.</li>
+          <li><strong>If</strong> an Ingress you created for Keycloak never gets an address — <strong>the
+          cause is</strong> most clusters (including a stock <code>kind</code> cluster) ship no Ingress
+          controller by default; install one, or use <code>kubectl port-forward</code> for a local lab.</li>
+          <li><strong>If</strong> <code>kubectl apply -k 'github.com/...?ref=...'</code> installs a version you
+          didn't expect — <strong>the cause is</strong> omitting <code>?ref=</code> entirely, which tracks
+          whatever a default branch resolves to instead of a pinned release.</li>
+          <li><strong>If</strong> an OLM-managed Operator upgrades Keycloak on its own, mid-project —
+          <strong>the cause is</strong> not setting <code>installPlanApproval: Manual</code> on the Subscription,
+          which the Operator's own docs explicitly recommend to avoid exactly this.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>The Keycloak Operator — not the Bitnami Helm chart — is this course's live-verified, officially recommended way to run Keycloak on Kubernetes as of 26.8.2.</li>
+          <li>Bitnami's free Keycloak chart images moved to a legacy/paid repository around August 2025 and no longer receive free security updates — a real, dated maturity gap, not a style preference.</li>
+          <li>An Operator is a controller plus one or more CRDs: you declare desired state in a custom resource, and the Operator continuously reconciles the real cluster toward it.</li>
+          <li>The Operator can be installed via OLM (the docs' own "recommended" path, but needs OLM pre-installed), plain kubectl+kustomize (namespace-scoped or a still-preview cluster-wide variant), or an explicitly "Experimental" Helm chart.</li>
+          <li>This chapter's lab used the namespace-scoped kubectl+kustomize path, pinned with <code>?ref=26.8.2</code>, because it needs no extra in-cluster component and is fully supported for a one-off teaching cluster.</li>
+          <li>The Keycloak custom resource replaces <code>docker-compose.yml</code> as "the file that describes the deployment" — but the Operator issues a one-time <code>temp-admin</code> account via a generated Secret, not a persistent admin like chapter 20's Compose env vars.</li>
+          <li><code>kind</code> runs the whole control plane inside one Docker container with its own internal containerd — images already cached on your host Docker don't automatically skip a fresh pull inside the kind node.</li>
+          <li><code>kubectl port-forward</code> to a Service is the Operator docs' own documented way to reach a deployment for debugging, especially when, like <code>kind</code>, the cluster has no Ingress controller installed.</li>
+          <li>The single biggest disk-budget lever on a tight dev machine was pruning Docker's build cache (<code>docker builder prune -af</code>), which freed real space without touching any running container or cached image.</li>
+          <li>Deleting a kind cluster (<code>kind delete cluster</code>) reclaims essentially everything that cluster used, because it was all living inside that one node container.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>In your own words, what problem does the Operator pattern solve that a human running <code>kubectl apply -f</code> by hand, over and over, does not?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A manual <code>kubectl apply</code> is a one-time instruction — nothing notices or corrects drift afterward. An Operator watching its CRs continuously reconciles the cluster toward whatever the custom resource currently says, on an ongoing basis: if a pod dies, or the CR changes, the Operator reacts without a human re-running anything.</p>
+          </details></li>
+          <li><details>
+            <summary>Why did this chapter's lab use the plain kubectl+kustomize install over OLM, even though Keycloak's own docs call OLM the "recommended" path?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>OLM is itself an extra component that has to already be installed and running in the cluster, plus its own Subscription/InstallPlan machinery to manage. For a one-off teaching <code>kind</code> cluster that gets deleted right after verification, that's operational weight with no payoff — the plain kubectl+kustomize path is equally official and supported, just simpler for this use case.</p>
+          </details></li>
+          <li><details>
+            <summary>What's the real difference between the admin credentials this chapter's Operator-deployed Keycloak produced versus chapter 20's Docker Compose install?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Chapter 20's Compose setup created a persistent <code>admin</code> account from fixed <code>KC_BOOTSTRAP_ADMIN_USERNAME</code>/<code>_PASSWORD</code> environment variables. The Operator instead issues a one-time temporary account (confirmed live: username <code>temp-admin</code>) with a random password, delivered only through a generated <code>&lt;cr-name&gt;-initial-admin</code> Kubernetes Secret — there is no fixed bootstrap credential to remember.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain why <code>kind</code> re-downloaded images (the Operator, Keycloak, Postgres) even though at least one of them was already cached in this machine's host Docker image store.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A kind cluster's control-plane node is itself a Docker container, and that container runs its own internal containerd with its own separate image store — it is not the same storage as the host's Docker engine. Pods scheduled on that node pull images through that inner containerd independently, so a host-side cache doesn't help unless you explicitly pre-load it with <code>kind load docker-image</code>.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague suggests the Bitnami Keycloak Helm chart is the "simpler" option for a new production deployment going into 2027. What live-verified fact from this chapter should make you push back?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Bitnami's free container image catalog — including the images that chart depends on — moved to a legacy repository around August 2025 that no longer receives security updates; current images now require a paid subscription. The official Keycloak Operator, by contrast, remains actively maintained and version-pinned per Keycloak release (this chapter used 26.8.2 end to end). "Simpler to write" isn't the same as "safe to run in production" once one path has a live, dated support gap and the other doesn't.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/operator/installation">Keycloak Operator — Installation (official docs, live-verified against 26.8.2)</a></li>
+          <li><a href="https://www.keycloak.org/operator/basic-deployment">Keycloak Operator — Basic Deployment (the Keycloak CR, dev Postgres, TLS, exposing the service)</a></li>
+          <li><a href="https://kind.sigs.k8s.io/docs/user/quick-start/">kind — Quick Start (the tool this chapter's lab used for a local cluster)</a></li>
+          <li><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/">Kubernetes documentation — Operator pattern</a></li>
+          <li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/">Kubernetes documentation — StatefulSets</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "keycloak-on-kubernetes", 15);
+    SlideDeck.init({ chapterSlug: "keycloak-on-kubernetes" });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+# The Keycloak custom resource (CR) the Operator reconciles into a running server.
+# apiVersion/kind/field shapes verified live against https://www.keycloak.org/operator/basic-deployment
+# (Keycloak 26.8.2). Two fields deviate from that page's own example, both documented
+# in the chapter text as this lab's own judgment calls, not something the docs state:
+#
+#   - hostname.hostname: "localhost" instead of the docs' "test.keycloak.org" --
+#     there is no real DNS for a throwaway kind cluster, and setting it to localhost
+#     is what makes `kubectl port-forward` + `curl https://localhost:<port>` resolve
+#     correctly without extra /etc/hosts or Host-header tricks.
+#   - ingress.enabled: false -- kind ships no Ingress controller by default, so a
+#     Keycloak-created Ingress object would sit there with no controller to satisfy
+#     it. Reaching the service by `kubectl port-forward` instead (see README.md).
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: example-kc
+  namespace: keycloak
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: postgres-db
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  http:
+    tlsSecret: example-tls-secret
+  hostname:
+    hostname: localhost
+  ingress:
+    enabled: false

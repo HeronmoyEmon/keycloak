@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>High Availability &amp; Clustering — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "high-availability-clustering";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IX — Production, Scale &amp; Hardening</span>
+          <span class="badge minutes">~50 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>41. High Availability &amp; Clustering</h1>
+        <p class="lede">One Keycloak node is a single point of failure for every application that
+        trusts it — chapter 1's "new single point of failure" con, made concrete. This chapter answers
+        the obvious follow-up: run more than one node. The hard part isn't starting a second process;
+        it's making sure a session created on node A is still recognized on node B, so a load balancer
+        can send the next request anywhere without forcing a re-login. This chapter stands up two real
+        Keycloak 26.8.2 nodes, clusters them for real, and proves — with real HTTP transcripts — that
+        the second node recognizes a session it never created.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist who has only ever run Keycloak as one container doesn't yet know what
+        "production-ready" actually requires. Every real deployment with uptime expectations runs more
+        than one node, and the single thing that makes that work — not break SSO, not force every user
+        to log in again every time a load balancer picks a different backend — is session state that
+        every node can see. This chapter makes that mechanism concrete instead of abstract: which cache
+        technology Keycloak embeds, how two nodes find each other without a hand-maintained host list,
+        and exactly what breaks (twice, for real, while building this chapter) if you get the details
+        wrong.</p>
+
+        <p>Sources for this chapter: Keycloak's own <a
+        href="https://www.keycloak.org/server/caching">Configuring distributed caches</a> guide and <a
+        href="https://www.keycloak.org/high-availability/introduction">High Availability introduction
+        and guides</a> (both fetched live for Keycloak 26.8.2 — see the next slides for exactly which
+        claims came from the docs versus the running server itself); the real
+        <code>quay.io/keycloak/keycloak:26.8.2</code> image's own <code>start --help-all</code> output
+        and bundled <code>conf/cache-ispn.xml</code>, inspected directly; and this chapter's own
+        two-node lab (<code>labs/high-availability-clustering/</code>), run against a real, disposable
+        two-node Keycloak + PostgreSQL Docker Compose stack this chapter owns.</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 19 introduced Keycloak's architecture at a high level and named Infinispan as the
+          embedded cache "previewed here; full depth and hands-on configuration in chapter 41" — this is
+          that chapter. Chapter 29 then went deep on what a session actually <em>is</em> inside one
+          Keycloak node: an SSO session with child client sessions, tracked in an in-memory cache,
+          identified by a <code>sid</code> claim. This chapter is where those two threads meet
+          production reality — a session created on one node has to be <em>visible to another node</em>
+          for "high availability" to mean anything more than "two processes that happen to share a
+          database." That visibility problem is exactly what Infinispan's cache replication solves, and
+          exactly what this chapter's lab proves end to end rather than asserts.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="topology" data-title="Single node vs. clustered">
+        <h2>From one node to a cluster: what actually changes</h2>
+        <p>A single Keycloak node already has an in-memory cache — it just never needs to talk to
+        anyone else, because there's no one else to talk to. Add a second node behind the same load
+        balancer and database, and two new problems appear at once: the two nodes need to <strong>find
+        each other</strong> (discovery), and once found, they need to keep certain in-memory state
+        <strong>consistent</strong> between them (replication) — otherwise a request routed to node B
+        has no idea the user already has a live session on node A.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 320" role="img" aria-labelledby="t41-1 d41-1">
+            <title id="t41-1">Single Keycloak node versus a two-node cluster sharing one database and one replicated cache</title>
+            <desc id="d41-1">Left panel: one Keycloak node with its own local Infinispan cache, connected to one PostgreSQL database, serving one load balancer path. Right panel: two Keycloak nodes, each with its own Infinispan cache instance, both connected to the same shared PostgreSQL database, and the two nodes also connected directly to each other by a JGroups cluster link labeled "Infinispan cluster -- replicated session cache," both sitting behind one shared load balancer with one public hostname.</desc>
+            <text x="190" y="24" text-anchor="middle" class="diagram-label" font-weight="700">Single node</text>
+            <text x="660" y="24" text-anchor="middle" class="diagram-label" font-weight="700">Two-node cluster</text>
+
+            <rect x="90" y="110" width="200" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="190" y="138" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Keycloak node</text>
+            <text x="190" y="156" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">local Infinispan cache</text>
+            <line x1="190" y1="180" x2="190" y2="225" class="diagram-stroke" marker-end="url(#a41-1)"/>
+            <rect x="110" y="230" width="160" height="45" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="190" y="257" text-anchor="middle" class="diagram-label" font-size="11">PostgreSQL</text>
+            <text x="190" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">One failure = total outage</text>
+
+            <rect x="470" y="60" width="180" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="560" y="85" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Node A</text>
+            <text x="560" y="101" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">Infinispan cache A</text>
+
+            <rect x="690" y="60" width="180" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="780" y="85" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Node B</text>
+            <text x="780" y="101" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">Infinispan cache B</text>
+
+            <line x1="650" y1="90" x2="690" y2="90" class="diagram-stroke" marker-end="url(#a41-1)" marker-start="url(#a41-1s)"/>
+            <text x="670" y="75" text-anchor="middle" class="diagram-label-muted" font-size="8">JGroups</text>
+            <text x="670" y="140" text-anchor="middle" class="diagram-label-muted" font-size="9">Infinispan cluster --</text>
+            <text x="670" y="153" text-anchor="middle" class="diagram-label-muted" font-size="9">replicated session cache</text>
+
+            <line x1="560" y1="120" x2="560" y2="225" class="diagram-stroke" marker-end="url(#a41-1)"/>
+            <line x1="780" y1="120" x2="780" y2="225" class="diagram-stroke" marker-end="url(#a41-1)"/>
+            <rect x="590" y="230" width="160" height="45" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="670" y="257" text-anchor="middle" class="diagram-label" font-size="11">Shared PostgreSQL</text>
+
+            <rect x="430" y="280" width="440" height="30" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="650" y="300" text-anchor="middle" class="diagram-label" font-size="10">Both sit behind one load balancer, one public hostname</text>
+
+            <defs>
+              <marker id="a41-1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+              <marker id="a41-1s" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
+                <path d="M8,0 L0,4 L8,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 41.1 — Adding a second node introduces two new problems a single node never
+          had: finding the other node (discovery) and keeping the right in-memory state consistent
+          between them (replication).</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="which-caches" data-title="Not every cache replicates the same way">
+        <h2>A real distinction, confirmed from the running server, not assumed</h2>
+        <p>Keycloak embeds several named Infinispan caches, not one undifferentiated blob of "state."
+        Checking the real 26.8.2 server's own <code>start --help-all</code> output directly shows an
+        exact, documented split: some per-cache size options are explicitly annotated <em>"Available
+        only when embedded Infinispan clusters configured"</em> — those are the caches that actually
+        get <strong>distributed/replicated</strong> across nodes. Others carry no such annotation —
+        those are <strong>local caches</strong>, present on every node regardless of clustering, kept
+        roughly in sync by cross-node <em>invalidation</em> messages rather than full replication,
+        falling back to the database on a miss.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak 26.8.2's own embedded cache names, split by how each one behaves across a cluster -- confirmed directly from `start --help-all`, not inferred</caption>
+            <thead><tr><th>Cache</th><th>Behavior across nodes</th><th>What it holds</th></tr></thead>
+            <tbody>
+              <tr><td><code>sessions</code>, <code>clientSessions</code>, <code>offlineSessions</code>, <code>offlineClientSessions</code></td><td>Distributed/replicated — explicitly flagged "available only when embedded Infinispan clusters configured"</td><td>SSO sessions, per-client sessions, and their offline counterparts (chapter 29's subject) — exactly the state this chapter's lab needs visible on every node</td></tr>
+              <tr><td><code>authenticationSessions</code>, <code>actionTokens</code>, <code>work</code></td><td>Distributed/replicated — confirmed by the real rebalance log lines this chapter's own lab captured (see the lab slides)</td><td>In-progress login flows, one-time action tokens (password reset, email verification), and cross-cluster coordination tasks</td></tr>
+              <tr><td><code>realms</code>, <code>users</code>, <code>keys</code>, <code>authorization</code>, <code>crl</code></td><td>Local only — no clustering-specific annotation in the help text; kept fresh via invalidation messages, not full replication</td><td>Realm/user/signing-key/authorization-policy/certificate-revocation data that also lives durably in the database — the cache is a read-through accelerator, not the source of truth</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Why this distinction matters</div>
+          <p>It's tempting to assume "clustering" means "every cache is now replicated everywhere." It
+          doesn't, and conflating the two leads to wrong assumptions about consistency. Realm and user
+          data doesn't need full replication because the database is always the authoritative source
+          and an invalidation message is enough to keep a local cache from serving stale data after a
+          write. Session data is different: a session genuinely has <em>no other durable home</em> by
+          default (offline sessions are the one exception, persisted to the database specifically so
+          they survive a restart) — so if session caches weren't actually replicated, this chapter's
+          entire premise would be false. The lab below checks exactly this, directly, rather than taking
+          the distinction on faith.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="discovery" data-title="How two nodes actually find each other">
+        <h2>JGroups, and the discovery protocol this version actually defaults to</h2>
+        <p>Keycloak's clustering is built on two layers: <strong>Infinispan</strong> (the cache/data-grid
+        library itself) running on top of <strong>JGroups</strong> (the group-communication toolkit that
+        handles node discovery and message delivery between cluster members). Live-verified directly
+        against the real 26.8.2 image's <code>start --help-all</code> output — not assumed from older
+        Keycloak versions' documentation, which this chapter checked and found materially different:</p>
+        <ul>
+          <li><code>--cache</code> controls whether clustering is even attempted: <code>ispn</code> (the
+          production-mode default) clusters nodes together; <code>local</code> (the <code>start-dev</code>
+          default) disables clustering outright, giving every node its own isolated, non-clustered
+          cache. This chapter's lab runs <code>start-dev</code> (matching every other chapter's lab, no
+          TLS/hostname ceremony needed) but must explicitly pass <code>--cache=ispn</code> to override
+          that dev default — otherwise the two "nodes" would just be two unrelated servers that happen
+          to share a database, and this entire lab would silently be a no-op.</li>
+          <li><code>--cache-stack</code> selects the discovery mechanism, and its documented default as
+          of 26.8.2 is <strong><code>jdbc-ping</code></strong> — nodes discover each other by writing
+          and reading rows in a small table inside the <em>same database Keycloak already connects to
+          for everything else</em>, with no separate discovery service, no static host list, and no
+          multicast network support required. The same help text explicitly marks
+          <code>kubernetes</code>, <code>jdbc-ping-udp</code>, <code>tcp</code>, <code>udp</code>,
+          <code>ec2</code>, <code>azure</code>, and <code>google</code> as <strong>deprecated</strong>
+          stack options — confirming the brief's own suspicion that older TCP/UDP-list-based guidance no
+          longer reflects this version's real default for a non-Kubernetes deployment.</li>
+          <li>JGroups traffic between nodes is <strong>encrypted with mTLS by default</strong>
+          (<code>--cache-embedded-mtls-enabled</code>, default <code>true</code>) whenever a TCP-based
+          stack is used — which <code>jdbc-ping</code> is. With no keystore/truststore configured,
+          Keycloak generates and rotates ephemeral certificates automatically. Confirmed live in this
+          chapter's own lab boot log, unprompted: <code>"JGroups Encryption enabled (mTLS)"</code>.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t41-2 d41-2">
+            <title id="t41-2">JDBC_PING discovery: two nodes finding each other through the shared database, not a static host list</title>
+            <desc id="d41-2">Node A and Node B both independently write a row into a small discovery table inside the same shared PostgreSQL database, each row advertising that node's own physical cluster address. Each node then reads that same table and discovers the other node's address from the row it wrote. The two nodes then open a direct, mTLS-encrypted JGroups connection to each other and exchange a cluster view, ending with both nodes agreeing on a two-member view: node-a and node-b.</desc>
+            <rect x="40" y="30" width="170" height="55" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="125" y="62" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Node A</text>
+            <rect x="690" y="30" width="170" height="55" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="775" y="62" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Node B</text>
+
+            <rect x="350" y="110" width="200" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="450" y="134" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Shared PostgreSQL</text>
+            <text x="450" y="150" text-anchor="middle" class="diagram-label-muted" font-size="9">JGROUPSPING table</text>
+
+            <line x1="125" y1="85" x2="400" y2="110" class="diagram-stroke" marker-end="url(#a41-2)"/>
+            <text x="230" y="90" text-anchor="middle" class="diagram-label-muted" font-size="8">1. write own address</text>
+            <line x1="775" y1="85" x2="500" y2="110" class="diagram-stroke" marker-end="url(#a41-2)"/>
+            <text x="680" y="90" text-anchor="middle" class="diagram-label-muted" font-size="8">1. write own address</text>
+            <line x1="400" y1="130" x2="125" y2="90" class="diagram-stroke" stroke-dasharray="3 3" marker-end="url(#a41-2)"/>
+            <line x1="500" y1="130" x2="775" y2="90" class="diagram-stroke" stroke-dasharray="3 3" marker-end="url(#a41-2)"/>
+            <text x="270" y="200" text-anchor="middle" class="diagram-label-muted" font-size="8">2. each node reads the table, learns the other's address</text>
+
+            <line x1="210" y1="57" x2="690" y2="57" class="diagram-stroke" marker-end="url(#a41-2)" marker-start="url(#a41-2s)"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-size="9">3. direct mTLS-encrypted JGroups link</text>
+
+            <rect x="300" y="215" width="300" height="35" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="450" y="237" text-anchor="middle" class="diagram-label" font-size="10">Cluster view: [node-a, node-b] (2 members)</text>
+
+            <defs>
+              <marker id="a41-2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+              <marker id="a41-2s" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
+                <path d="M8,0 L0,4 L8,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 41.2 — JDBC_PING discovery: no static host list, no multicast, no separate
+          discovery service. Both nodes bootstrap discovery through the exact same database connection
+          they already needed.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="case-meridian" data-title="Case study: Meridian Trust">
+        <h2>Meridian Trust: why a bank can't run one node</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank (chapter 9/11:
+          PCI-DSS, fraud-aware authentication). Online banking logins are not an 8-to-5 activity, and a
+          bank's SLA pressure is existential in a way a smaller SaaS tool's isn't: an identity outage
+          during a payroll-day rush, or during a fraud-driven step-up-authentication spike, has direct
+          financial and regulatory consequences, not just an annoyed support queue. A single Keycloak
+          node is a hard outage risk that chapter 1 already named abstractly as a trade-off of
+          centralizing identity at all — "a new single point of failure." Running a cluster doesn't
+          remove that trade-off; it's the concrete, operational answer to it: multiple nodes behind a
+          load balancer mean a lost node (a crash, a patch restart, a deploy) doesn't take down every
+          connected application's login at once, and the session a customer already holds survives the
+          node that minted it going away.</p>
+        </div>
+        <p>This is also precisely the chapter where "centralizing authentication" (chapter 1's thesis)
+        stops being free. A single node is operationally simple; a cluster adds real complexity — shared
+        database contention, cache-coherency behavior to understand, and (as this chapter's own lab
+        found, twice) genuinely non-obvious cross-node configuration requirements. Meridian Trust accepts
+        that complexity because the alternative — one node, one failure, one outage — is unacceptable
+        for a regulated bank's customer-facing banking application.</p>
+      </section>
+
+      <section class="slide" data-slide="lab-scope" data-title="Lab: what this does and doesn't prove">
+        <h2>Lab: an honest scope statement before a single command runs</h2>
+        <p>CLAUDE.md's curriculum calls this a <strong>"partial (single-node sim)"</strong> lab, and that
+        label earns a precise explanation rather than a disclaimer buried at the end.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 230" role="img" aria-labelledby="t41-3 d41-3">
+            <title id="t41-3">What this lab's single Docker host actually simulates, versus what a real multi-host cluster requires</title>
+            <desc id="d41-3">Left box: this lab's actual setup, one Docker host running two Keycloak containers and one Postgres container, all sharing one kernel, one Docker bridge network, and one physical machine. Right box: a real production cluster, with two or more Keycloak nodes running on genuinely separate physical hosts or availability zones, connected over a real network that can actually partition, each reachable independently if the other host fails entirely. An arrow from the left box to the right box is labeled "this lab proves cross-node cache replication logic -- it cannot and does not prove real host failure or network partition behavior.".</desc>
+            <rect x="30" y="40" width="380" height="150" rx="10" class="diagram-fill-surface diagram-stroke"/>
+            <text x="220" y="65" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">This lab: ONE Docker host</text>
+            <rect x="55" y="80" width="140" height="45" rx="7" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="125" y="107" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Container: node-a</text>
+            <rect x="225" y="80" width="140" height="45" rx="7" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="295" y="107" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Container: node-b</text>
+            <rect x="130" y="140" width="160" height="35" rx="6" class="diagram-fill-info diagram-stroke"/>
+            <text x="210" y="162" text-anchor="middle" class="diagram-label" font-size="10">Container: postgres</text>
+            <text x="220" y="200" text-anchor="middle" class="diagram-label-muted" font-size="9">one kernel, one bridge network, one physical machine</text>
+
+            <line x1="410" y1="115" x2="480" y2="115" class="diagram-stroke" marker-end="url(#a41-3)"/>
+
+            <rect x="490" y="40" width="380" height="150" rx="10" class="diagram-fill-surface diagram-stroke"/>
+            <text x="680" y="65" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Real cluster: SEPARATE hosts</text>
+            <rect x="515" y="90" width="150" height="55" rx="7" class="diagram-fill-warning diagram-stroke"/>
+            <text x="590" y="113" text-anchor="middle" class="diagram-label" font-size="10">Host 1 / AZ A</text>
+            <text x="590" y="130" text-anchor="middle" class="diagram-label-muted" font-size="9">Keycloak node</text>
+            <rect x="685" y="90" width="150" height="55" rx="7" class="diagram-fill-warning diagram-stroke"/>
+            <text x="760" y="113" text-anchor="middle" class="diagram-label" font-size="10">Host 2 / AZ B</text>
+            <text x="760" y="130" text-anchor="middle" class="diagram-label-muted" font-size="9">Keycloak node</text>
+            <text x="680" y="170" text-anchor="middle" class="diagram-label-muted" font-size="9">a real network between them -- one that can actually partition</text>
+
+            <defs>
+              <marker id="a41-3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 41.3 — This lab's two containers genuinely are two separate server processes
+          with two separate embedded caches — but they share one kernel and one network, which is enough
+          to prove cache-replication logic and not enough to prove real multi-host failure behavior.</figcaption>
+        </figure>
+
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>What this lab's single-Docker-host two-node setup does and doesn't honestly demonstrate</caption>
+            <thead><tr><th>Genuinely proven</th><th>NOT proven by this lab</th></tr></thead>
+            <tbody>
+              <tr><td>Two real Keycloak 26.8.2 server processes, each its own container, each its own embedded Infinispan cache</td><td>Real multi-host failover (one physical machine actually going down)</td></tr>
+              <tr><td>Real JGroups discovery (JDBC_PING) forming a real two-member cluster view</td><td>Network-partition / split-brain behavior across a real, partitionable network</td></tr>
+              <tr><td>A session created on node A recognized by node B with no re-login — a real refresh-token grant and a real cross-node admin-session read/revoke</td><td>WAN latency between data centers, or anything about a real multi-region deployment (chapter 44's subject)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: bringing up the real two-node cluster">
+        <h2>Lab: two real Keycloak containers, one shared Postgres, a real cluster view</h2>
+        <p>Isolated as Docker Compose project <code>ch41kc</code>; host ports <strong>18141</strong>
+        (node A) and <strong>18142</strong> (node B) — never the shared <code>labs/docker/</code> stack
+        or any other chapter's own stack.</p>
+        <pre><code>cd labs/high-availability-clustering
+docker compose -p ch41kc up -d</code></pre>
+        <p>Both nodes run <code>start-dev --cache=ispn --cache-stack=jdbc-ping
+        --cache-embedded-node-name=&lt;node-a|node-b&gt;</code> against the same Postgres. Real log
+        output from node A's own boot, captured from this run:</p>
+        <pre><code>INFO  [org.keycloak.spi.infinispan.impl.embedded.JGroupsConfigurator] JGroups JDBC_PING discovery enabled.
+INFO  [org.keycloak.spi.infinispan.impl.embedded.JGroupsConfigurator] JGroups Encryption enabled (mTLS).
+INFO  [org.infinispan.CLUSTER] ISPN000078: Starting JGroups channel `ISPN` with stack `jdbc-ping`
+INFO  [org.jgroups.JChannel] local_addr: 00000000-...-000000000002(v=16.0.15), name: node-a
+INFO  [org.infinispan.CLUSTER] ISPN000094: Received new cluster view for channel ISPN:
+  [node-b(v=16.0.15)|1] (2) [node-b(v=16.0.15), node-a(v=16.0.15)]
+INFO  [org.infinispan.LIFECYCLE] [Context=sessions] ISPN100002: Starting rebalance with
+  members [node-b, node-a], phase READ_OLD_WRITE_ALL, topology id 2
+INFO  [org.infinispan.LIFECYCLE] [Context=sessions] ISPN100010: Finished rebalance with
+  members [node-b, node-a], topology id 2</code></pre>
+        <p>Two members, discovered with no static host list, cluster view formed, and the
+        <code>sessions</code> cache (alongside <code>clientSessions</code>, <code>offlineSessions</code>,
+        <code>offlineClientSessions</code>, <code>authenticationSessions</code>, <code>actionTokens</code>,
+        and <code>work</code>) rebalanced across both members — every one of them a cache this chapter's
+        earlier table identified as actually distributed, not just the ones this chapter's own curl
+        commands would go on to touch.</p>
+      </section>
+
+      <section class="slide" data-slide="lab-gotcha-profile" data-title="Lab: a real gotcha — &quot;Account is not fully set up&quot;">
+        <h2>Lab, real bug #1: a login rejected before the cluster ever mattered</h2>
+        <p>With the cluster confirmed, the first direct-grant login attempt for a fresh test user
+        (<code>priya.teller</code>, Meridian Trust's realm) failed immediately — before clustering was
+        even relevant to the failure:</p>
+        <pre><code>{"error":"invalid_grant","error_description":"Account is not fully set up"}</code></pre>
+        <p>The user had a password credential and an empty <code>requiredActions</code> list, which made
+        this confusing at first. Real cause, confirmed by checking the realm's registered required
+        actions directly: <code>VERIFY_PROFILE</code> is enabled by default and gets dynamically
+        resolved for any user whose profile is missing attributes the realm's Declarative User Profile
+        expects (email, first/last name here) — it doesn't need to appear in that user's own
+        <code>requiredActions</code> array to fire, and a direct grant has no browser to satisfy an
+        interactive required action with, so it's rejected outright. This is the same
+        <code>VERIFY_PROFILE</code>-shaped gotcha chapters 24 and 39's labs already hit independently —
+        a recurring trap, not a one-off. Fixed for this lab by disabling the action realm-wide:</p>
+        <pre><code>curl -X PUT ".../authentication/required-actions/VERIFY_PROFILE" \
+  -d '{"alias":"VERIFY_PROFILE", ..., "enabled": false}'   # 204, then login succeeded</code></pre>
+      </section>
+
+      <section class="slide" data-slide="lab-gotcha-issuer" data-title="Lab: a real gotcha — token issuer mismatch">
+        <h2>Lab, real bug #2: the actual clustering bug, found on the very first cross-node test</h2>
+        <p>With login working, the first attempt at this chapter's real point — presenting node A's
+        refresh token to node B — failed too, but for a reason that has nothing to do with whether
+        session replication itself was working:</p>
+        <pre><code>{"error":"invalid_grant","error_description":
+  "Invalid token issuer. Expected 'http://localhost:18142/realms/ch41-meridian-trust'"}</code></pre>
+        <p>Keycloak derives a token's <code>iss</code> (issuer) claim from the request's own
+        <code>Host</code> header unless told otherwise. Node A, reached on port 18141, minted a token
+        with <code>iss=...:18141</code>; node B, reached on port 18142, computed its own expected issuer
+        as <code>...:18142</code> and rejected the mismatch — a real, reproducible bug, not a
+        hypothetical. Every real multi-node deployment avoids this by sitting behind <strong>one load
+        balancer with one public hostname</strong>, so every node computes the identical issuer
+        regardless of which one actually serves a given request. This lab's fix models that directly:
+        both nodes are configured with the identical <code>KC_HOSTNAME=http://localhost:18141</code>,
+        even though node B is still reached on its own distinct port 18142 for every curl command below
+        — the forced shared hostname is this lab's stand-in for "behind one load balancer," without
+        needing a third (nginx/HAProxy) container.</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Worth remembering</div>
+          <p>If a multi-node Keycloak deployment rejects tokens with an issuer mismatch, the fix is
+          almost never in the cache/clustering layer at all — it's a hostname configuration problem.
+          Clustering and hostname consistency are two separate requirements that both have to be right
+          before cross-node session recognition can work; this chapter's lab hit both, in that order, by
+          accident rather than by design, which is exactly why it's worth documenting honestly.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-proof" data-title="Lab: the real session-replication proof">
+        <h2>Lab: the actual proof — login on A, recognized on B, no re-authentication</h2>
+        <p>With both real bugs fixed, this is the sequence the brief asked for, run for real against the
+        live two-node cluster:</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 280" role="img" aria-labelledby="t41-4 d41-4">
+            <title id="t41-4">Sequence proof: a session created via node A is recognized by node B without a second login</title>
+            <desc id="d41-4">A sequence diagram with three lanes: curl client, Node A, and Node B, connected underneath to the shared Infinispan sessions cache. Step 1: curl sends a password grant to Node A. Node A creates a session with a given sid and writes it into the shared replicated sessions cache, then returns an access token and refresh token to curl. Step 2: the shared cache replicates that session to Node B's own in-memory copy. Step 3: curl sends the SAME refresh token to Node B instead of Node A. Node B looks up the session by its sid in its own, now-replicated copy of the sessions cache, finds it, and mints a brand new access token carrying the identical sid, returning it to curl with no login form and no credentials resent.</desc>
+            <text x="120" y="25" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">curl client</text>
+            <text x="450" y="25" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Node A (:18141)</text>
+            <text x="770" y="25" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Node B (:18142)</text>
+
+            <line x1="120" y1="35" x2="120" y2="255" class="diagram-stroke" stroke-dasharray="2 3"/>
+            <line x1="450" y1="35" x2="450" y2="255" class="diagram-stroke" stroke-dasharray="2 3"/>
+            <line x1="770" y1="35" x2="770" y2="255" class="diagram-stroke" stroke-dasharray="2 3"/>
+
+            <line x1="120" y1="55" x2="440" y2="55" class="diagram-stroke" marker-end="url(#a41-4)"/>
+            <text x="280" y="48" text-anchor="middle" class="diagram-label-muted" font-size="9">1. grant_type=password</text>
+            <rect x="380" y="60" width="140" height="35" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="450" y="82" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">creates session, sid=X</text>
+
+            <rect x="310" y="110" width="280" height="35" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="450" y="132" text-anchor="middle" class="diagram-label" font-size="9">shared replicated "sessions" cache: sid=X</text>
+            <line x1="450" y1="95" x2="450" y2="108" class="diagram-stroke"/>
+            <line x1="450" y1="145" x2="450" y2="158" class="diagram-stroke" stroke-dasharray="3 3" marker-end="url(#a41-4)"/>
+            <text x="490" y="152" text-anchor="middle" class="diagram-label-muted" font-size="8">replicated</text>
+            <line x1="590" y1="127" x2="760" y2="127" class="diagram-stroke" stroke-dasharray="3 3" marker-end="url(#a41-4)"/>
+            <text x="675" y="120" text-anchor="middle" class="diagram-label-muted" font-size="8">2. cache entry visible to B too</text>
+
+            <line x1="440" y1="60" x2="130" y2="60" class="diagram-stroke"/>
+            <text x="200" y="100" text-anchor="middle" class="diagram-label-muted" font-size="9">access_token + refresh_token (sid=X)</text>
+
+            <line x1="120" y1="190" x2="760" y2="190" class="diagram-stroke" marker-end="url(#a41-4)"/>
+            <text x="440" y="182" text-anchor="middle" class="diagram-label-muted" font-size="9">3. SAME refresh_token, sent to NODE B this time</text>
+            <rect x="700" y="195" width="140" height="35" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="770" y="217" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">finds sid=X, mints new token</text>
+
+            <line x1="760" y1="235" x2="130" y2="245" class="diagram-stroke" marker-end="url(#a41-4)"/>
+            <text x="440" y="252" text-anchor="middle" class="diagram-label-muted" font-size="9">new access_token, SAME sid=X -- no login form, no credentials resent</text>
+
+            <defs>
+              <marker id="a41-4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 41.4 — The decisive proof: refreshing a session's token on a node that never
+          saw the original login only works if that node can see the session in its own, replicated
+          cache.</figcaption>
+        </figure>
+
+        <p><strong>Step 1 — log in via node A only</strong> (<code>http://localhost:18141</code>):</p>
+        <pre><code>LOGIN_A=$(curl -s -X POST http://localhost:18141/realms/ch41-meridian-trust/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=ch41-teller-app -d username=priya.teller -d password=ch41-lab-password)
+# access token's sid claim: i06ag07NudMsZ2EjTCebMfG0</code></pre>
+
+        <p><strong>Step 2 — present node A's refresh token to node B</strong>
+        (<code>http://localhost:18142</code>), which never saw the login at all:</p>
+        <pre><code>curl -s -X POST http://localhost:18142/realms/ch41-meridian-trust/protocol/openid-connect/token \
+  -d grant_type=refresh_token -d client_id=ch41-teller-app -d refresh_token="$REFRESH_A"</code></pre>
+        <pre><code>{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "expires_in": 300,
+  "refresh_token": "eyJhbGciOiJIUzUxMiIs...",
+  "token_type": "Bearer",
+  "session_state": "i06ag07NudMsZ2EjTCebMfG0",
+  "scope": "profile email"
+}</code></pre>
+        <p>Real <code>200 OK</code>. Decoding the new access token's <code>sid</code> claim gives
+        <code>i06ag07NudMsZ2EjTCebMfG0</code> — <strong>identical</strong> to the one node A minted.
+        Node B located, validated, and extended a session it never created, by reading it out of the
+        replicated <code>sessions</code> cache — exactly the proof the brief asked for, with no login
+        form and no credentials resent.</p>
+      </section>
+
+      <section class="slide" data-slide="lab-proof-admin" data-title="Lab: a second, independent proof via the Admin API">
+        <h2>Lab: proving it a second way — and proving it's bidirectional</h2>
+        <p>The refresh-token proof shows node B can <em>read</em> a session node A created. A second,
+        independent check — the Admin REST API's own session endpoints (chapter 29) — confirms the same
+        thing from a different angle, and also checks the reverse direction: a write made <em>through</em>
+        node B, visible from node A.</p>
+        <pre><code># List the user's sessions via NODE B's own Admin REST API
+curl -s ".../18142/admin/realms/ch41-meridian-trust/users/$USER_ID/sessions" -H "Authorization: Bearer $ADMIN_TOKEN_B"
+# -> three sessions listed, including the one node A created</code></pre>
+        <pre><code># Revoke ONE specific session THROUGH node B
+curl -s -X DELETE ".../18142/admin/realms/ch41-meridian-trust/sessions/W3Qjj_Pu1uYSv3EI1kx-6UUF" \
+  -H "Authorization: Bearer $ADMIN_TOKEN_B"   # real 204
+
+# Immediately check via NODE A whether that same session is gone
+curl -s ".../18141/admin/realms/ch41-meridian-trust/users/$USER_ID/sessions" -H "Authorization: Bearer $ADMIN_TOKEN_A"
+# -> the revoked session is absent; the other two (untouched) are still listed on BOTH nodes</code></pre>
+        <p>Real result from this run: of three active sessions, the one revoked <strong>through node
+        B</strong> was immediately absent from <strong>node A's</strong> own session listing, while the
+        other two, untouched, remained visible on both. Replication is confirmed in both directions —
+        a read-after-write from the node that didn't do the write, for both a session create and a
+        session delete — not just the one direction the refresh-token test alone would show.</p>
+        <p>Re-ran the full sequence (login on A, refresh via B, list/revoke via B, confirm via A) fresh,
+        immediately before writing this slide, as this chapter's final reproducibility check — identical
+        result: same-sid match on the refresh, and the targeted session gone from both nodes'
+        listings after the cross-node revoke.</p>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If a multi-node deployment rejects a token with an issuer mismatch
+          (<code>"Invalid token issuer"</code>), the cause is almost never the cluster or cache layer —
+          it's every node computing a different <code>iss</code> claim from its own request <code>Host</code>
+          header. Fix it by giving every node the same <code>KC_HOSTNAME</code> (in production: put every
+          node behind one load balancer with one public hostname), not by debugging Infinispan.</li>
+          <li>Don't assume <code>start-dev</code>'s cache behavior matches production. Dev mode defaults
+          to <code>--cache=local</code>, which silently disables clustering outright — a lab or a
+          quick local test using <code>start-dev</code> with no explicit <code>--cache=ispn</code> will
+          never cluster, with no error or warning at all.</li>
+          <li>Don't assume every Infinispan cache replicates the same way. <code>sessions</code>/
+          <code>clientSessions</code>/<code>offlineSessions</code>/<code>offlineClientSessions</code>
+          are genuinely distributed; <code>realms</code>/<code>users</code>/<code>keys</code> are local
+          caches kept fresh by invalidation, not full replication — confirmed directly from the real
+          server's own <code>--help-all</code> output, not assumed from the word "clustering" alone.</li>
+          <li>If "Account is not fully set up" appears for a brand-new test user in any multi-node (or
+          single-node) lab, suspect the realm's <code>VERIFY_PROFILE</code> dynamic required action
+          before suspecting anything about clustering — this is the fourth chapter in this course to
+          hit it independently (24, 39, and now 41).</li>
+          <li>Older Keycloak documentation, blog posts, or Stack Overflow answers describing
+          <code>TCPPING</code> with a hand-maintained static member list, or UDP multicast discovery, are
+          describing a deprecated discovery stack for this version — confirmed directly from the live
+          26.8.2 help text, which marks <code>tcp</code>, <code>udp</code>, and several cloud-specific
+          stacks deprecated in favor of <code>jdbc-ping</code> as the current non-Kubernetes default.</li>
+          <li>Don't mistake "the cluster view shows both nodes" for "the lab is done." Forming a cluster
+          view is necessary but not sufficient — this chapter's own first cross-node refresh attempt
+          failed for an unrelated issuer-mismatch reason even with a healthy two-member cluster view
+          already confirmed in the logs.</li>
+          <li>A single Docker host running two Keycloak containers is a real test of cross-node cache
+          logic, but it is not a test of real host failure or network partition behavior — don't cite
+          this kind of lab as proof of failover resilience without naming that limitation explicitly,
+          the same honesty this chapter's own lab section leads with.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A single Keycloak node is chapter 1's "new single point of failure" trade-off made
+          literal; clustering is the operational answer, not a way to make that trade-off disappear.</li>
+          <li>Clustering requires solving two separate problems: discovery (finding other nodes) and
+          replication (keeping the right in-memory state consistent between them).</li>
+          <li>As of 26.8.2, Keycloak's documented default discovery stack for a non-Kubernetes deployment
+          is <code>jdbc-ping</code> — nodes discover each other through the same database they already
+          use, with <code>tcp</code>/<code>udp</code>/cloud-specific stacks confirmed deprecated.</li>
+          <li>Not every embedded cache replicates the same way: session-family caches
+          (<code>sessions</code>, <code>clientSessions</code>, offline variants) are genuinely
+          distributed; <code>realms</code>/<code>users</code>/<code>keys</code> are local caches kept
+          fresh by invalidation, falling back to the always-authoritative database.</li>
+          <li><code>start-dev</code>'s default cache mode is <code>local</code>, which silently disables
+          clustering — a lab or quick test must explicitly pass <code>--cache=ispn</code> to actually
+          cluster, with no warning if you forget.</li>
+          <li>JGroups traffic between embedded Infinispan nodes is mTLS-encrypted by default on a
+          TCP-based stack (which <code>jdbc-ping</code> is), with Keycloak auto-generating and rotating
+          ephemeral certificates if none are configured.</li>
+          <li>A token's issuer (<code>iss</code>) claim is derived per-node from the request's own
+          hostname unless <code>KC_HOSTNAME</code> is forced identically across every node — the real
+          cause behind an "Invalid token issuer" error in a freshly built cluster, and the reason every
+          real multi-node deployment sits behind one load balancer with one public hostname.</li>
+          <li>This chapter's lab proved cross-node session recognition two independent ways — a
+          cross-node refresh-token grant, and a cross-node Admin REST session list/revoke — confirming
+          replication works in both directions (reads and writes), not just one.</li>
+          <li>Proving session replication on one Docker host with two containers is genuinely different
+          from proving real multi-host failover or network-partition behavior — this lab is explicit
+          about which one it actually demonstrates.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "we clustered Keycloak, so now every cache is replicated across every node." What's wrong with that statement, and what's actually true?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It overgeneralizes. Only the session-family caches (sessions, clientSessions, offlineSessions, offlineClientSessions) plus a few coordination caches (authenticationSessions, actionTokens, work) are genuinely distributed/replicated when clustering is enabled. Caches like realms, users, and keys are local to each node and kept fresh via invalidation messages, not full replication — they fall back to the database, which is always the authoritative source for that data. Confirmed directly from Keycloak's own --help-all output, which only annotates the session-family cache options as "available only when embedded Infinispan clusters configured."</p>
+          </details></li>
+          <li><details>
+            <summary>A freshly started two-node start-dev lab shows no clustering errors, but a session created on one node isn't visible on the other. What's the single most likely cause, and why wouldn't there be an error?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Most likely: neither node was told --cache=ispn, so both are silently running start-dev's own default, --cache=local, which disables clustering outright. There's no error because local is a fully valid, deliberately supported mode — it's just not a clustered one, and Keycloak doesn't warn that you probably wanted clustering, since a single dev node choosing local is the expected, common case.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, to a developer unfamiliar with this chapter's lab, why presenting node A's refresh token to node B is a more decisive test of session replication than just checking that the cluster's log shows a two-member view.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A healthy cluster view only proves the two JGroups/Infinispan processes can see and talk to each other — it says nothing about whether application-level session data actually replicates correctly. Presenting a refresh token minted by node A to node B forces node B to look up that specific session by its sid in its own (supposedly replicated) sessions cache and validate it before minting a new token; if replication weren't actually working, node B would have no record of that session and the refresh would fail with invalid_grant, regardless of how healthy the cluster view log looked.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab hit an "Invalid token issuer" error on its first cross-node test. Was that a clustering bug? What was it actually, and how was it fixed?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not a clustering bug — a hostname/issuer configuration issue. Keycloak computes a token's iss claim from the request's own Host header by default, so node A (reached on port 18141) and node B (reached on port 18142) were minting/expecting tokens with two different issuer values, and node B rejected node A's token on that mismatch alone — the session replication underneath was never even reached. Fixed by setting the identical KC_HOSTNAME on both nodes, modeling what a real deployment achieves by putting every node behind one load balancer with one public hostname.</p>
+          </details></li>
+          <li><details>
+            <summary>Could this chapter's two-container, one-Docker-host lab be cited as proof that a real Keycloak cluster would survive a data-center outage? Why or why not?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>No. This lab proves that Keycloak's embedded Infinispan cache-replication logic correctly keeps session state consistent across two server processes — a genuine and useful thing to confirm. But both "nodes" share one kernel, one Docker bridge network, and one physical machine; nothing about a real host actually failing, a real network partition, or cross-data-center latency was exercised. Demonstrating real failover resilience needs at least two genuinely separate hosts (or a real multi-node Kubernetes deployment, chapter 42) — citing this lab as proof of that would overstate what it actually tested.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does Meridian Trust's case for clustering go beyond "more throughput"?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A retail bank under PCI-DSS with fraud-aware, step-up authentication has existential uptime and regulatory exposure if identity goes down — a single Keycloak node failing (a crash, a routine patch restart) would take every connected banking application's login down with it, during hours that are never predictably quiet the way a typical business's 9-to-5 might be. Clustering's real value here isn't handling more requests per second; it's removing the single point of failure chapter 1 already named as an unavoidable cost of centralizing authentication in the first place.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/server/caching">Keycloak Server Administration Guide — "Configuring distributed caches"</a> (the <code>--cache</code>/<code>--cache-stack</code> options and embedded Infinispan behavior, live-verified against 26.8.2 for this chapter)</li>
+          <li><a href="https://www.keycloak.org/high-availability/introduction">Keycloak High Availability Guide — introduction</a> (the broader HA story this chapter's single-cluster lab is one slice of; multi-site HA is chapter 44's subject)</li>
+          <li><a href="https://infinispan.org/">Infinispan project site</a> (the embedded data-grid technology Keycloak's session/cache layer is built on)</li>
+          <li><a href="http://www.jgroups.org/">JGroups project site</a> (the group-communication toolkit underneath Infinispan's clustering — discovery protocols, including JDBC_PING, are a JGroups-level concept)</li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "high-availability-clustering", 15);
+    SlideDeck.init({ chapterSlug: "high-availability-clustering" });
+  });
+</script>
+</body>
+</html>

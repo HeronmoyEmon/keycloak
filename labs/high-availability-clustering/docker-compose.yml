@@ -1,0 +1,94 @@
+# Chapter 41's own, isolated two-node Keycloak + PostgreSQL stack.
+#
+# Project name ch41kc, host ports 18141 (node-a) and 18142 (node-b) -- isolated from the shared
+# labs/docker/ stack and every other chapter's own stack (ch33kc/18133, ch39kc/18139, ch40kc/18140),
+# per the same per-chapter-isolation convention those chapters use.
+#
+# What this proves, honestly: TWO real Keycloak 26.8.2 server processes, each its own container, each
+# with its own embedded Infinispan cache, pointed at the SAME PostgreSQL database, clustered together
+# over JGroups using the JDBC_PING discovery protocol (confirmed live as this version's actual default
+# cache-stack for a non-Kubernetes deployment -- see the chapter text). A session created by logging in
+# through node-a's own host port is then shown -- via real HTTP transcripts, not narration -- to be
+# visible from node-b's own host port, without a second login. That is genuine cross-node session-cache
+# replication on one Docker host.
+#
+# What this does NOT prove: real multi-host failover, a network partition, or anything about behavior
+# across more than one Docker daemon/physical host. Both "nodes" share one kernel, one Docker network,
+# and one Postgres -- a real production cluster's hard problems (WAN latency between sites, a host
+# actually dying, split-brain) need more than one Docker host to demonstrate honestly, and this lab does
+# not claim to cover them. See the chapter's "What this lab does and doesn't prove" callout.
+#
+#   cd labs/high-availability-clustering
+#   docker compose -p ch41kc up -d
+#   # wait for both nodes to answer (http://localhost:18141/health/ready, http://localhost:18142/health/ready)
+#   # then follow README.md for the clustering + session-replication proof.
+#   docker compose -p ch41kc down -v   # tear down, including the named volume, when done
+#
+# Both Keycloak nodes run in start-dev mode (matching every other chapter's lab, no TLS/hostname config
+# needed for a local teaching lab) but EXPLICITLY override the dev default of --cache=local (which
+# disables clustering outright) with --cache=ispn --cache-stack=jdbc-ping, since start-dev's own default
+# would otherwise silently give each node its own isolated, non-clustered cache and make the whole lab a
+# no-op. This override is the one thing about this stack that is not "the same as every other chapter's
+# lab plus a second container."
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch41_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # KC_HOSTNAME is set to the SAME value on both nodes, on purpose, and is the one deviation from
+  # "copy node-a's config, change the node name" you might expect. A real cluster sits behind a single
+  # load balancer / reverse proxy with one public hostname, so every token a client receives has the
+  # same `iss` (issuer) claim no matter which backend node actually minted it. Without this, each node
+  # would compute its own issuer from whatever host:port the request arrived on (18141 vs. 18142), a
+  # real token-issuer mismatch would reject the cross-node refresh-token request below with
+  # invalid_grant/"Invalid token issuer" -- a genuine gotcha hit while building this lab, not a
+  # hypothetical, see the chapter text. Forcing one shared KC_HOSTNAME here is this lab's stand-in for
+  # "both nodes sit behind the same load balancer," which is what every real deployment actually does.
+  keycloak-a:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev --cache=ispn --cache-stack=jdbc-ping --cache-embedded-node-name=node-a
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:18141
+    ports:
+      - "18141:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  keycloak-b:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev --cache=ispn --cache-stack=jdbc-ping --cache-embedded-node-name=node-b
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:18141
+    ports:
+      - "18142:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch41_pg_data:
