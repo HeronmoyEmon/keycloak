@@ -40,7 +40,7 @@
       slidesRead += p.done;
       slidesTotalKnown += p.total;
       if (p.done >= p.total) completeChapters++;
-      if (!furthest || c.number > furthest.number) furthest = c;
+      if (p.done > 0 && (!furthest || c.number > furthest.number)) furthest = c;
     });
 
     var hereValue = "—", hereLabel = "You are here — start with Chapter 0";
