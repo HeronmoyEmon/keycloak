@@ -106,35 +106,10 @@
   --shadow: 0 1px 2px rgba(50, 36, 10, 0.1), 0 4px 14px rgba(50, 36, 10, 0.12);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="sepia"]) {
-    --bg: #1c1b17;
-    --bg-alt: #242319;
-    --surface: #292720;
-    --surface-raised: #322f26;
-    --text: #edeae0;
-    --text-muted: #b3ac9c;
-    --border: #44402f;
-    --accent: #d9b99d;
-    --accent-strong: #e8cbb4;
-    --accent-contrast: #2b2016;
-    --accent-soft: #3a2e22;
-    --success: #7ed9a8;
-    --success-soft: #1a3324;
-    --warning: #e8b766;
-    --warning-soft: #3d2e12;
-    --danger: #eda09c;
-    --danger-soft: #3b1916;
-    --info: #7fd0de;
-    --info-soft: #15323a;
-    --milestone-bg: #9c5f45;
-    --milestone-contrast: #ffffff;
-    --code-bg: #121008;
-    --code-text: #eae2ce;
-    --line-strong: #8d8166;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.45);
-  }
-}
+/* No prefers-color-scheme media query here, deliberately (2026-11-11, user request): the theme
+   must default to light and stay whatever the reader last picked, never follow OS/browser dark
+   mode on its own. book.js always sets data-theme explicitly (defaulting to "light") for exactly
+   this reason — see initThemeAndFont(). */
 
 /* ---------- 2. Reset & base ---------- */
 * { box-sizing: border-box; }
@@ -197,14 +172,24 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
 
 .layout { display: flex; min-height: calc(100vh - 56px); }
 .sidebar {
-  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w); align-self: flex-start;
   border-right: 1px solid var(--border); background: var(--bg-alt);
   padding: 1em 0.8em 2em; overflow-y: auto;
+  position: sticky; top: 56px; max-height: calc(100vh - 56px);
 }
-.sidebar h2.part-title {
+.sidebar details.part-group { margin: 0; }
+.sidebar summary.part-title {
   font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--text-muted); border-bottom: none; margin: 1.1em 0 0.3em; padding: 0 0.4em;
+  color: var(--text-muted); margin: 1.1em 0 0.3em; padding: 0.35em 0.4em;
+  cursor: pointer; border-radius: 7px; list-style: none;
 }
+.sidebar summary.part-title::-webkit-details-marker { display: none; }
+.sidebar summary.part-title::before {
+  content: "\25B8"; display: inline-block; width: 1em; margin-right: 0.15em;
+  transition: transform 0.15s ease;
+}
+.sidebar details.part-group[open] > summary.part-title::before { transform: rotate(90deg); }
+.sidebar summary.part-title:hover { background: var(--accent-soft); }
 .sidebar .nav-list { list-style: none; padding: 0; margin: 0; }
 .sidebar .nav-link {
   display: flex; align-items: baseline; gap: 0.5em;

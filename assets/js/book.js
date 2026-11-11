@@ -29,8 +29,9 @@
   }
 
   function initThemeAndFont() {
-    var theme = safeGet("iam:theme") || "dark-or-light-auto";
-    if (THEMES.indexOf(theme) !== -1) applyTheme(theme);
+    var theme = safeGet("iam:theme");
+    if (THEMES.indexOf(theme) === -1) theme = "light";
+    applyTheme(theme);
     var scale = parseFloat(safeGet("iam:font-scale"));
     if (!isNaN(scale) && FONT_SCALES.indexOf(scale) !== -1) applyFontScale(scale);
   }
@@ -57,12 +58,18 @@
     var mount = document.getElementById("sidebar-nav");
     if (!mount || !window.COURSE_NAV) return;
     var root = window.SITE_ROOT || "";
+    var currentPart = null;
+    window.COURSE_NAV.forEach(function (ch) {
+      if (ch.slug === window.CURRENT_CHAPTER) currentPart = ch.part;
+    });
     var html = "";
     var lastPart = null;
     window.COURSE_NAV.forEach(function (ch) {
       if (ch.part !== lastPart) {
-        if (lastPart !== null) html += "</ul>";
-        html += '<h2 class="part-title">' + ch.part + "</h2><ul class=\"nav-list\">";
+        if (lastPart !== null) html += "</ul></details>";
+        var openAttr = ch.part === currentPart ? " open" : "";
+        html += '<details class="part-group"' + openAttr + '><summary class="part-title">' + ch.part +
+          "</summary><ul class=\"nav-list\">";
         lastPart = ch.part;
       }
       var href = root + "chapters/" + pad2(ch.number) + "-" + ch.slug + ".html";
@@ -76,7 +83,7 @@
         (ch.hasLab && ch.built ? '<span class="lab-dot" title="Has a hands-on lab"></span>' : "") +
         closeTag + "</li>";
     });
-    if (lastPart !== null) html += "</ul>";
+    if (lastPart !== null) html += "</ul></details>";
     mount.innerHTML = html;
   }
 
