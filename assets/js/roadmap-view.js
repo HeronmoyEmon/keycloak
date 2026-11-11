@@ -32,6 +32,7 @@
     if (!mount || !window.COURSE_NAV) return;
     var nav = window.COURSE_NAV;
     var startedChapters = 0, completeChapters = 0, slidesRead = 0, slidesTotalKnown = 0;
+    var furthest = null;
     nav.forEach(function (c) {
       var p = readProgress(c.slug);
       if (!p) return;
@@ -39,12 +40,21 @@
       slidesRead += p.done;
       slidesTotalKnown += p.total;
       if (p.done >= p.total) completeChapters++;
+      if (!furthest || c.number > furthest.number) furthest = c;
     });
+
+    var hereValue = "—", hereLabel = "You are here — start with Chapter 0";
+    if (furthest) {
+      var parts = furthest.part.split(" — ");
+      hereValue = parts[0].replace("Part ", "Pt. ");
+      hereLabel = "You are here — " + (parts[1] || furthest.part);
+    }
 
     var tiles = [
       { value: String(startedChapters), label: "Chapters started" },
       { value: String(completeChapters), label: "Chapters fully read" },
-      { value: slidesTotalKnown ? (slidesRead + " / " + slidesTotalKnown) : "—", label: "Slides marked read" }
+      { value: slidesTotalKnown ? (slidesRead + " / " + slidesTotalKnown) : "—", label: "Slides marked read" },
+      { value: hereValue, label: hereLabel }
     ];
     mount.innerHTML = tiles.map(function (t) {
       return '<div class="stat-tile"><span class="stat-value">' + t.value + '</span>' +
