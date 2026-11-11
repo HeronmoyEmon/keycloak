@@ -82,9 +82,9 @@ window.COURSE_NAV = [
   { number: 36, slug: "service-to-service-auth", title: "Service-to-Service & Machine-to-Machine Auth", part: "Part VI — Federation & Integration", minutes: 45, hasLab: true, built: true,
     blurb: "Client credentials grant and service accounts." },
 
-  { number: 37, slug: "keycloak-authorization-services", title: "Keycloak Authorization Services", part: "Part VII — Fine-Grained Authorization", minutes: 60, hasLab: true, built: false,
+  { number: 37, slug: "keycloak-authorization-services", title: "Keycloak Authorization Services", part: "Part VII — Fine-Grained Authorization", minutes: 60, hasLab: true, built: true,
     blurb: "UMA 2.0: resources, scopes, policies, permissions." },
-  { number: 38, slug: "fine-grained-access-patterns", title: "Fine-Grained Access Patterns", part: "Part VII — Fine-Grained Authorization", minutes: 40, hasLab: false, built: false,
+  { number: 38, slug: "fine-grained-access-patterns", title: "Fine-Grained Access Patterns", part: "Part VII — Fine-Grained Authorization", minutes: 40, hasLab: false, built: true,
     blurb: "ABAC/ReBAC with Keycloak; a brief OPA/Cedar comparison." },
 
   { number: 39, slug: "custom-spis", title: "Writing Custom SPIs", part: "Part VIII — Extending Keycloak", minutes: 70, hasLab: true, built: false,

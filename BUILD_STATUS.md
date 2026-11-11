@@ -48,8 +48,12 @@ hands-on labs, per CLAUDE.md §2.5/§4. Built in two rounds (Round 1: chapters 3
 34-36), same "establish-then-scale" shape Part IV used — see the Done entries below for full detail:
 real bugs found/fixed in each chapter, new `labs/ldap-federation/`, `labs/custom-user-storage-spi/`,
 `labs/spring-boot-resource-server/`, and `labs/react-spa/` folders, and glossary/quiz merge counts.
-**Part VII (fine-grained authorization, chapters 37-38) is next per the Queue — GATE-5 sits right after
-it.**
+**Part VII (fine-grained authorization, chapters 37-38) is COMPLETE.** Built as two parallel subagents
+per the drafted briefs, then centrally merged and independently re-verified — see the Done entry below
+for full detail (real bugs found in ch37's live UMA 2.0 lab, OPA/Cedar live-verification findings,
+glossary/quiz merge counts, link checks). **GATE-5 is now reached, awaiting the user's approval** —
+confirms the reader can secure a real backend/frontend/service account (Part VI) *and* configure
+fine-grained authorization (Part VII).
 
 **Shell fixes (2026-11-11, user-requested, off-queue):** the site-wide sidebar nav (`.sidebar`/
 `#sidebar-nav` in `book.js`/`book.css`, used by `roadmap.html`/`glossary.html`/`quizzes.html`/
@@ -121,9 +125,90 @@ visuals/examples where it helps, not just re-chunk existing prose.
 12b. ~~Chapters 34-36 (securing a backend API, securing a frontend SPA, service-to-service/M2M auth)~~ —
      done 2026-11-11, see Done below. Part VI is now fully complete (chapters 31-36).
 
-### Part VII (fine-grained authorization) — **next**
-13. Chapters 37-38.
-    **→ GATE-5: stop here for review.**
+### Part VII (fine-grained authorization) — DONE
+13. ~~Chapters 37-38~~ — done 2026-11-11, see Done below. **→ GATE-5 reached, awaiting approval** (sits
+    after Part VII per
+    CLAUDE.md §8, confirming the reader can secure a real backend/frontend/service account *and*
+    configure fine-grained authorization).
+
+**Chapter 37 — Keycloak Authorization Services (UMA 2.0: resources, scopes, policies, permissions).
+Lab: yes — real Docker Keycloak, isolated as `ch37kc` / host port 18137 (follow the Part VI pattern: a
+scratch Compose override, never edit `labs/docker/docker-compose.yml` directly).**
+- "What concept is this?" recall: this is Keycloak's concrete implementation of the PBAC/ABAC/ReBAC
+  authorization-model territory chapter 6 surveyed conceptually, and it builds on chapter 24's clients/
+  client-scopes and chapter 23's roles/groups — a client's Authorization Services turn it into a *resource
+  server* that protects its own resources with policy, instead of Keycloak only ever handing out roles for
+  the app to interpret itself.
+- Live-verify before writing: current Keycloak (26.8.2) admin console's exact path to enable
+  Authorization Services on a client (requires a confidential client with service accounts/authorization
+  enabled), the current policy-type list in that Keycloak version (role/user/client/time/group/aggregated/
+  client-scope policies — **check live whether JS-based ("script") policies are still present, deprecated,
+  or removed/SPI-only in 26.x**, and say plainly whichever is true rather than assuming the old JS-policy
+  behavior still exists), and the UMA grant type's exact wire format (`grant_type=urn:ietf:params:oauth:
+  grant-type:uma-ticket` at the realm token endpoint, permission tickets, the Requesting Party Token/RPT).
+- Content to cover: resource server concept; resources, scopes (authorization scopes — distinct from OAuth
+  scopes, name the distinction explicitly since "scope" is now overloaded across this course); policies
+  (role/user/time/group, and whatever the live-verified script-policy status turns out to be) and
+  permissions (resource-based vs. scope-based); decision strategies (affirmative/unanimous/consensus) at
+  both the permission and policy-aggregation level; the admin console's built-in policy evaluation/"Policy
+  evaluate" tool; the UMA 2.0 flow end to end (client requests a permission ticket implicitly via a 401 +
+  `WWW-Authenticate` ticket header from the resource server, then exchanges it for an RPT).
+- Case-study tie-in: Northwind Apps (B2B SaaS) fits naturally — a document/workspace-sharing API where a
+  resource owner (one tenant's user) delegates access to a specific document to another user, which is
+  exactly UMA's "resource owner in the loop" model, unlike pure RBAC where an admin pre-assigns roles.
+- Lab shape: enable Authorization Services on a Northwind API client, create at least one resource + scope
+  + role-based policy + permission (via Admin REST API or kcadm, reusing chapter 27's tooling rather than
+  reintroducing it from scratch), then curl through the real UMA flow — hit the protected resource
+  unauthenticated/without a ticket, capture the ticket, exchange it at the token endpoint for an RPT, and
+  show one request that's permitted and one that's denied by policy, with real HTTP output for both.
+- Diagrams (3+): resource/scope/policy/permission relationship diagram; the UMA 2.0 sequence (client →
+  resource server → ticket → token endpoint → RPT → resource server again); a decision-strategy diagram
+  (affirmative vs. unanimous vs. consensus, since this trips people up).
+- Glossary: Resource server, Resource (authorization), Scope (authorization) (check this doesn't collide
+  with Part III/VI's "Scope (OAuth)" entry — if the concept is genuinely distinct, name it distinctly
+  rather than overloading the existing term's definition), Policy (authorization), Permission
+  (authorization), Decision strategy, UMA 2.0, Permission ticket, Requesting Party Token (RPT), Policy
+  Enforcement Point (PEP), Policy Decision Point (PDP). 15+ new terms expected; check all against the
+  existing master glossary for near-duplicates before adding (chapter 6 already defined ABAC/PBAC/ReBAC at
+  the concept level — extend those entries' `chapters` array here rather than redefining them).
+- Self-check (5+, with model answers), takeaways (8+), quiz pool (15+, 50%+ scenario-framed).
+
+**Chapter 38 — Fine-grained access patterns: ABAC/ReBAC with Keycloak, brief OPA/Cedar comparison.
+Lab: no** (per CLAUDE.md §5's curriculum table — this is the wrap-up/synthesis chapter, not a new hands-on
+chapter; it may still reference chapter 37's running Keycloak for a small illustrative example if that's
+genuinely clearer than prose, but is not required to stand up anything new).
+- "What concept is this?" recall: closes the loop chapter 6 opened (ACL/RBAC/ABAC/PBAC/ReBAC/Zero Trust)
+  and chapter 37 made concrete (Keycloak's PBAC-flavored Authorization Services) — this chapter is where
+  the reader learns the honest limits of what Keycloak's own authorization model covers, and what reaching
+  for a dedicated policy engine (OPA, Cedar) buys beyond that.
+- Live-verify before writing: current OPA (Open Policy Agent, CNCF project) version/status and Rego as its
+  policy language; current AWS Cedar version/status and where it's used (AWS Verified Permissions); don't
+  assume either project's current maturity/adoption claims without checking their own docs/release notes
+  first.
+- Content to cover: RBAC (ch23) vs. Keycloak's policy-based ABAC (ch37) vs. true ReBAC (relationship-based,
+  Google Zanzibar-style — e.g., OpenFGA) as a spectrum, being explicit that **Keycloak does not natively
+  model ReBAC** (no first-class "relationship tuple" concept) — show how a ReBAC-shaped requirement would
+  have to be approximated with Keycloak's own primitives (e.g., group-per-relationship modeling, or a
+  custom Policy SPI calling out to an external relationship store) versus just reaching for a purpose-built
+  ReBAC engine instead. Then the brief OPA/Cedar comparison: deployment model (sidecar/library vs. managed
+  service), policy language ergonomics, and the realistic integration point with Keycloak (a custom Policy
+  provider or an API gateway/sidecar calling out to OPA/Cedar instead of, or alongside, Keycloak's built-in
+  policies) — keep this comparison honest and brief, not a sales pitch for either.
+- Case-study tie-in: Riverside Health (HIPAA) ABAC example — "a clinician may view a patient record only if
+  their department attribute matches the patient's assigned department, and only during their shift
+  hours" (attribute-based, expressible in Keycloak policy). Meridian Trust ReBAC example — "an employee may
+  approve a transaction only if they have a manager-of relationship with the branch owning the account" (a
+  genuine relationship, not an attribute or a role — the clean illustration of where Keycloak's model runs
+  out).
+- Diagrams (3+): the RBAC→ABAC→ReBAC spectrum with Keycloak's actual coverage marked on it; an OPA/Cedar/
+  Keycloak-authz side-by-side; the "where would you plug in an external policy engine" architecture sketch.
+- Glossary: extend chapter 6's existing ABAC/ReBAC entries with this chapter's slug rather than
+  redefining them; add OPA (Open Policy Agent), Rego, Cedar (policy language), Relationship-based access
+  control tooling note (Zanzibar/OpenFGA) if not already covered as its own term. Expect a lower new-term
+  count than a full topic chapter (mostly extensions) — that's fine and expected, note it rather than
+  padding.
+- Self-check (5+, with model answers), takeaways (8+), quiz pool (15+, 50%+ scenario-framed, include at
+  least one `compare`-type question given this chapter is explicitly comparative).
 
 ### Part VIII (extending Keycloak)
 14. `labs/spi-examples/` (Java SPI source, built alongside chapters 39-40).
@@ -149,8 +234,8 @@ visuals/examples where it helps, not just re-chunk existing prose.
 - **GATE-1: approved 2026-11-10**, no feedback given (approved as built). See summary below.
 - **GATE-2: approved 2026-11-10**, no feedback given (approved as built). See summary below.
 - **GATE-3: approved 2026-11-10**, no feedback given (approved as built). See summary below.
-- GATE-4: not reached — next up, after Part IV (chapters 19-26) + the `labs/docker/` base environment
-- GATE-5: not reached
+- **GATE-4: approved 2026-11-10**, no feedback given (approved as built). See summary below.
+- **GATE-5: reached 2026-11-11, awaiting the user's approval.** See summary below.
 - Final QA gate: not reached
 
 ### GATE-1 review summary
@@ -405,7 +490,105 @@ only after every check passed. Confirmed via `docker ps -a`/`docker volume ls`/`
 no stray containers, volumes, or networks from this round's lab work (shared or any sibling's isolated
 project) remain.
 
+### GATE-5 review summary
+
+**What was built:** Parts VI-VII in full (chapters 31-38) — the reader can now secure a real backend
+API, a real frontend SPA, a real service account, broker an external IdP, federate with LDAP, write a
+custom User Storage SPI, and configure fine-grained authorization via Keycloak's Authorization Services
+(UMA 2.0) through to the honest limits of that model versus a dedicated policy/relationship engine. Full
+per-chapter detail is in the Done entries for Part VI (two rounds) and Part VII above; this summary is
+what needed independent judgment across the two chapters that actually close this gate.
+
+**The headline payoff — a real, reproducible UMA 2.0 permit/deny pair:** chapter 37's lab didn't just
+narrate the UMA grant, it ran it twice against the same live permission (one role-holding user, one
+not), decoded a real RPT's `authorization.permissions` claim, then re-ran the exact same two requests
+fresh at the very end — after deliberately perturbing and reverting the permission's decision strategy
+in between — to confirm the transcript in the chapter is genuinely reproducible, not a one-off capture
+quietly hand-edited afterward. The decision-strategy experiment (flipping Unanimous→Affirmative with
+zero other change and watching sam.chen's identical request flip from 403 to 200) is the kind of "the
+reader can predict this before being told" demonstration CLAUDE.md's hands-on-is-real rule is for.
+
+**A finding that would have been easy to get wrong by trusting an older source:** older Keycloak
+tutorials and some still-circulating documentation describe a JavaScript/"script" authorization policy
+type. Chapter 37 didn't assume that still holds — it tested the live REST surface directly on Keycloak
+26.8.2 and found the policy-provider list never lists a js/script type, and the legacy endpoint itself
+now 404s. The chapter states this as a removal, not a deprecation or a hidden feature flag, because
+that's what the live behavior actually showed.
+
+**A genuine, unresolved ambiguity surfaced rather than flattened:** chapter 38 needed a current Cedar
+version/status claim and found AWS's own "Cedar 4" framing (a language-spec version) doesn't cleanly
+match the cedar-policy GitHub repo's own release tags (already past v4.14.1 as an engine/crate version)
+— two different things both casually called "version 4" in different official sources. Per CLAUDE.md §2
+rule 1 ("if a source disagrees with itself... say so"), the chapter says this plainly and points the
+reader at both sources to check live, rather than picking one number and asserting it with false
+confidence. The same honesty appears in how the chapter treats ReBAC: it states flatly that Keycloak has
+no native relationship-tuple concept, then costs out three real approximation strategies rather than
+pretending any of them is free.
+
+**Cross-chapter dedup catches during merge:** `Attribute-Based Access Control (ABAC)` and
+`Relationship-Based Access Control (ReBAC)` were each independently requested for extension by *both*
+chapter 37 and chapter 38 (chapter 6's original concept-level entries) — merged into one combined
+`chapters` array addition per term rather than applied twice or shipped as competing edits. `Scope
+(OAuth)`'s existing definition also got a one-sentence cross-reference added, pointing at chapter 37's
+new, deliberately distinct `Authorization scope (Keycloak)` term, per chapter 37's own flagged request.
+
+**Verification method (same as every prior round):** both new chapter files re-parsed cleanly (Python
+`html.parser`, zero errors), balanced tags, both required mount points and the full deck-outline/
+deck-pager/`SlideDeck.init` markup present, re-served locally and `curl`-confirmed `200` for both
+chapters. Full glossary/quiz merge checked programmatically via a Node script with a `window` shim:
+**583 glossary terms, zero duplicates** (up from 563); **656 quiz questions across 39 pools, zero
+duplicate ids** (up from 623/37, new prefixes `kas-`/`fgap-` checked against all prior prefixes).
+`nav-data.js`'s `built` flag flipped to `true` for both chapters only after every check passed. All 9
+external deep-dive links across both chapters (Kantara UMA 2.0 specs, Keycloak Authorization Services
+guide and Admin REST API reference, OPA docs, Cedar site, Google's Zanzibar paper, OpenFGA docs)
+live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`/`docker network ls` that
+chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
+
 ## Done
+
+### Part VII complete: chapters 37-38, fine-grained authorization (2026-11-11) — GATE-5 reached
+- Built as two parallel subagents against the full briefs drafted into the Queue above, then centrally
+  merged (`glossary-data.js`, `quiz-data.js`, `nav-data.js`) and independently re-verified by the
+  coordinator (html.parser tag-balance on both files, both mount points + deck markup present, HTTP 200
+  served, zero duplicate glossary terms/quiz ids after merge, all 9 external deep-dive links across both
+  chapters live-curled to 200).
+- **Chapter 37 — Keycloak Authorization Services** (`chapters/37-keycloak-authorization-services.html`,
+  21 slides). Real lab: isolated Docker stack (`ch37kc`, host port 18137, Keycloak 26.8.2 + Postgres 17,
+  scratch Compose override — shared `labs/docker/docker-compose.yml` untouched), built a Northwind Apps
+  resource server (client `northwind-docs-api`), a resource/scope/role-policy/permission, and ran the real
+  UMA 2.0 grant end to end with curl: a real permission ticket exchanged for a real RPT, one genuine 200
+  (amara.diallo, holds the role) and one genuine 403 (sam.chen, doesn't), reproduced fresh at the end for a
+  confirmed-reproducible transcript. Live-verified finding: Keycloak 26.8.2 has fully removed JS/"script"
+  policies from the REST API (`.../policy/js` now 404s, not merely disabled) — stated plainly rather than
+  assuming older-tutorial behavior still holds. Two other real bugs hit and documented: a resource's own
+  `scopes` array must list a scope before any permission can reference it (resource+scope creation doesn't
+  implicitly link them), and a denied UMA exchange's `error_description` reads `"request_submitted"` even
+  when nothing is actually pending for approval — flagged as not a stable field to code against. Decision-
+  strategy mechanics (Unanimous/Affirmative/Consensus) demonstrated live by flipping one permission's
+  strategy and watching the identical request's outcome change. Torn down cleanly after
+  (`docker compose -p ch37kc down -v`, confirmed no lingering containers/networks/volumes). Lab files:
+  `labs/authorization-services/docker-compose.yml` + `README.md`.
+- **Chapter 38 — Fine-Grained Access Patterns** (`chapters/38-fine-grained-access-patterns.html`, 15
+  slides, no lab per the curriculum table). States plainly and repeatedly that Keycloak has no native
+  ReBAC (no first-class relationship-tuple concept), walking through three honestly-costed approximation
+  strategies (group-per-relationship, custom-attribute encoding, custom Policy SPI + external relationship
+  store) against Meridian Trust's "manager-of-branch" example, then what a purpose-built engine
+  (OpenFGA/Zanzibar model) buys instead. Live-verified OPA (CNCF Graduated since 2021-01-29, Rego as its
+  language) and surfaced a genuine, unresolved ambiguity in Cedar's version numbering (the language-spec
+  version vs. the cedar-policy crate version both get called "version 4" in different AWS/GitHub sources)
+  rather than flattening it to one confident number, per CLAUDE.md §2 rule 1.
+- Glossary: merged 20 new terms (16 from ch37's Authorization Services vocabulary — Resource server,
+  Resource/Authorization scope/Policy/Permission (Keycloak-specific), Decision strategy, UMA 2.0,
+  Permission ticket, RPT, PEP, PDP, Protection API, Policy evaluate tool, Owner-managed access, Aggregated
+  policy, and a dedicated Script-policy-removal entry; 4 from ch38 — OPA, Rego, Cedar (policy language),
+  Zanzibar model) plus 8 extend-existing-term requests, two of which (ABAC, ReBAC) were requested by both
+  chapters and merged into a single combined `chapters` array rather than applied twice. Glossary grew
+  563 → 583 terms, zero duplicates.
+- Quiz: merged 2 new pools (`keycloak-authorization-services`: 16 questions, 50% scenario;
+  `fine-grained-access-patterns`: 17 questions, 53% scenario incl. 2 compare-type) — both heavily grounded
+  in each chapter's own real lab/research findings rather than generic trivia. Quiz pools grew 37 → 39,
+  questions 623 → 656, zero duplicate ids.
+- `nav-data.js`: `built` flipped `true` for chapters 37 and 38.
 
 ### Chapter 00 converted to the slide-deck template (2026-11-11)
 - Chapter 00 was the last chapter left on the old book-shell layout (the reference-set build on

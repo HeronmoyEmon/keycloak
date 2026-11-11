@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keycloak Authorization Services — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "keycloak-authorization-services";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VII — Fine-Grained Authorization</span>
+          <span class="badge minutes">~60 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>37. Keycloak Authorization Services</h1>
+        <p class="lede">Every chapter since 23 has asked Keycloak one kind of question: "does this subject
+        hold this role?" That's enough for an admin to pre-decide who can do what, in advance, for an entire
+        application. It is not enough for a document-sharing API where one customer's user wants to let one
+        specific colleague view one specific document, a decision no admin pre-assigned and no static role
+        can express. <strong>Authorization Services</strong> is Keycloak's answer: turn a client into a real
+        <em>resource server</em> that registers its own protected resources, scopes, and policies with
+        Keycloak, and asks it — per request, at runtime — "can this specific subject do this specific thing
+        to this specific resource?" This chapter builds exactly that, for real, and runs the whole UMA 2.0
+        exchange end to end: a real permission ticket, a real Requesting Party Token, one real permitted
+        call, and one real denied one.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist who only knows RBAC hits a wall the moment a product needs resource-level,
+        delegated, or relationship-shaped access — "share this file with Priya," "only the clinicians
+        currently treating this patient," "only during this maintenance window." Keycloak's Authorization
+        Services is the concrete, testable place Part I's authorization-model survey (chapter 6) stops being
+        theory. This chapter's lab also hits two genuinely non-obvious findings worth knowing before you ever
+        rely on them in production: a <code>resource</code> must already carry the <code>scope</code> you
+        intend to protect it with before a permission can reference that pair, and Keycloak 26.8.2 has fully
+        removed the JavaScript/"script" policy type from its REST API — not deprecated, not hidden behind a
+        flag, gone — confirmed live in this chapter's own lab, not assumed from older documentation.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 6 surveyed ACL, RBAC, ABAC, PBAC, ReBAC, and Zero Trust as authorization models in the
+          abstract — rules that decide what a subject can do. Keycloak's Authorization Services is a concrete
+          <strong>policy-based access control (PBAC)</strong> engine, built on top of chapter 24's clients/
+          client-scopes and chapter 23's roles/groups, that can express ABAC-flavored and ReBAC-flavored
+          policies on top of its own resource/scope model. It is also this course's first real encounter with
+          <strong>UMA 2.0</strong> (User-Managed Access), the OAuth-based protocol chapter 7's "resource owner
+          in the loop" federation concept was always building toward.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="pep-pdp" data-title="Resource server: Keycloak as PDP, your app as PEP">
+        <h2>A resource server, concretely: your app as PEP, Keycloak as PDP</h2>
+        <p>Up to chapter 36, a client's token simply carried roles, and the application decided for itself
+        what those roles meant. Authorization Services inverts that: the application becomes a thin
+        <strong>Policy Enforcement Point (PEP)</strong> — it intercepts the request and enforces whatever
+        Keycloak decides — while Keycloak itself becomes the <strong>Policy Decision Point (PDP)</strong>,
+        the place policy is actually evaluated. This chapter's lab plays both roles directly against
+        Keycloak's own REST surface, with no separate downstream application, so every HTTP exchange shown
+        is the real protocol, not a simulation layered on top of it.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 800 260" role="img" aria-labelledby="t1 d1">
+            <title id="t1">A resource server splits into a Policy Enforcement Point and a Policy Decision Point</title>
+            <desc id="d1">Three boxes left to right. Box one, a requesting client, sends a request to box
+            two, the resource server acting as Policy Enforcement Point, which protects a specific resource
+            and scope but does not itself decide access. Box two forwards the decision question to box three,
+            Keycloak's Authorization Services acting as Policy Decision Point, which evaluates the resources,
+            scopes, policies, and permissions registered for that client and returns PERMIT or DENY. Box two
+            then enforces whatever box three decided, back to box one.</desc>
+            <rect x="20" y="90" width="170" height="80" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="105" y="122" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Requesting client</text>
+            <text x="105" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">a user or another service</text>
+
+            <rect x="310" y="70" width="190" height="120" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="405" y="98" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Resource server (PEP)</text>
+            <text x="405" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">northwind-docs-api</text>
+            <text x="405" y="138" text-anchor="middle" class="diagram-label-muted" font-size="10">protects: quarterly-report</text>
+            <text x="405" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">enforces, doesn't decide</text>
+
+            <rect x="610" y="60" width="170" height="140" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="695" y="88" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Keycloak (PDP)</text>
+            <text x="695" y="108" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Authorization</text>
+            <text x="695" y="124" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Services engine</text>
+            <text x="695" y="148" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">evaluates policies,</text>
+            <text x="695" y="164" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">returns PERMIT/DENY</text>
+
+            <line x1="192" y1="130" x2="308" y2="130" class="diagram-stroke" marker-end="url(#arrowA1)"/>
+            <text x="250" y="118" text-anchor="middle" class="diagram-label-muted" font-size="9">1. request</text>
+
+            <line x1="502" y1="120" x2="608" y2="120" class="diagram-stroke" marker-end="url(#arrowA1)"/>
+            <text x="555" y="108" text-anchor="middle" class="diagram-label-muted" font-size="9">2. decide?</text>
+            <line x1="608" y1="150" x2="502" y2="150" class="diagram-stroke" marker-end="url(#arrowA1)"/>
+            <text x="555" y="166" text-anchor="middle" class="diagram-label-muted" font-size="9">3. PERMIT/DENY</text>
+
+            <line x1="308" y1="175" x2="192" y2="175" class="diagram-stroke" marker-end="url(#arrowA1)"/>
+            <text x="250" y="193" text-anchor="middle" class="diagram-label-muted" font-size="9">4. enforced result</text>
+
+            <defs>
+              <marker id="arrowA1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 37.1 — Authorization Services splits enforcement (your application, the PEP)
+          from the decision itself (Keycloak, the PDP) — the application never needs its own authorization
+          logic once it defers to this exchange.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>A client becomes a resource server the moment <strong>Authorization Enabled</strong> is switched
+          on under its <em>Settings</em> tab (requires a confidential client — <code>publicClient=false</code>
+          — since the client itself must authenticate to call Keycloak's Protection API). That one toggle adds
+          an entire <em>Authorization</em> tab with Resources, Authorization Scopes, Policies, and Permissions
+          sub-tabs — exactly the REST sub-resources this chapter's lab drives directly.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="rspp-relationship" data-title="Resources, scopes, policies, permissions">
+        <h2>Resources, (authorization) scopes, policies, and permissions — how they connect</h2>
+        <p>Four new objects, each with one job, chained together into a single yes/no decision:</p>
+        <ul>
+          <li><strong>Resource</strong> — the protected thing itself: a document, a tenant, an account. Has a
+          name, an optional type, optional URIs, and an owner (the client, by default, or a specific user if
+          <em>owner-managed access</em> is turned on).</li>
+          <li><strong>Authorization scope</strong> — a named action a resource can be accessed through (e.g.
+          <code>view</code>, <code>edit</code>), attached to one or more resources. <strong>Not the same
+          thing as an OAuth scope</strong> — the next slide draws that line explicitly, since this course has
+          already overloaded the word "scope" twice.</li>
+          <li><strong>Policy</strong> — a reusable rule (role-based, user-based, time-based, …) that evaluates
+          to a vote, independent of any specific resource. The same policy can back many permissions.</li>
+          <li><strong>Permission</strong> — ties a resource (or a scope, for scope-based permissions) to one
+          or more policies, and declares a <strong>decision strategy</strong> for combining their votes into
+          one PERMIT/DENY.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">How a resource, an authorization scope, and a policy combine through a permission into one decision</title>
+            <desc id="d2">A resource box, quarterly-report, and a scope box, view, both attached to it, feed
+            into a permission box, view-quarterly-report, on the right. A separate policy box, the
+            northwind-editor role policy, also feeds into the same permission box. The permission box applies
+            its own decision strategy to combine the policy votes and produces one output, a decision box
+            reading PERMIT or DENY depending on whether the requesting subject holds the required role.</desc>
+            <rect x="20" y="30" width="200" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="120" y="55" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Resource</text>
+            <text x="120" y="75" text-anchor="middle" class="diagram-label-muted" font-size="10">quarterly-report</text>
+
+            <rect x="20" y="110" width="200" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="120" y="135" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Authorization scope</text>
+            <text x="120" y="155" text-anchor="middle" class="diagram-label-muted" font-size="10">view (attached to resource)</text>
+
+            <rect x="20" y="220" width="200" height="60" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="120" y="245" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Policy</text>
+            <text x="120" y="265" text-anchor="middle" class="diagram-label-muted" font-size="10">role: northwind-editor</text>
+
+            <rect x="330" y="110" width="220" height="80" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="440" y="136" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Permission (scope-based)</text>
+            <text x="440" y="156" text-anchor="middle" class="diagram-label-muted" font-size="10">view-quarterly-report</text>
+            <text x="440" y="174" text-anchor="middle" class="diagram-label-muted" font-size="10">decision strategy: UNANIMOUS</text>
+
+            <rect x="650" y="115" width="150" height="70" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="725" y="145" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Decision</text>
+            <text x="725" y="165" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">PERMIT / DENY</text>
+
+            <line x1="220" y1="60" x2="330" y2="128" class="diagram-stroke" marker-end="url(#arrowA2)"/>
+            <line x1="220" y1="140" x2="330" y2="140" class="diagram-stroke" marker-end="url(#arrowA2)"/>
+            <line x1="220" y1="250" x2="330" y2="165" class="diagram-stroke" marker-end="url(#arrowA2)"/>
+            <line x1="550" y1="150" x2="648" y2="150" class="diagram-stroke" marker-end="url(#arrowA2)"/>
+
+            <defs>
+              <marker id="arrowA2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 37.2 — A permission is the join point: it names which resource+scope pair it
+          protects and which policy (or policies) must vote in favor, then applies its own decision strategy
+          to produce one PERMIT/DENY.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — confirmed live in this chapter's lab</div>
+          <p>Creating a resource and a scope separately is <strong>not enough</strong> to reference both
+          together from a scope-based permission. This lab's first attempt to create the
+          <code>view-quarterly-report</code> permission failed outright with
+          <code>Scope [view] is not associated with any of the resources set to the permission
+          [invalid_request]</code> — the resource has to be updated to list that scope in its own
+          <code>scopes</code> array <em>first</em>. Creating a resource and a scope that both exist in the
+          same resource server does not implicitly attach one to the other.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="scope-vs-scope" data-title="Authorization scope vs. OAuth scope">
+        <h2>Two different "scopes" — naming the overload explicitly</h2>
+        <p>This course has now used the word <strong>scope</strong> for three genuinely different things,
+        and conflating them is one of the easiest mistakes to make once Authorization Services enters the
+        picture:</p>
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>The word "scope" across this course — three distinct mechanisms, not variations of one idea</caption>
+            <thead><tr><th>OAuth scope (chapters 13, 24)</th><th>Authorization scope (this chapter)</th></tr></thead>
+            <tbody>
+              <tr><td>Negotiated when a token is <em>requested</em> — part of the authorization/token request itself (<code>scope=openid profile</code>)</td><td>Attached to a <em>resource</em>, ahead of time, in the resource server's own authorization model — never appears in a token request</td></tr>
+              <tr><td>Limits what claims/audiences a token carries up front, before any specific resource is involved</td><td>Names an <em>action</em> on a specific resource (<code>view</code>, <code>edit</code>) evaluated by policy at decision time, after the token already exists</td></tr>
+              <tr><td>In Keycloak: a client scope (chapter 24) — reusable protocol-mapper + role-mapping bundle, attachable to clients</td><td>In Keycloak: an authorization scope (this chapter) — reusable action label, attachable to resources inside one resource server</td></tr>
+              <tr><td>Keycloak also has a dedicated <code>client-scope</code> <em>policy type</em> (next slide) that checks which OAuth client scope a token carried — a third, policy-flavored use of the same word</td><td>Appears inside an RPT's own <code>authorization.permissions[].scopes</code> claim once a UMA exchange grants it — this chapter's lab decodes exactly that claim</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Chapter 24's <strong>client scope</strong> and this chapter's <strong>authorization scope</strong>
+        are genuinely unrelated mechanisms that happen to share a name purely by historical accident in the
+        OAuth/UMA ecosystem — treat them as two different vocabularies, not one concept with two names.</p>
+      </section>
+
+      <section class="slide" data-slide="policy-types" data-title="Policy types, live-verified on 26.8.2">
+        <h2>Policy types — and a real finding about JavaScript policies</h2>
+        <p>Keycloak ships several built-in policy types. This chapter's lab queried the live policy-provider
+        list directly from a running 26.8.2 instance rather than trusting any cached memory of older
+        documentation:</p>
+        <pre><code>GET /admin/realms/northwind-apps/clients/&lt;resource-server-id&gt;/authz/resource-server/policy/providers</code></pre>
+        <pre><code>[ {"type":"regex","name":"Regex","group":"Identity Based"},
+  {"type":"role","name":"Role","group":"Identity Based"},
+  {"type":"resource","name":"Resource-Based","group":"Permission"},
+  {"type":"scope","name":"Scope-Based","group":"Permission"},
+  {"type":"client","name":"Client","group":"Identity Based"},
+  {"type":"time","name":"Time","group":"Time Based"},
+  {"type":"user","name":"User","group":"Identity Based"},
+  {"type":"client-scope","name":"Client Scope","group":"Identity Based"},
+  {"type":"group","name":"Group","group":"Identity Based"},
+  {"type":"aggregate","name":"Aggregated","group":"Others"} ]</code></pre>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Live-verified finding</div>
+          <p><strong>JavaScript ("script") policies do not appear in this list at all</strong> — and this
+          lab went a step further: attempting to create one by calling the old
+          <code>.../policy/js</code> endpoint directly returned
+          <code>Resource not found for url: .../authz/resource-server/policy/js</code>, a plain HTTP 404.
+          This is not a disabled feature flag or a hidden console toggle — the REST endpoint for script
+          policies simply does not exist in this build. If you're reading older Keycloak material that shows
+          a "JavaScript policy" tab, it describes a feature this version has fully removed, not deprecated;
+          plan any policy logic that would have needed custom JS as a role/user/group/time/client/aggregate
+          combination instead, or as a custom Policy SPI provider (chapter 39 covers writing one).</p>
+        </div>
+        <p><strong>Role, User, Client, Group, Client Scope</strong> policies all check identity-shaped
+        conditions (does the subject/client hold this role, is it this specific user/client, is it in this
+        group, did the token carry this client scope). <strong>Time</strong> checks a notBefore/expires
+        window and day-of-week/hour range. <strong>Resource-Based</strong> and <strong>Scope-Based</strong>
+        aren't really policies at all in the same sense — they're how <em>permissions</em> themselves are
+        categorized. <strong>Aggregated</strong> nests other policies as one reusable unit with its own
+        internal decision strategy, distinct from setting a decision strategy directly on a permission (next
+        slide draws that distinction out).</p>
+      </section>
+
+      <section class="slide" data-slide="decision-strategies" data-title="Decision strategies">
+        <h2>Decision strategies: combining multiple policy votes into one answer</h2>
+        <p>A permission can reference more than one policy. When it does, its <strong>decision strategy</strong>
+        decides how their individual votes combine into one PERMIT/DENY:</p>
+        <ul>
+          <li><strong>Unanimous</strong> (Keycloak's default) — every referenced policy must vote PERMIT.
+          One DENY anywhere fails the whole permission.</li>
+          <li><strong>Affirmative</strong> — at least one referenced policy voting PERMIT is enough, even if
+          every other one votes DENY.</li>
+          <li><strong>Consensus</strong> — majority rules: more PERMIT votes than DENY votes wins; a tie
+          denies.</li>
+        </ul>
+        <p>The exact same mechanism exists one level up, inside an <strong>Aggregated</strong> policy, which
+        nests several child policies and applies its own decision strategy to produce a single combined vote
+        — useful when the same "role OR time-window" combination needs to be reused across many permissions
+        without restating it each time.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">The same two policy votes combine to a different outcome under each decision strategy</title>
+            <desc id="d3">Two input votes are shown, Policy A: PERMIT and Policy B: DENY, feeding into three
+            separate decision-strategy boxes side by side. Under Unanimous, the combined outcome is DENY,
+            because not every policy voted PERMIT. Under Affirmative, the combined outcome is PERMIT, because
+            at least one policy voted PERMIT. Under Consensus, the combined outcome is DENY, because the
+            votes are tied one PERMIT to one DENY and a tie denies.</desc>
+            <rect x="20" y="20" width="140" height="40" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="90" y="45" text-anchor="middle" class="diagram-label" font-size="11">Policy A: PERMIT</text>
+            <rect x="20" y="75" width="140" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="90" y="100" text-anchor="middle" class="diagram-label" font-size="11">Policy B: DENY</text>
+
+            <line x1="160" y1="40" x2="230" y2="80" class="diagram-stroke"/>
+            <line x1="160" y1="95" x2="230" y2="95" class="diagram-stroke"/>
+            <line x1="160" y1="40" x2="400" y2="80" class="diagram-stroke"/>
+            <line x1="160" y1="95" x2="400" y2="95" class="diagram-stroke"/>
+            <line x1="160" y1="40" x2="580" y2="80" class="diagram-stroke"/>
+            <line x1="160" y1="95" x2="580" y2="95" class="diagram-stroke"/>
+
+            <rect x="230" y="150" width="150" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="305" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Unanimous</text>
+            <text x="305" y="196" text-anchor="middle" class="diagram-label-muted" font-size="10">needs ALL = PERMIT</text>
+            <text x="305" y="220" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">&#8594; DENY</text>
+
+            <rect x="400" y="150" width="150" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="475" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Affirmative</text>
+            <text x="475" y="196" text-anchor="middle" class="diagram-label-muted" font-size="10">needs ANY = PERMIT</text>
+            <text x="475" y="220" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">&#8594; PERMIT</text>
+
+            <rect x="570" y="150" width="150" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="645" y="174" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Consensus</text>
+            <text x="645" y="196" text-anchor="middle" class="diagram-label-muted" font-size="10">majority vote (tie = DENY)</text>
+            <text x="645" y="220" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">&#8594; DENY</text>
+          </svg>
+          <figcaption>Figure 37.3 — The identical pair of policy votes produces DENY under Unanimous, PERMIT
+          under Affirmative, and DENY under Consensus (a tie) — this chapter's own lab reproduces the
+          Unanimous-vs-Affirmative half of this live, with real HTTP responses.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="uma-sequence" data-title="The UMA 2.0 flow end to end">
+        <h2>UMA 2.0 end to end: ticket first, token second</h2>
+        <p>UMA 2.0 (User-Managed Access, an OAuth-based profile originally from the Kantara Initiative) is
+        the wire protocol underneath all of this. Its defining move: a request for a protected resource is
+        <em>always</em> rejected first — not with a login redirect, but with a <strong>permission ticket</strong>
+        — and only a second, separate exchange at the token endpoint can turn that ticket into a real,
+        scoped <strong>Requesting Party Token (RPT)</strong>.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 860 340" role="img" aria-labelledby="t4 d4">
+            <title id="t4">The UMA 2.0 sequence: an unauthenticated request, a permission ticket, and an RPT exchange</title>
+            <desc id="d4">A five-step sequence across three columns: Client, Resource server (acting as PEP),
+            and Keycloak (Protection API and Token endpoint). Step one: the client requests the protected
+            resource with no ticket. Step two: the resource server asks Keycloak's Protection API for a
+            permission ticket naming the specific resource and scope, using its own service account token.
+            Step three: the resource server returns 401 with that ticket to the client, conceptually via a
+            WWW-Authenticate header naming the ticket and the authorization server's URI. Step four: the
+            client exchanges the ticket at Keycloak's token endpoint, authenticating itself and presenting the
+            requesting party's own access token, using grant_type urn:ietf:params:oauth:grant-type:uma-ticket.
+            Step five: Keycloak evaluates the registered policies and returns either a 200 with a real RPT or
+            a 403 access_denied, which this chapter's lab reproduces for both outcomes with real curl output.</desc>
+            <rect x="20" y="20" width="150" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="95" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Client</text>
+            <rect x="350" y="20" width="170" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="435" y="45" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Resource server (PEP)</text>
+            <rect x="680" y="20" width="160" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="760" y="45" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Keycloak</text>
+
+            <line x1="95" y1="60" x2="95" y2="310" class="diagram-stroke"/>
+            <line x1="435" y1="60" x2="435" y2="310" class="diagram-stroke"/>
+            <line x1="760" y1="60" x2="760" y2="310" class="diagram-stroke"/>
+
+            <line x1="95" y1="95" x2="433" y2="95" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="265" y="86" text-anchor="middle" class="diagram-label-muted" font-size="10">1. GET /documents/quarterly-report (no ticket)</text>
+
+            <line x1="437" y1="125" x2="758" y2="125" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="597" y="116" text-anchor="middle" class="diagram-label-muted" font-size="10">2. POST /authz/protection/permission</text>
+
+            <line x1="758" y1="155" x2="437" y2="155" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="597" y="146" text-anchor="middle" class="diagram-label-muted" font-size="10">{"ticket": "..."}</text>
+
+            <line x1="433" y1="185" x2="95" y2="185" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="265" y="176" text-anchor="middle" class="diagram-label-muted" font-size="10">3. 401 + ticket (conceptually, WWW-Authenticate)</text>
+
+            <line x1="95" y1="225" x2="758" y2="225" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="430" y="216" text-anchor="middle" class="diagram-label-muted" font-size="9">4. POST /token — grant_type=...uma-ticket, ticket=..., Bearer &lt;own token&gt;</text>
+
+            <line x1="758" y1="260" x2="95" y2="260" class="diagram-stroke" marker-end="url(#arrowA3)"/>
+            <text x="430" y="251" text-anchor="middle" class="diagram-label-muted" font-size="10">5a. 200 + real RPT, or 5b. 403 access_denied</text>
+
+            <text x="430" y="296" text-anchor="middle" class="diagram-label-muted" font-size="10">This lab plays both the Client and the Resource server roles directly, so every arrow above is a real curl call.</text>
+
+            <defs>
+              <marker id="arrowA3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 37.4 — The full UMA 2.0 round trip: an initial rejection that carries a
+          permission ticket, then a separate ticket-for-token exchange at the token endpoint that either
+          returns a real RPT or a clean denial.</figcaption>
+        </figure>
+
+        <p>In a real deployment, step 3's 401 genuinely carries a <code>WWW-Authenticate</code> header of the
+        form <code>UMA ticket="...", as_uri="https://.../realms/northwind-apps"</code> so the client knows
+        both the ticket and where to exchange it. This lab calls Keycloak's Protection API directly to obtain
+        the ticket (playing the resource-server half of step 2-3 itself) rather than fronting it with a
+        separate web-server process — the wire format of steps 2, 4, and 5 is identical either way, and that
+        format is exactly what this lab's own curl commands show next.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Northwind Apps delegates document access">
+        <h2>Case study: Northwind Apps needs resource-owner delegation, not just roles</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span>, the B2B SaaS company running
+          multi-tenant customer workspaces since chapter 2, ships a document-sharing feature inside its
+          product: any customer's user can create a document and decide, themselves, which specific
+          colleagues may view it — a decision made by that document's owner, per document, not pre-assigned
+          by a Northwind admin the way chapter 23's realm/client roles are. A static role like
+          <code>document-viewer</code> can't express "Priya specifically, for this one quarterly report, and
+          no other document" — that's exactly UMA's resource-owner-in-the-loop model chapter 7 previewed
+          conceptually, and exactly what this chapter builds for real: Northwind's
+          <code>northwind-docs-api</code> resource server registers each shared document as its own
+          <code>Resource</code>, and a role-based policy stands in for "has editor-level trust on this
+          workspace" as the first cut — a later, more advanced Northwind feature (chapter 38 previews this)
+          could swap the role policy for a genuine per-document ReBAC-style ownership check without changing
+          anything else in this chapter's resource/scope/permission structure.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-setup" data-title="Lab: realm, resource-server client, role, users">
+        <h2>Lab: a real realm, a real resource-server client, a real role, two real users</h2>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack —
+        confirmed live at <code>/admin/serverinfo</code> — standing in its own isolated Docker Compose
+        project (<code>ch37kc</code>, host port <strong>18137</strong>, never the shared
+        <code>labs/docker/docker-compose.yml</code> stack other chapters use). Every output below is a real
+        HTTP response or real <code>kcadm.sh</code> output, not narrated.</p>
+
+        <ol class="lab-steps">
+          <li><p>Bring the isolated stack up, poll until ready, authenticate <code>kcadm.sh</code>, and
+          create the realm:</p>
+          <pre><code>cd labs/authorization-services
+docker compose -p ch37kc up -d
+# poll http://localhost:18137/realms/master/.well-known/openid-configuration until it returns 200
+
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-apps -s enabled=true</code></pre>
+          <pre><code>Created new realm with id 'northwind-apps'</code></pre></li>
+
+          <li><p>Create the confidential client that will become the resource server — service accounts
+          and authorization services both on, direct access grants on too (this lab's human users
+          authenticate with it directly rather than via a separate public client):</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps \
+  -s clientId=northwind-docs-api -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=false \
+  -s serviceAccountsEnabled=true -s directAccessGrantsEnabled=true \
+  -s authorizationServicesEnabled=true</code></pre>
+          <pre><code>Created new client with id '4e1b1d72-186d-42cb-9ea5-d1a065f2710c'</code></pre>
+          <p>Fetch its real secret, and confirm the realm role and two human users this chapter's policy will
+          distinguish between — <code>amara.diallo</code> (will hold the role) and <code>sam.chen</code>
+          (won't):</p>
+          <pre><code>CID=4e1b1d72-186d-42cb-9ea5-d1a065f2710c
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/$CID/client-secret" -r northwind-apps
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps \
+  -s name=northwind-editor -s 'description=Can edit shared Northwind documents'
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
+  -s username=amara.diallo -s enabled=true -s firstName=Amara -s lastName=Diallo
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
+  -s username=sam.chen -s enabled=true -s firstName=Sam -s lastName=Chen
+# set-password on both, then:
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
+  --uusername amara.diallo --rolename northwind-editor</code></pre>
+          <pre><code>{ "type" : "secret", "value" : "2DUZBIlBeW3WHcxcsFyuhGVBKTAdRi587aHCuIDorp0gkYwMKGIFRDUpZJWxDXitoIJzIliHnFRzM2cKtN2w2I" }</code></pre>
+          <p>Only <code>amara.diallo</code> gets <code>add-roles</code> — <code>sam.chen</code> stays
+          role-less on purpose, to produce a genuine denial later in this lab, not a staged one.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-resource-scope" data-title="Lab: resource, scope — and a real failed permission">
+        <h2>Lab: the resource, the scope, and the gotcha that failed on the first try</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 2;">
+          <li><p>Register the protected resource and the authorization scope, directly against the client's
+          own <code>authz/resource-server</code> sub-API:</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "clients/$CID/authz/resource-server/resource" -r northwind-apps \
+  -s name="quarterly-report" -s displayName="Northwind Q3 report (shared doc)" \
+  -s 'uris=["/documents/quarterly-report"]' -s type=urn:northwind:document
+
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "clients/$CID/authz/resource-server/scope" -r northwind-apps -s name=view</code></pre>
+          <pre><code># resource id confirmed: f38b948f-2460-4d08-9768-42b87d1254d4
+# scope id confirmed:    d87e9180-fd76-4f53-a006-c618b27775b1</code></pre></li>
+
+          <li><p>Create the role policy, then attempt the scope-based permission — this is where the first
+          genuine error of this lab showed up:</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "clients/$CID/authz/resource-server/policy/role" -r northwind-apps \
+  -s name="northwind-editor-policy" -s 'roles=[{"id":"northwind-editor"}]' -s logic=POSITIVE
+
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "clients/$CID/authz/resource-server/permission/scope" -r northwind-apps \
+  -s name="view-quarterly-report" \
+  -s 'resources=["f38b948f-2460-4d08-9768-42b87d1254d4"]' \
+  -s 'scopes=["d87e9180-fd76-4f53-a006-c618b27775b1"]' \
+  -s 'policies=["&lt;northwind-editor-policy id&gt;"]' -s decisionStrategy=UNANIMOUS</code></pre>
+          <pre><code>Scope [view] is not associated with any of the resources set to the permission [invalid_request]</code></pre>
+          <p><strong>A real, unexpected rejection</strong> — the resource and the scope both existed, each
+          created successfully on its own, but nothing had told Keycloak that <code>quarterly-report</code>
+          is accessed <em>through</em> <code>view</code>. Fixed by updating the resource to carry the scope
+          directly:</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh update \
+  "clients/$CID/authz/resource-server/resource/f38b948f-2460-4d08-9768-42b87d1254d4" -r northwind-apps \
+  -s name="quarterly-report" -s type=urn:northwind:document \
+  -s 'uris=["/documents/quarterly-report"]' \
+  -s 'scopes=[{"id":"d87e9180-fd76-4f53-a006-c618b27775b1"}]'</code></pre>
+          <p>Re-running the permission-creation call from above then succeeded, returning the real permission
+          id <code>f89e808e-e354-4472-8090-25d8e3ffb364</code>.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-ticket" data-title="Lab: capturing a real permission ticket">
+        <h2>Lab: the resource server's own token, then a real permission ticket</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 4;">
+          <li><p>The resource server first needs its own access token — the exact client-credentials grant
+          chapter 36 ran, used here specifically to call Keycloak's <strong>Protection API</strong>:</p>
+          <pre><code>curl -s -X POST "http://localhost:18137/realms/northwind-apps/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=client_credentials" \
+  --data-urlencode "client_id=northwind-docs-api" \
+  --data-urlencode "client_secret=&lt;secret&gt;"</code></pre>
+          <p>Then, with that token, request a real permission ticket for the exact resource+scope pair a
+          request to <code>/documents/quarterly-report</code> would need — the same call a real PEP would
+          make the instant it saw a request with no ticket at all:</p>
+          <pre><code>curl -s -X POST "http://localhost:18137/realms/northwind-apps/authz/protection/permission" \
+  -H "Authorization: Bearer &lt;resource-server token&gt;" -H "Content-Type: application/json" \
+  -d '[{"resource_id":"f38b948f-2460-4d08-9768-42b87d1254d4","resource_scopes":["view"]}]'</code></pre>
+          <pre><code>{"ticket":"eyJhbGciOiJIUzUxMiIs...(truncated)...UJIeFg2lbdMIcbmtcHIyzfwHR2qDMvGbdF-UKa6M1x-LEFy4ddXQw_Af18uWNe0FdiNteo7c5QxZH2r9JLLR8J4zEUdbrj2vuGSTdohxA5DaeEm_eMx0B67rKsrrkq336pR9eeQN-cDeuV3mX76InQ7QcaXmhQ"}</code></pre>
+          <p>A real permission ticket, captured — its decoded payload (a signed JWT, verified by decoding it
+          locally) confirms it is scoped narrowly to exactly this resource and scope, nothing broader:</p>
+          <pre><code>{
+  "exp": 1794392060, "iat": 1794391760,
+  "permissions": [ { "scopes": [ "view" ], "rsid": "f38b948f-2460-4d08-9768-42b87d1254d4" } ],
+  "aud": "http://localhost:18137/realms/northwind-apps",
+  "sub": "d8cb1b9a-eea1-4055-872a-b3e00a63f153",
+  "azp": "northwind-docs-api"
+}</code></pre>
+          <p>Nothing in this ticket says <em>who</em> is asking yet, on purpose — <code>sub</code> here is an
+          internal Keycloak identity for the pending permission request itself, not the eventual requesting
+          party. That identity only enters at the next step.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-rpt-permitted" data-title="Lab: exchanging the ticket — a real permit">
+        <h2>Lab: exchanging the ticket for an RPT — amara.diallo, permitted</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 5;">
+          <li><p><code>amara.diallo</code> gets her own ordinary access token first (direct grant — this is
+          just an everyday login, nothing UMA-specific yet):</p>
+          <pre><code>curl -s -X POST "http://localhost:18137/realms/northwind-apps/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=northwind-docs-api" \
+  --data-urlencode "client_secret=&lt;secret&gt;" --data-urlencode "username=amara.diallo" \
+  --data-urlencode "password=LabPassw0rd!"</code></pre>
+          <p>Then the actual UMA exchange: the ticket from the previous slide, plus
+          <code>grant_type=urn:ietf:params:oauth:grant-type:uma-ticket</code>, plus the resource server's own
+          client credentials, plus — this is the live-verified part of the wire format — <strong>amara's own
+          access token, sent as the <code>Authorization: Bearer</code> header</strong>, which is how Keycloak
+          learns who the requesting party actually is:</p>
+          <pre><code>curl -s -i -X POST "http://localhost:18137/realms/northwind-apps/protocol/openid-connect/token" \
+  -H "Authorization: Bearer &lt;amara's own access token&gt;" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+  --data-urlencode "ticket=&lt;ticket from previous slide&gt;" \
+  --data-urlencode "client_id=northwind-docs-api" \
+  --data-urlencode "client_secret=&lt;secret&gt;"</code></pre>
+          <pre><code>HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"upgraded":false,"access_token":"eyJhbGciOiJSUzI1NiIs...(real RPT, truncated)...","expires_in":300,...}</code></pre>
+          <p>A real <strong>200 OK</strong> with a real RPT. Decoding its payload (same technique chapter 36
+          used) shows exactly what UMA promises — a token that knows both who the subject is and precisely
+          what it was just granted:</p>
+          <pre><code>{
+  "sub": "6cc55020-0b3e-40b5-90af-72ae4072df66",
+  "preferred_username": "amara.diallo",
+  "realm_access": { "roles": [ "northwind-editor", "offline_access", "uma_authorization", ... ] },
+  "authorization": {
+    "permissions": [ { "scopes": [ "view" ], "rsid": "f38b948f-2460-4d08-9768-42b87d1254d4", "rsname": "quarterly-report" } ]
+  },
+  "scope": "email profile"
+}</code></pre>
+          <p>The <code>authorization.permissions</code> claim is the payoff of this whole chapter — a token
+          that carries, concretely, exactly which resource and scope this exact subject was just permitted
+          for, computed at request time from a live policy evaluation, not from a role Keycloak pre-assigned
+          hours or days earlier.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-rpt-denied" data-title="Lab: exchanging the ticket — a real denial">
+        <h2>Lab: the same exchange, sam.chen — a real denial, and a genuine surprise</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 7;">
+          <li><p>A fresh permission ticket (tickets carry their own expiry and are meant to be single-use, so
+          a second attempt gets its own ticket, not the one amara already redeemed), then the identical
+          exchange — same resource, same scope, same policy — but as <code>sam.chen</code>, who was
+          deliberately never granted <code>northwind-editor</code>:</p>
+          <pre><code>curl -s -i -X POST "http://localhost:18137/realms/northwind-apps/protocol/openid-connect/token" \
+  -H "Authorization: Bearer &lt;sam's own access token&gt;" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:uma-ticket" \
+  --data-urlencode "ticket=&lt;fresh ticket for sam&gt;" \
+  --data-urlencode "client_id=northwind-docs-api" \
+  --data-urlencode "client_secret=&lt;secret&gt;"</code></pre>
+          <pre><code>HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{"error":"access_denied","error_description":"request_submitted"}</code></pre>
+          <p>A real, clean <strong>403 Forbidden</strong> — confirmed reproducible across two separate fresh
+          tickets, so this isn't a ticket-reuse artifact. The genuine surprise is the
+          <code>error_description</code> itself: <code>"request_submitted"</code>, not something like
+          <code>"not_authorized"</code>. This resource is <strong>not</strong> owner-managed
+          (<code>ownerManagedAccess: false</code>, confirmed on the resource object earlier in this lab) —
+          there is no actual pending request sitting in anyone's inbox for a resource owner to approve. Report
+          this plainly rather than over-interpreting it: this is simply the error-description string
+          Keycloak 26.8.2 happens to return for a UMA ticket denial under this configuration, confirmed live
+          by this lab, not a documented, stable contract to build application logic against — an application
+          should key its own error handling off the <code>403</code> status and <code>"access_denied"</code>
+          error code, not off this specific description text.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-decision-strategy" data-title="Lab: decision strategy, proven live">
+        <h2>Lab: proving decision strategy's effect, live — same user, same lack of role, different outcome</h2>
+        <ol class="lab-steps" style="counter-reset: lab-step 8;">
+          <li><p>Add a second policy to the same permission — a trivial <strong>Client</strong> policy that
+          votes PERMIT for any token issued to <code>northwind-docs-api</code> itself (true for every token
+          in this lab) — and confirm <code>sam.chen</code> is still denied, since <code>UNANIMOUS</code>
+          still requires the role policy to pass too:</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create \
+  "clients/$CID/authz/resource-server/policy/client" -r northwind-apps \
+  -s name="northwind-docs-api-client-policy" -s 'clients=["northwind-docs-api"]' -s logic=POSITIVE
+
+docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh update \
+  "clients/$CID/authz/resource-server/permission/scope/f89e808e-e354-4472-8090-25d8e3ffb364" -r northwind-apps \
+  -s name="view-quarterly-report" -s 'resources=["f38b948f-2460-4d08-9768-42b87d1254d4"]' \
+  -s 'scopes=["d87e9180-fd76-4f53-a006-c618b27775b1"]' \
+  -s 'policies=["&lt;role-policy id&gt;","&lt;client-policy id&gt;"]' -s decisionStrategy=UNANIMOUS</code></pre>
+          <pre><code># fresh ticket + exchange as sam.chen → still: HTTP/1.1 403 Forbidden</code></pre></li>
+
+          <li><p>Change nothing except the permission's own <code>decisionStrategy</code>, from
+          <code>UNANIMOUS</code> to <code>AFFIRMATIVE</code>, and repeat the exact same request:</p>
+          <pre><code>docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh update \
+  "clients/$CID/authz/resource-server/permission/scope/f89e808e-e354-4472-8090-25d8e3ffb364" -r northwind-apps \
+  -s name="view-quarterly-report" -s 'resources=["f38b948f-2460-4d08-9768-42b87d1254d4"]' \
+  -s 'scopes=["d87e9180-fd76-4f53-a006-c618b27775b1"]' \
+  -s 'policies=["&lt;role-policy id&gt;","&lt;client-policy id&gt;"]' -s decisionStrategy=AFFIRMATIVE</code></pre>
+          <pre><code># fresh ticket + exchange as sam.chen → now: HTTP/1.1 200 OK</code></pre>
+          <p><strong>Same user, still without the role, same resource, same scope — only the decision
+          strategy changed</strong>, and the outcome flipped from a clean 403 to a clean 200 because the
+          client policy alone was now enough to satisfy Affirmative. This is Figure 37.3's abstract claim,
+          reproduced as two real HTTP status codes. The permission was reverted back to the single role
+          policy under <code>UNANIMOUS</code> afterward — the least-privilege baseline this chapter actually
+          recommends shipping, not the two-policy Affirmative version used only to demonstrate the
+          mechanism.</p></li>
+
+          <li><p>One more real artifact worth knowing about: the admin console's <strong>Policy evaluate</strong>
+          tool is backed by a plain REST call that simulates a specific user against live policies without
+          needing a token round trip at all — useful for debugging a permission before wiring up a real
+          client:</p>
+          <pre><code>curl -s -X POST "http://localhost:18137/admin/realms/northwind-apps/clients/$CID/authz/resource-server/policy/evaluate" \
+  -H "Authorization: Bearer &lt;admin token&gt;" -H "Content-Type: application/json" \
+  -d '{"resources":[{"_id":"f38b948f-2460-4d08-9768-42b87d1254d4","name":"quarterly-report"}],
+      "clientId":"'"$CID"'","userId":"&lt;sam.chen's user id&gt;","entitlements":false,"context":{"attributes":{}}}'</code></pre>
+          <pre><code>{ "results": [ { "status": "DENY", "policies": [ { "status": "DENY",
+    "associatedPolicies": [ { "policy": {"name":"northwind-editor-policy", ...}, "status": "DENY" } ] } ] } ],
+  "status": "DENY" }</code></pre>
+          <p>The same DENY this lab already proved via a real token exchange, reached here without issuing
+          any tokens at all — a genuinely faster debugging loop once resources and policies already exist.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-teardown" data-title="Lab: tear down">
+        <h2>Lab: tear down</h2>
+        <p>This lab's isolated stack is torn down completely once the chapter's checks above have all been
+        reproduced:</p>
+        <pre><code>cd labs/authorization-services
+docker compose -p ch37kc down -v</code></pre>
+        <p>The supporting <code>docker-compose.yml</code> and a README documenting every step above live in
+        <code>labs/authorization-services/</code> for anyone who wants to reproduce this lab exactly, the
+        same pattern chapter 32's <code>labs/ldap-federation/</code> folder established.</p>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li><strong>A real finding from writing this chapter</strong>: creating a resource and an
+          authorization scope separately does not attach one to the other. If a scope-based permission
+          rejects with <code>Scope [...] is not associated with any of the resources set to the permission</code>,
+          the fix is to update the resource itself to list that scope in its own <code>scopes</code> array —
+          confirmed directly in this chapter's own lab, on the very first attempt.</li>
+          <li>Do not assume Keycloak 26.8.2 still supports JavaScript/"script" policies because older
+          tutorials show one — this lab confirmed live that the REST endpoint for creating one
+          (<code>.../policy/js</code>) returns a flat 404, and the policy-provider list never lists a
+          <code>js</code>/<code>script</code> type at all. Model that logic with role/user/group/time/client/
+          aggregate policies instead, or a custom Policy SPI provider (chapter 39).</li>
+          <li>Don't confuse an <strong>OAuth scope</strong> (chapters 13, 24 — negotiated when a token is
+          requested) with an <strong>authorization scope</strong> (this chapter — attached to a resource,
+          evaluated at decision time) just because both are called "scope" — they are unrelated mechanisms
+          that happen to share a name.</li>
+          <li>If a UMA ticket exchange returns <code>403 access_denied</code>, don't assume the specific
+          <code>error_description</code> text (e.g. <code>"request_submitted"</code>) carries stable meaning
+          across versions or configurations — key error handling off the HTTP status and the
+          <code>error</code> field, not the description string, which this lab confirmed can read
+          surprisingly even when nothing is actually "submitted" anywhere.</li>
+          <li>Reusing an already-redeemed permission ticket for a second subject does not work — tickets are
+          meant to be exchanged once; this lab always requested a fresh ticket per exchange rather than
+          reusing one across both amara's and sam's requests.</li>
+          <li>Setting a permission's decision strategy to <code>AFFIRMATIVE</code> "to make testing easier"
+          and then shipping it that way quietly weakens every policy attached to that permission down to "any
+          one of these is enough" — this lab deliberately reverted back to <code>UNANIMOUS</code> with a
+          single, genuinely necessary policy once the decision-strategy demonstration was done.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Authorization Services turns a confidential client into a real resource server: your
+          application becomes a Policy Enforcement Point, and Keycloak itself becomes the Policy Decision
+          Point that actually evaluates access.</li>
+          <li>A resource, an authorization scope, a policy, and a permission each have one job — a permission
+          is the join point that ties a resource+scope pair to one or more policies and a decision strategy.</li>
+          <li>A resource must list its authorization scopes in its own <code>scopes</code> array before a
+          scope-based permission can reference that resource+scope pair — confirmed live, not assumed, when
+          this lab's first attempt failed with exactly that error.</li>
+          <li>"OAuth scope" and "authorization scope" are two genuinely unrelated mechanisms that share a
+          name by historical accident — one is negotiated when a token is requested, the other is attached to
+          a resource and evaluated at decision time.</li>
+          <li>Keycloak 26.8.2's live policy-provider list is regex/role/resource/scope/client/time/user/
+          client-scope/group/aggregate — JavaScript ("script") policies are fully removed from the REST API
+          in this version, confirmed by a 404 on the old endpoint, not merely deprecated.</li>
+          <li>Decision strategy (Unanimous/Affirmative/Consensus) genuinely changes outcomes — this chapter's
+          lab proved it live: the identical request from the identical role-less user flipped from 403 to 200
+          purely by changing a permission's decision strategy from Unanimous to Affirmative.</li>
+          <li>UMA 2.0's defining shape is two separate exchanges: a permission ticket first (from the
+          Protection API), then a ticket-for-RPT exchange at the token endpoint — never one combined step.</li>
+          <li>A Requesting Party Token's <code>authorization.permissions</code> claim names, concretely,
+          which resource and scope this exact subject was just granted — computed at request time from live
+          policy evaluation, unlike a pre-assigned role.</li>
+          <li>Keycloak's "Policy evaluate" tool simulates a policy decision for a specific user without
+          issuing any real tokens — a faster debugging loop than a full UMA round trip once resources and
+          policies already exist.</li>
+          <li>Northwind Apps's document-sharing feature needs UMA's resource-owner-in-the-loop model
+          precisely because a static, pre-assigned role can't express "this one person, for this one
+          document" the way a per-resource permission can.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "Authorization Services just lets Keycloak check roles, like chapter 23 already does." What's wrong with that description?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It understates what's new. Chapter 23's roles are pre-assigned, statically, independent of any specific resource — Keycloak never evaluates them against a particular document or record at request time. Authorization Services introduces per-resource, per-scope, runtime decisions: a permission ties a specific resource+scope pair to one or more policies (which can be role-based, but can equally be time-based, user-based, or aggregated) and evaluates that combination fresh on every request, through a real PEP/PDP exchange — not a cached role check.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab got "Scope [view] is not associated with any of the resources set to the permission" on its first attempt to create a permission. What was actually missing, and why didn't creating the resource and the scope separately already solve it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The resource's own <code>scopes</code> array never listed the <code>view</code> scope — creating a resource and creating a scope are two independent REST calls that don't implicitly link to each other. A scope-based permission references a resource+scope <em>pair</em>, and Keycloak requires that pairing to already exist on the resource itself before a permission can be built on top of it. The fix was a separate update call adding the scope to the resource's <code>scopes</code> array.</p>
+          </details></li>
+          <li><details>
+            <summary>Distinguish an OAuth scope from an authorization scope, using this chapter's own client scope vs. authorization scope comparison.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>An OAuth scope (chapter 13/24) is negotiated when a token is requested — it limits what a token carries before any specific resource is ever involved, and in Keycloak it's implemented as a client scope: a reusable protocol-mapper/role-mapping bundle attached to a client. An authorization scope (this chapter) is attached to a resource inside a resource server's own authorization model, names an action like "view" or "edit," and is evaluated by policy at decision time, long after the token already exists — it never appears in a token request at all. They share a name purely by historical accident.</p>
+          </details></li>
+          <li><details>
+            <summary>This chapter's lab confirmed Keycloak 26.8.2 has no JavaScript/"script" policy type. What exactly was checked to confirm that, and why is that stronger evidence than just not seeing one in the admin console?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Two things were checked live: the policy-provider list (<code>GET .../policy/providers</code>), which lists regex/role/resource/scope/client/time/user/client-scope/group/aggregate with no js/script entry, and a direct attempt to create one via the old <code>.../policy/js</code> REST endpoint, which returned a flat 404 ("Resource not found for url"). The second check is stronger because a missing console tab could just mean a UI feature flag is off while the underlying REST capability still exists — a 404 on the endpoint itself means the capability genuinely isn't there to call, by any client.</p>
+          </details></li>
+          <li><details>
+            <summary>In this chapter's decision-strategy demo, sam.chen (who never held the northwind-editor role) got a 403 under Unanimous and a 200 under Affirmative for the exact same request. Explain why, referencing the specific policies involved.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The permission referenced two policies: a role policy (requires <code>northwind-editor</code>, which sam.chen lacked — votes DENY for him) and a client policy (votes PERMIT for any token issued to the <code>northwind-docs-api</code> client, which is true for every token in this lab, including sam's). Under Unanimous, every referenced policy must vote PERMIT, so the role policy's DENY failed the whole permission (403). Under Affirmative, only one PERMIT vote is needed, and the client policy's PERMIT alone was enough to flip the outcome to 200 — with no change to sam's actual role membership at all.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does UMA 2.0 require two separate exchanges — a permission ticket first, then a token request — instead of just returning an RPT directly on the first request?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The first request usually doesn't yet carry a usable, correctly-scoped credential from the requesting party at all — it may be genuinely unauthenticated, or carry a token that was never going to be evaluated against this specific resource. The permission ticket exists to name, precisely, which resource and scope the eventual access decision will be about, independent of who ends up presenting it. Splitting the flow lets the requesting party authenticate (or use an existing token) and present it alongside that specific ticket at the token endpoint, so Keycloak can evaluate policy against a real, known subject and a precisely scoped request in one well-defined step, rather than trying to collect both an unauthenticated resource request and a valid identity in a single round trip.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://docs.kantarainitiative.org/uma/wg/rec-oauth-uma-grant-2.0.html">Kantara Initiative — User-Managed Access 2.0 Grant for OAuth 2.0 Authorization</a></li>
+          <li><a href="https://docs.kantarainitiative.org/uma/wg/rec-oauth-uma-federated-authz-2.0.html">Kantara Initiative — Federated Authorization for UMA 2.0</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/authorization_services/index.html">Keycloak Authorization Services Guide (official documentation)</a></li>
+          <li><a href="https://www.keycloak.org/docs-api/latest/rest-api/index.html">Keycloak Admin REST API reference (the <code>authz/resource-server</code> and <code>authz/protection</code> endpoints used throughout this chapter's lab)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "keycloak-authorization-services", 16);
+    SlideDeck.init({ chapterSlug: "keycloak-authorization-services" });
+  });
+</script>
+</body>
+</html>

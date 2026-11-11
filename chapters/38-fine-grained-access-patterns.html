@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fine-Grained Access Patterns — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "fine-grained-access-patterns";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VII — Fine-Grained Authorization</span>
+          <span class="badge minutes">~40 min</span>
+        </div>
+        <h1>38. Fine-Grained Access Patterns: ABAC/ReBAC with Keycloak, and a Brief OPA/Cedar Comparison</h1>
+        <p class="lede">This chapter has no lab of its own — it's the synthesis chapter that closes a loop
+        opened twice already. Chapter 6 surveyed ACL/RBAC/ABAC/PBAC/ReBAC/Zero Trust as vendor-agnostic
+        models. Chapter 37 made one of them concrete: Keycloak's Authorization Services, a real,
+        policy-based (PBAC-flavored, often ABAC-flavored) engine you configured and drove through a real
+        UMA 2.0 flow. This chapter asks the honest question a working IAM specialist eventually has to
+        answer out loud in a design review: <strong>what can Keycloak's own authorization model actually
+        express, where does it genuinely run out, and what do you reach for next?</strong></p>
+
+        <h2>Why this matters</h2>
+        <p>Every authorization model has a shape it's good at and a shape it isn't. An IAM specialist who
+        only knows "Keycloak has policies, so just write a policy for it" will eventually try to force a
+        relationship-shaped requirement — "a manager can approve a transaction for branches they manage" —
+        into a tool that was never built to model relationships, and either ship something fragile or burn
+        weeks discovering why it doesn't fit. Knowing the honest boundary ahead of time, and knowing what a
+        purpose-built engine (OPA, Cedar, a Zanzibar-style ReBAC store) actually buys beyond that boundary,
+        is the difference between a design review that ends in twenty minutes and one that ends in a
+        production incident six months later.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>This is chapter 6's RBAC/ABAC/PBAC/ReBAC spectrum, revisited with chapter 37's real Keycloak
+          mileage under your belt. Chapter 6 already previewed the punchline in its own "In Keycloak"
+          callout on the ReBAC slide: <em>"Keycloak doesn't ship a dedicated graph-based ReBAC engine, but
+          its Authorization Services can express attribute- and relationship-<strong>flavored</strong>
+          policies on top of its resource/scope/policy model."</em> This chapter spells out exactly what
+          "flavored" means in practice — where the approximation holds up, and where it quietly breaks —
+          and then looks at two dedicated policy engines (OPA and Cedar) that exist precisely because
+          plenty of real systems need more than "flavored."</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="spectrum" data-title="The spectrum, with Keycloak's coverage marked">
+        <h2>The spectrum, with Keycloak's coverage marked on it</h2>
+        <p>Chapter 6 ordered the five models roughly by how dynamic and relationship-aware the access
+        decision is. Laid out that way, Keycloak's actual coverage — what you built with real primitives in
+        chapters 23 and 37 — stops cleanly in the middle of that line, not at the end of it.</p>
+        <ul>
+          <li><strong>RBAC</strong> — realm and client roles, assigned to users or groups (chapter 23).
+          Fully native, no approximation needed.</li>
+          <li><strong>ABAC / PBAC</strong> — Authorization Services policies: role, user, group, time,
+          client, client-scope, and aggregated policies, composed with a decision strategy (chapter 37).
+          Fully native for anything expressible as "evaluate these attributes/conditions against this
+          request right now." This is Keycloak's real ceiling — not a workaround, a first-class feature.</li>
+          <li><strong>ReBAC</strong> — no first-class concept of a relationship tuple ("Alex
+          <em>manager_of</em> Downtown Branch") anywhere in Keycloak's data model. What looks
+          relationship-shaped has to be re-expressed as a group membership, a user attribute, or a custom
+          policy that calls out to something that <em>does</em> store relationships — which is an
+          approximation, not native support, and the rest of this chapter shows exactly where that
+          approximation holds and where it doesn't.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 270" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The RBAC-to-ReBAC spectrum with Keycloak's native coverage marked</title>
+            <desc id="d1">A horizontal spine with four stops in order: ACL, RBAC, ABAC/PBAC, and ReBAC. A bracket under RBAC and ABAC/PBAC is labeled "Keycloak Authorization Services: fully native, chapters 23 and 37." The ACL stop is labeled as not a first-class Keycloak concept but approximable with per-resource permissions. The ReBAC stop at the far right is drawn in a warning color and labeled "No native relationship-tuple concept — approximation or external engine required," with a dashed line connecting it back to the spine to show it is reachable only indirectly.</desc>
+
+            <line x1="60" y1="90" x2="700" y2="90" class="diagram-stroke"></line>
+
+            <circle cx="120" cy="90" r="10" class="diagram-fill-surface diagram-stroke"></circle>
+            <text x="120" y="60" text-anchor="middle" class="diagram-label" font-weight="700">ACL</text>
+            <text x="120" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">per-resource permission</text>
+            <text x="120" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">(ch37) approximates it</text>
+
+            <circle cx="310" cy="90" r="11" class="diagram-fill-success diagram-stroke"></circle>
+            <text x="310" y="60" text-anchor="middle" class="diagram-label" font-weight="700">RBAC</text>
+            <text x="310" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">realm/client roles</text>
+            <text x="310" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">(chapter 23)</text>
+
+            <circle cx="500" cy="90" r="11" class="diagram-fill-success diagram-stroke"></circle>
+            <text x="500" y="60" text-anchor="middle" class="diagram-label" font-weight="700">ABAC / PBAC</text>
+            <text x="500" y="128" text-anchor="middle" class="diagram-label-muted" font-size="10">Authorization Services</text>
+            <text x="500" y="142" text-anchor="middle" class="diagram-label-muted" font-size="10">policies (chapter 37)</text>
+
+            <rect x="255" y="150" width="300" height="34" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="405" y="171" text-anchor="middle" class="diagram-label" font-size="11">Fully native — Keycloak's real ceiling</text>
+            <line x1="310" y1="101" x2="310" y2="150" class="diagram-stroke"></line>
+            <line x1="500" y1="101" x2="500" y2="150" class="diagram-stroke"></line>
+
+            <circle cx="680" cy="90" r="12" class="diagram-fill-warning diagram-stroke"></circle>
+            <text x="680" y="58" text-anchor="middle" class="diagram-label" font-weight="700">ReBAC</text>
+            <line x1="680" y1="102" x2="680" y2="150" class="diagram-stroke" stroke-dasharray="4 4"></line>
+            <rect x="565" y="150" width="230" height="52" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="680" y="171" text-anchor="middle" class="diagram-label" font-size="11">No relationship-tuple concept</text>
+            <text x="680" y="187" text-anchor="middle" class="diagram-label" font-size="11">Approximate, or reach for an</text>
+            <text x="680" y="198" text-anchor="middle" class="diagram-label" font-size="10">external ReBAC engine</text>
+
+            <text x="405" y="235" text-anchor="middle" class="diagram-label-muted" font-size="11">Chapter 6's five-model order: ACL · RBAC · ABAC · PBAC · ReBAC</text>
+          </svg>
+          <figcaption>Figure 38.1 — Keycloak's native authorization coverage stops at ABAC/PBAC; ReBAC sits
+          one step past the edge.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="riverside-abac" data-title="Worked ABAC example: Riverside Health">
+        <h2>Worked ABAC example, fully native: Riverside Health shift-and-department access</h2>
+        <p><strong>Requirement:</strong> <span class="org-chip riverside">Riverside Health</span> needs a
+        rule for its clinician portal: <em>a clinician may view a patient record only if their department
+        attribute matches the patient's assigned department, <strong>and</strong> only during their
+        scheduled shift hours.</em> Both conditions are attributes evaluated at request time — department
+        is a user attribute, shift hours are a time condition — not a relationship and not a static role.
+        This is squarely inside Keycloak's native ABAC/PBAC ceiling from the previous slide.</p>
+        <p>In Authorization Services terms (chapter 37's vocabulary, used directly here): this is two
+        separate policies — a group/attribute-based policy checking "clinician's department attribute
+        equals the record's department claim" and a time-based policy checking "current time falls inside
+        the clinician's configured shift window" — combined into one permission with the
+        <strong>unanimous</strong> decision strategy, so the record is only released when <em>both</em>
+        policies agree. Decision strategy choice here is not cosmetic: using the default affirmative
+        strategy instead of unanimous would let a clinician view the record whenever either condition is
+        true on its own — including outside shift hours, as long as the department matches — which is
+        exactly the kind of subtle Authorization Services misconfiguration chapter 37's decision-strategy
+        diagram warned about.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 250" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Two attribute policies combined with a unanimous decision strategy</title>
+            <desc id="d2">Two input boxes feed into a decision diamond. The first input box is labeled department attribute check: clinician's department equals patient's assigned department. The second input box is labeled shift-time check: current time is inside the clinician's scheduled shift window. Both arrows point into a diamond labeled unanimous decision strategy, both must agree. Two outputs lead from the diamond: a permit path taken only when both inputs are true, and a deny path taken if either input is false, including the case where the department matches but the time does not.</desc>
+
+            <rect x="20" y="30" width="230" height="56" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="135" y="52" text-anchor="middle" class="diagram-label" font-size="12">Department policy:</text>
+            <text x="135" y="68" text-anchor="middle" class="diagram-label" font-size="11">clinician.dept == record.dept</text>
+
+            <rect x="20" y="150" width="230" height="56" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="135" y="172" text-anchor="middle" class="diagram-label" font-size="12">Time policy:</text>
+            <text x="135" y="188" text-anchor="middle" class="diagram-label" font-size="11">now &isin; clinician.shift_window</text>
+
+            <path d="M250,58 L330,100 L250,100 Z" class="diagram-fill-surface diagram-stroke" fill="none"></path>
+            <polygon points="330,65 420,120 330,175 240,120" class="diagram-fill-accent diagram-stroke"></polygon>
+            <text x="330" y="112" text-anchor="middle" class="diagram-label" font-size="11">Unanimous:</text>
+            <text x="330" y="128" text-anchor="middle" class="diagram-label" font-size="11">both must agree</text>
+
+            <line x1="250" y1="58" x2="300" y2="100" class="diagram-stroke"></line>
+            <line x1="250" y1="178" x2="300" y2="140" class="diagram-stroke"></line>
+
+            <line x1="420" y1="105" x2="520" y2="70" class="diagram-stroke"></line>
+            <rect x="520" y="45" width="140" height="42" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="590" y="70" text-anchor="middle" class="diagram-label" font-size="12">Permit — view record</text>
+
+            <line x1="420" y1="135" x2="520" y2="170" class="diagram-stroke"></line>
+            <rect x="520" y="150" width="140" height="42" rx="6" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="590" y="175" text-anchor="middle" class="diagram-label" font-size="12">Deny — either false</text>
+
+            <text x="330" y="225" text-anchor="middle" class="diagram-label-muted" font-size="11">Right department but wrong time of day still denies — that's the point of "unanimous"</text>
+          </svg>
+          <figcaption>Figure 38.2 — Riverside Health's department-and-shift rule is pure ABAC: two
+          independent attribute checks, combined with a unanimous decision strategy.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a Riverside clinician reports they can see a record they shouldn't be able to at 2 a.m.,
+          the first thing to check is the permission's decision strategy, not the individual policies.
+          Each policy in isolation might be written correctly and still produce the wrong combined result
+          under an affirmative strategy — this is a composition bug, not a policy-authoring bug, and it's
+          invisible if you only re-read each policy's logic on its own.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="meridian-rebac" data-title="Where it runs out: Meridian Trust">
+        <h2>Where it genuinely runs out: Meridian Trust's manager-of relationship</h2>
+        <p><strong>Requirement:</strong> <span class="org-chip meridian">Meridian Trust</span> needs:
+        <em>an employee may approve a transaction only if they have a <strong>manager-of</strong>
+        relationship with the branch that owns the account.</em> This is not an attribute of the employee
+        (their department doesn't encode which specific branches they manage), not a static role (role
+        alone says "this person is <em>a</em> manager," not "manager <em>of this specific branch</em>"),
+        and it changes shape over time as managers rotate between branches. It is a genuine relationship
+        edge — exactly chapter 6's ReBAC definition — between two specific entities, <em>Alex</em> and
+        <em>Downtown Branch</em>, and a second edge between <em>Downtown Branch</em> and the account in
+        question.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 220" role="img" aria-labelledby="t3 d3">
+            <title id="t3">A two-hop relationship chain Keycloak has no native way to store</title>
+            <desc id="d3">Three nodes connected by two labeled relationship edges. Alex, an employee node, connects via a manager_of edge to Downtown Branch, a branch node. Downtown Branch connects via an owns edge to Account 1234, an account node. A caption states that approving a transaction on Account 1234 requires traversing both edges: is Alex a manager of the branch that owns this account.</desc>
+
+            <circle cx="90" cy="110" r="34" class="diagram-fill-accent diagram-stroke"></circle>
+            <text x="90" y="115" text-anchor="middle" class="diagram-label" font-size="12">Alex</text>
+
+            <rect x="275" y="80" width="150" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="350" y="105" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12">Downtown</text>
+            <text x="350" y="122" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12">Branch</text>
+
+            <rect x="540" y="80" width="140" height="60" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="610" y="105" text-anchor="middle" class="diagram-label" font-size="12">Account</text>
+            <text x="610" y="122" text-anchor="middle" class="diagram-label" font-size="12">#1234</text>
+
+            <line x1="124" y1="105" x2="273" y2="105" class="diagram-stroke"></line>
+            <text x="198" y="95" text-anchor="middle" class="diagram-label-muted" font-size="11">manager_of</text>
+
+            <line x1="425" y1="110" x2="538" y2="110" class="diagram-stroke"></line>
+            <text x="482" y="98" text-anchor="middle" class="diagram-label-muted" font-size="11">owns</text>
+
+            <text x="350" y="190" text-anchor="middle" class="diagram-label-muted" font-size="11">Approving a transaction on #1234 requires walking both edges — one relationship hop, then another</text>
+          </svg>
+          <figcaption>Figure 38.3 — A genuine two-hop relationship chain: exactly the shape ReBAC engines
+          are built to traverse, and exactly what a role or attribute can't express directly.</figcaption>
+        </figure>
+
+        <p>You could try to flatten this into Keycloak's native primitives, and real teams do — but look
+        honestly at what each approximation costs:</p>
+        <ul>
+          <li><strong>Group-per-relationship.</strong> Create a Keycloak group per branch,
+          <code>branch-managers-downtown</code>, and put Alex in it. A role/group policy can now check "is
+          this user in <code>branch-managers-downtown</code>." This works for a small, stable number of
+          branches — but it means a group (and a policy referencing it) <em>per branch</em>, group
+          membership changes are the only record of the relationship (no "since when," no easy audit of
+          "who manages what" as a queryable graph), and a manager who covers twelve branches needs twelve
+          group memberships kept in sync by hand or by a separate provisioning job.</li>
+          <li><strong>Custom attribute encoding.</strong> Store a user attribute like
+          <code>manages_branches=downtown,eastside</code> and write a custom policy (a Policy SPI
+          implementation, chapter 39 territory) that parses it and checks membership. This scales better
+          than one group per branch, but now the relationship data lives in a delimited string inside
+          Keycloak's user attribute store — no native validation that referenced branches exist, no
+          reverse query ("who manages this branch"), and every consumer of that relationship has to agree
+          on the encoding.</li>
+          <li><strong>Custom Policy SPI calling an external relationship store.</strong> Write a Keycloak
+          Policy provider (chapter 39's SPI mechanism) whose logic is just "ask an external
+          service — a real relationship store — whether this edge exists," and let Keycloak's policy
+          evaluation defer to that answer. This is the honest middle ground: Keycloak still issues the
+          final permit/deny and still sits in the request path, but the relationship graph itself lives
+          somewhere actually built to store and query graphs.</li>
+        </ul>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>The group-per-relationship and custom-attribute approximations both degrade the same way as
+          the relationship gets more dynamic: more entities, more frequent changes, or multi-hop
+          traversals (manager of a branch that owns an account, not just "manager of a branch" directly)
+          each add friction that a real relationship-tuple store doesn't have. If you notice yourself
+          writing a migration script to rename a group every time a manager moves branches, that's the
+          signal the approximation has stopped paying for itself — not a sign to add a third workaround on
+          top of the first two.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="zanzibar-openfga" data-title="What a purpose-built ReBAC engine adds">
+        <h2>What a purpose-built ReBAC engine actually adds</h2>
+        <p>Google's 2019 paper <em>"Zanzibar: Google's Consistent, Global Authorization System"</em>
+        described the relationship-tuple model behind access control for Google Drive, Calendar, and
+        Photos: authorization data stored as simple tuples —
+        <code>object#relation@subject</code>, e.g. <code>branch:downtown#manager@user:alex</code> — plus a
+        query language for checking and expanding relationships, including relationships defined
+        <em>in terms of</em> other relationships (so "can approve transactions on account 1234" can be
+        defined as "is manager of the branch that owns account 1234" and the engine walks that chain for
+        you). <strong>OpenFGA</strong> (a Linux Foundation-hosted, CNCF Sandbox project, modeled directly on
+        the Zanzibar paper) is the most widely used open-source implementation of this pattern today — this
+        course did not independently re-verify OpenFGA's exact current CNCF maturity level or release
+        version beyond confirming the project is active and Zanzibar-derived; treat the specific "Sandbox"
+        designation as approximate and check <code>openfga.dev</code> directly before citing it precisely
+        in anything graded on accuracy.</p>
+        <p>The concrete thing this buys over Keycloak's approximations: the relationship graph is the
+        system's actual data model, not a side-encoding bolted onto a user-attribute string. Multi-hop
+        checks ("manager of the branch that owns this account") are first-class queries, not something a
+        custom SPI has to re-implement by hand. Relationship changes (a manager rotating branches) are a
+        single tuple write, immediately queryable, with no group-rename migration anywhere.</p>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust, continued</div>
+          <p><span class="org-chip meridian">Meridian Trust</span>'s realistic end state for the manager-of
+          requirement, past a certain scale, is not "a cleverer Keycloak policy" — it's a relationship
+          store (OpenFGA or an equivalent) holding the <code>manager_of</code> and <code>owns</code> tuples,
+          queried by a custom Keycloak Policy provider (or by the resource server directly, alongside
+          Keycloak) at approval time. Keycloak still authenticates Alex and still issues the token that
+          proves who Alex is; it simply stops being the system of record for <em>who manages which
+          branch</em>, because that was never really an authentication-system fact to begin with.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="opa" data-title="Open Policy Agent">
+        <h2>Open Policy Agent (OPA) and Rego</h2>
+        <p><strong>Open Policy Agent (OPA)</strong> is a general-purpose policy engine — not specifically a
+        ReBAC engine, though it can express relationship-style logic — that evaluates policies written in
+        its own declarative query language, <strong>Rego</strong>, against JSON input, and returns a
+        decision. OPA is a <strong>CNCF Graduated project</strong> (accepted to CNCF in March 2018,
+        promoted to Incubating in April 2019, and promoted to Graduated on January 29, 2021 — graduation
+        required a completed security audit, defined governance, and the CNCF Code of Conduct). Live-checked
+        for this chapter: the current OPA release is <strong>v1.22.3</strong>, a bugfix release — this
+        number will already be stale by the time you read it, so treat the version itself as illustrative
+        and check <code>github.com/open-policy-agent/opa/releases</code> for the real current one rather
+        than trusting this printed digit.</p>
+        <p>OPA's deployment model is deliberately decoupled from any one application: it typically runs as
+        a <strong>sidecar</strong> next to a service, or embedded as a <strong>library</strong>, and the
+        calling service sends it a JSON request (the input document) and gets back a JSON decision — there
+        is no required central server in the simplest deployment, though Styra (OPA's originating company)
+        and others offer managed control planes for distributing and monitoring policies across many OPA
+        instances. Rego itself is a logic-programming-flavored language purpose-built for writing rules
+        over nested JSON, which gives it real expressive power for arbitrary attribute logic but a real
+        learning curve — it does not read like a general-purpose programming language, and that's by
+        design, not an accident.</p>
+      </section>
+
+      <section class="slide" data-slide="cedar" data-title="AWS Cedar">
+        <h2>AWS Cedar</h2>
+        <p><strong>Cedar</strong> is a policy language and evaluation engine originally built by AWS,
+        open-sourced in May 2023 under the Apache License 2.0 (specification and SDK both, on GitHub under
+        the <code>cedar-policy</code> organization). Its headline design goals, per AWS's own
+        announcement, are fast and provably-safe evaluation — the language was designed alongside a formal
+        model so that properties like "this policy can never grant more than intended" can be checked, not
+        just tested. AWS's own production use of it is <strong>Amazon Verified Permissions</strong>, a
+        managed authorization service built on Cedar.</p>
+        <p>Live-verification note, stated honestly because the sources genuinely disagree: Cedar's version
+        numbering is not one clean number. The <em>language specification version</em> and the
+        <em>cedar-policy SDK/crate version</em> are tracked separately and can both be referred to as
+        "version 4," which is confusing on its own; AWS's Amazon Verified Permissions documentation
+        describes an upgrade path from Cedar language version 2 to version 4 (with an intermediate 3), and
+        the <code>cedar-policy</code> GitHub repository's own release history shows the engine/CLI crate
+        itself well past that — <strong>v4.14.1</strong> was the latest tagged release checked for this
+        chapter. Don't repeat "Cedar is at version X" as a single fact without specifying which of the two
+        numbering schemes you mean and checking it live — this course couldn't fully reconcile them from
+        public sources and says so rather than picking one number and presenting it as settled.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Treating "Cedar" and "Amazon Verified Permissions" as the same thing is a common mix-up.
+          Cedar is the open-source language and evaluation engine, usable standalone, in any application,
+          with no AWS dependency. Amazon Verified Permissions is one managed product built on top of it.
+          You can adopt Cedar the language without adopting that specific AWS service, the same way you
+          can adopt Rego without adopting Styra's commercial control plane.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="comparison-table" data-title="Keycloak Authz vs. OPA vs. Cedar">
+        <h2>Keycloak Authorization Services, OPA, and Cedar, compared honestly</h2>
+        <p>None of these three is strictly "better" — they solve overlapping but distinct problems, and
+        the right choice depends on what's already true about your system. Kept brief and non-promotional,
+        per this chapter's own brief: no sales pitch for any of the three.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Three fine-grained authorization approaches compared on the dimensions that actually drive a real decision</caption>
+            <thead>
+              <tr><th>Dimension</th><th>Keycloak Authorization Services</th><th>OPA / Rego</th><th>Cedar</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Deployment model</td><td>Built into the Keycloak server you already run (chapter 37)</td><td>Sidecar or embedded library, decoupled from any one app</td><td>Embedded library (Rust/Java/Go/JS SDKs) or AWS's managed Verified Permissions</td></tr>
+              <tr><td>Policy language</td><td>Admin-console policy types (role/user/group/time/aggregated); custom logic needs a Policy SPI (chapter 39)</td><td>Rego — a dedicated, Datalog-flavored query language over JSON</td><td>Cedar — a purpose-built language designed alongside a formal/provable model</td></tr>
+              <tr><td>Native relationship (ReBAC) support</td><td>None — approximated, as this chapter showed</td><td>None built in, but expressive enough to encode relationship checks yourself</td><td>None built in; AWS positions Cedar primarily for RBAC/ABAC-style policies</td></tr>
+              <tr><td>Where it naturally plugs in</td><td>Already in the request path if the resource server is a Keycloak-protected client</td><td>API gateway, service mesh sidecar, or application-embedded decision point</td><td>Application-embedded SDK call, or AWS-native services via Verified Permissions</td></tr>
+              <tr><td>Governance/maturity signal</td><td>Part of Keycloak's own release and support lifecycle</td><td>CNCF Graduated project (2021) — independently audited, vendor-neutral governance</td><td>Apache-2.0 open source; AWS-originated and AWS-led governance to date</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Take the Riverside Health department-and-shift rule from earlier in this chapter and sketch,
+          in a few lines of pseudocode or real Rego/Cedar syntax (your choice, no need to run it), how you
+          would express the same "department matches AND inside shift window" logic in whichever of OPA or
+          Cedar you haven't used before. Notice how much of the logic — two conditions, combined with a
+          logical AND — is identical to what Keycloak's unanimous decision strategy already expressed; the
+          difference is almost entirely in where that logic lives and who deploys it, not in what it says.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="integration-architecture" data-title="Where to plug in an external engine">
+        <h2>Where would you actually plug in an external policy engine?</h2>
+        <p>The realistic integration point is almost never "replace Keycloak." Keycloak still authenticates
+        the user and still issues the token that proves who they are and what coarse-grained roles/groups
+        they hold. An external engine (OPA, Cedar, or a ReBAC store like OpenFGA) sits at the
+        <strong>resource server</strong> — the same role chapter 37 introduced — either instead of, or
+        alongside, Keycloak's own Authorization Services, deciding the fine-grained part of the question.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 740 280" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Where an external policy engine sits relative to Keycloak and a resource server</title>
+            <desc id="d4">A client sends a request carrying a Keycloak-issued access token to a resource server, which acts as the policy enforcement point. The resource server has already validated the token against Keycloak, confirming identity and coarse-grained roles. For the fine-grained decision, the resource server calls out to an external policy engine box, labeled OPA, Cedar, or OpenFGA, sending the token's claims plus any relationship or attribute data as input, and receives a permit or deny decision back. Only after a permit does the resource server serve the protected resource.</desc>
+
+            <circle cx="60" cy="140" r="26" class="diagram-fill-accent diagram-stroke"></circle>
+            <text x="60" y="145" text-anchor="middle" class="diagram-label" font-size="11">Client</text>
+
+            <rect x="150" y="40" width="150" height="50" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="225" y="60" text-anchor="middle" class="diagram-label" font-size="11">Keycloak</text>
+            <text x="225" y="76" text-anchor="middle" class="diagram-label" font-size="10">identity + coarse roles</text>
+
+            <rect x="280" y="115" width="180" height="55" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="370" y="138" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12">Resource server</text>
+            <text x="370" y="155" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">(policy enforcement point)</text>
+
+            <rect x="520" y="115" width="180" height="55" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="610" y="138" text-anchor="middle" class="diagram-label" font-size="12">OPA / Cedar / OpenFGA</text>
+            <text x="610" y="155" text-anchor="middle" class="diagram-label" font-size="10">fine-grained decision</text>
+
+            <rect x="280" y="215" width="180" height="46" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="370" y="242" text-anchor="middle" class="diagram-label" font-size="11">Protected resource (if permit)</text>
+
+            <line x1="86" y1="130" x2="200" y2="90" class="diagram-stroke"></line>
+            <text x="140" y="100" text-anchor="middle" class="diagram-label-muted" font-size="9">1. authenticate</text>
+
+            <line x1="86" y1="150" x2="278" y2="150" class="diagram-stroke"></line>
+            <text x="180" y="143" text-anchor="middle" class="diagram-label-muted" font-size="9">2. request + token</text>
+
+            <line x1="460" y1="142" x2="518" y2="142" class="diagram-stroke"></line>
+            <text x="488" y="133" text-anchor="middle" class="diagram-label-muted" font-size="9">3. ask</text>
+            <line x1="518" y1="152" x2="460" y2="152" class="diagram-stroke"></line>
+            <text x="488" y="167" text-anchor="middle" class="diagram-label-muted" font-size="9">4. permit/deny</text>
+
+            <line x1="370" y1="170" x2="370" y2="213" class="diagram-stroke"></line>
+            <text x="400" y="195" text-anchor="middle" class="diagram-label-muted" font-size="9">5. serve</text>
+          </svg>
+          <figcaption>Figure 38.4 — Keycloak keeps authenticating identity and handing out coarse roles; an
+          external engine, called by the resource server, handles the fine-grained decision Keycloak's own
+          model can't natively express.</figcaption>
+        </figure>
+
+        <p>The practical wiring usually takes one of two shapes: (1) a custom Keycloak <strong>Policy
+        SPI</strong> provider (chapter 39) that calls the external engine from <em>inside</em> an
+        Authorization Services policy evaluation, so Keycloak still issues the final RPT and everything
+        downstream keeps trusting Keycloak's decision the way chapter 37 taught — or (2) the resource
+        server calling the external engine directly, after validating the Keycloak-issued token itself, with
+        Keycloak's Authorization Services not involved in that particular decision at all. Option 1 keeps
+        one consistent decision-issuing system; option 2 is simpler to build but means two separate places
+        enforce policy, which is its own operational risk if they ever drift out of sync.</p>
+      </section>
+
+      <section class="slide" data-slide="pitfalls" data-title="Common mistakes">
+        <h2>Common mistakes and pitfalls</h2>
+        <ul>
+          <li><strong>If you see</strong> a Keycloak policy getting re-written over and over to try to
+          capture "who manages whom," <strong>the cause is</strong> usually a genuine relationship being
+          forced into an attribute or group model — the recurring edits are the approximation leaking,
+          not a sign you haven't found the right policy combination yet.</li>
+          <li><strong>If you see</strong> a design doc proposing "let's just put OPA in front of
+          everything and stop using Keycloak's policies entirely," <strong>the cause is</strong> usually
+          skipping the comparison table above — Keycloak's native ABAC/PBAC ceiling already covers a large
+          share of real requirements, and replacing working, in-the-box policy evaluation with an extra
+          service to integrate and operate is a cost that needs a genuine ReBAC (or cross-system) reason,
+          not just unfamiliarity with Authorization Services.</li>
+          <li><strong>If you see</strong> someone asserting a precise, unhedged version number for OPA or
+          Cedar in a design doc or slide, <strong>the cause is</strong> usually copying a number from
+          memory or an old blog post rather than checking the project's own release page — both projects
+          ship frequently, and Cedar in particular has two different "version 4" meanings in play at once.</li>
+          <li><strong>If you see</strong> a custom Policy SPI provider that calls out to an external
+          relationship store on every single request with no caching, <strong>the cause is</strong>
+          usually treating that external call as free — it's a network hop added to every authorization
+          decision, and it needs the same latency/availability thinking as any other external dependency
+          in a hot path.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Keycloak's native authorization coverage runs from RBAC (chapter 23) through ABAC/PBAC
+          (chapter 37's Authorization Services) — that's the real ceiling, not a limitation to apologize for.</li>
+          <li>Keycloak has no first-class relationship-tuple concept; anything genuinely ReBAC-shaped has
+          to be approximated with groups, attributes, or a custom Policy SPI calling an external store.</li>
+          <li>Group-per-relationship and custom-attribute-encoding approximations both degrade as the
+          relationship gets more dynamic, more numerous, or multi-hop — watch for migration scripts as the
+          warning sign that the approximation has stopped paying for itself.</li>
+          <li>A genuine ReBAC requirement (Meridian Trust's "manager of the branch that owns this account")
+          is a multi-hop relationship edge, not an attribute or a role — that's the clean test for whether
+          you actually need a relationship-tuple store.</li>
+          <li>Google's Zanzibar paper described the relationship-tuple model now implemented by open-source
+          engines like OpenFGA; Keycloak's own Authorization Services never adopted this model directly.</li>
+          <li>OPA (Rego) is a CNCF Graduated, general-purpose policy engine typically run as a sidecar or
+          embedded library, decoupled from any single application.</li>
+          <li>Cedar is Apache-2.0 open source, AWS-originated, designed alongside a formal model for
+          provable policy properties, and powers Amazon Verified Permissions — but is not itself a
+          dedicated ReBAC engine.</li>
+          <li>Live-verified version and status claims for fast-moving open-source projects go stale almost
+          immediately — this chapter names the release it checked and says explicitly where the sources
+          themselves didn't agree (Cedar's two "version 4" numbering schemes), rather than flattening that
+          into one confident, possibly-wrong number.</li>
+          <li>The realistic place to plug in an external policy engine is the resource server (the
+          enforcement point), either behind a custom Keycloak Policy SPI or alongside Keycloak's own
+          Authorization Services — not as a wholesale replacement for Keycloak's authentication role.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "Keycloak supports ReBAC — chapter 6's own In Keycloak callout says Authorization Services can express relationship-flavored policies." Is this accurate? What word is doing the misleading work?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It's misleading in exactly the way "flavored" signals. Keycloak can approximate some relationship-shaped decisions using groups, attributes, or custom policies, but it has no first-class relationship-tuple data model — no native concept of "Alex manager_of Downtown Branch" that can be queried, traversed multi-hop, or audited as a graph. "Flavored" means "can be bent to resemble," not "natively models." The distinction matters the moment the relationship becomes dynamic or multi-hop, where the approximation's cost shows up fast.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, in plain terms, why Riverside Health's "department matches AND inside shift hours" rule is ABAC, not ReBAC, even though it depends on two different conditions.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Both conditions are attributes of the subject and the request evaluated independently at decision time — the clinician's department, the clinician's shift window, and the current time — not an edge between two specific entities in a relationship graph. There's no "Alex is related to this specific record" fact being checked; there's "does this user's current attribute values satisfy these conditions," which is exactly ABAC's shape, two conditions or not.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does the decision strategy (affirmative vs. unanimous) matter just as much as the individual policies themselves in the Riverside example?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because the decision strategy decides how multiple individually-correct policies combine into one outcome. Under an affirmative strategy, a clinician whose department matches but who is outside their shift window would still be granted access, because only one of the two policies needs to agree — even though both policies, read on their own, are written correctly. The bug lives in the composition, not in either policy, which is why it's easy to miss during a code/config review that only checks each policy in isolation.</p>
+          </details></li>
+          <li><details>
+            <summary>Give one concrete signal that a group-per-relationship or custom-attribute ReBAC approximation in Keycloak has "stopped paying for itself," per this chapter.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Needing to write a migration or sync script whenever the relationship changes — e.g. renaming or re-provisioning a <code>branch-managers-downtown</code> group every time a manager rotates to a different branch. If the approximation requires ongoing manual or scripted upkeep just to stay accurate, that's the sign the relationship has outgrown what a group or attribute can cleanly represent.</p>
+          </details></li>
+          <li><details>
+            <summary>A teammate wants to rip out Keycloak's Authorization Services entirely and replace it with OPA for every authorization decision in the system, including the straightforward role checks. What should you ask them first?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Ask what specific decisions actually need OPA's extra expressiveness versus what's already well inside Keycloak's native RBAC/ABAC/PBAC ceiling. If most of the system's checks are stable role or attribute logic that Authorization Services already handles natively, wholesale replacement adds an extra service to deploy, secure, and keep in sync with Keycloak's identity data, for marginal benefit on the majority of decisions — the comparison should be made decision-by-decision, not as an all-or-nothing platform swap.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter refuse to state a single, confident version number for Cedar, when it was willing to state one for OPA?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because live-checking Cedar surfaced a genuine ambiguity the sources didn't agree on: the Cedar "language specification version" and the "cedar-policy SDK/crate version" are tracked separately but are both casually called "version 4," and AWS's own Verified Permissions documentation and the cedar-policy GitHub releases describe different numbers under that same label. OPA's release page gave one unambiguous latest tag. Per this course's no-invented-facts rule, the honest move when sources disagree is to say so explicitly rather than pick one number and present it as settled.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.openpolicyagent.org/docs">Open Policy Agent — official documentation</a></li>
+          <li><a href="https://www.cedarpolicy.com/">Cedar policy language — official site</a></li>
+          <li><a href="https://research.google/pubs/zanzibar-googles-consistent-global-authorization-system/">Google Research — "Zanzibar: Google's Consistent, Global Authorization System"</a></li>
+          <li><a href="https://openfga.dev/">OpenFGA — official documentation (Zanzibar-style relationship-based authorization)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/authorization_services/">Keycloak Server Administration Guide — Authorization Services chapter</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "fine-grained-access-patterns", 15);
+    SlideDeck.init({ chapterSlug: "fine-grained-access-patterns" });
+  });
+</script>
+</body>
+</html>
