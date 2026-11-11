@@ -31,9 +31,6 @@
     var mount = document.getElementById("stats-mount");
     if (!mount || !window.COURSE_NAV) return;
     var nav = window.COURSE_NAV;
-    var totalChapters = nav.length;
-    var builtChapters = nav.filter(function (c) { return c.built; }).length;
-
     var startedChapters = 0, completeChapters = 0, slidesRead = 0, slidesTotalKnown = 0;
     nav.forEach(function (c) {
       var p = readProgress(c.slug);
@@ -45,7 +42,6 @@
     });
 
     var tiles = [
-      { value: builtChapters + " / " + totalChapters, label: "Chapters available" },
       { value: String(startedChapters), label: "Chapters started" },
       { value: String(completeChapters), label: "Chapters fully read" },
       { value: slidesTotalKnown ? (slidesRead + " / " + slidesTotalKnown) : "—", label: "Slides marked read" }
