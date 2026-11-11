@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Three independent Keycloak SPI providers, one per case-study org, for chapter 39 (Writing Custom
+  SPIs: Authenticators, Event Listeners, Protocol Mappers) of the IAM & Keycloak Mastery course:
+
+    - com.meridiantrust.keycloak.businesshours   - a custom Authenticator (Meridian Trust)
+    - com.riversidehealth.keycloak.loginaudit     - a custom EventListenerProvider (Riverside Health)
+    - com.northwindapps.keycloak.tenantmapper     - a custom ProtocolMapper (Northwind Apps)
+
+  Built as ONE Maven project producing ONE jar, not three separate modules. Rationale (see the
+  chapter text for the fuller version): all three SPIs are small, have zero dependencies on each
+  other, and share the identical build/deploy mechanics (mvn package, bind-mount into
+  /opt/keycloak/providers, kc.sh build, restart) that chapter 33 already established for a single
+  provider. Three separate Maven modules would mean three separate JARs, three separate
+  docker-compose bind mounts, and three separate "did I rebuild before restarting" failure points for
+  no real isolation benefit, since nothing here needs independent versioning or independent
+  deployment. Each provider still gets its own Java package (one per case-study org) so the source
+  tree itself documents the separation that matters: which org's problem each class solves.
+
+  Dependency coordinates were live-verified against Maven Central and against the actual jars bundled
+  inside the running quay.io/keycloak/keycloak:26.8.2 image before this POM was written, the same
+  method chapter 33 used (see the chapter text for the full trail: a docker run against the image's
+  own /opt/keycloak/lib, cross-checked with repo1.maven.org). Four Keycloak artifacts are needed,
+  all pinned to 26.8.2, all confirmed present on Maven Central at that exact version, and all
+  confirmed to be the exact jars this course's own Keycloak image bundles - no nearest-version
+  substitute needed for any of them:
+
+    - keycloak-server-spi          Provider, ProviderFactory, ConfiguredProvider, ProviderConfigProperty,
+                                    KeycloakSession, RealmModel, UserModel, ProtocolMapperModel,
+                                    UserSessionModel, ClientSessionContext, AuthenticationExecutionModel
+    - keycloak-server-spi-private   Authenticator, AuthenticatorFactory, ConfigurableAuthenticatorFactory,
+                                    AuthenticationFlowContext, AuthenticationFlowError, EventListenerProvider,
+                                    EventListenerProviderFactory, Event, EventType, Errors, EventBuilder,
+                                    ProtocolMapper (the base interface - NOT its OIDC-specific
+                                    subinterfaces, which live one jar over, see below)
+    - keycloak-services             AbstractOIDCProtocolMapper, OIDCAccessTokenMapper, OIDCIDTokenMapper,
+                                    UserInfoTokenMapper, OIDCAttributeMapperHelper - the OIDC-specific
+                                    half of the Protocol Mapper SPI, confirmed NOT present in either
+                                    server-spi jar (a real, confirmed split across jars, worth knowing
+                                    before guessing a dependency list for this SPI from its name alone)
+    - keycloak-core                  AccessToken, IDToken, AccessTokenResponse, JsonWebToken (the token
+                                    representation classes AbstractOIDCProtocolMapper's methods operate
+                                    on; a transitive dependency of keycloak-services, declared explicitly
+                                    here anyway for the same reason chapter 33 declared its two
+                                    dependencies explicitly rather than relying on transitivity)
+
+  All four are scope=provided: the server supplies these exact classes at runtime from its own
+  /opt/keycloak/lib, so this provider's own JAR should contain only this chapter's own classes plus
+  its service-registration files - nothing from Keycloak itself (bundling them instead risks a real
+  classloading conflict, per chapter 33's own "common mistakes" section).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.iamkeycloakmastery</groupId>
+  <artifactId>custom-spis</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>IAM &amp; Keycloak Mastery - Chapter 39 Custom SPIs</name>
+  <description>
+    A custom Authenticator (Meridian Trust business-hours gate), a custom EventListenerProvider
+    (Riverside Health failed-login audit log), and a custom ProtocolMapper (Northwind Apps tenant_id
+    claim), for chapter 39 of the IAM &amp; Keycloak Mastery course.
+  </description>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. -->
+    <keycloak.version>26.8.2</keycloak.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi-private</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-services</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-core</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>custom-spis-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Chapter 40's two-component advanced-SPI lab, built as ONE Maven module producing ONE provider jar
+  (the same "one jar, multiple provider factories" shape Keycloak itself ships — a single provider
+  jar is free to register as many unrelated SPI implementations as it likes via separate
+  META-INF/services files; nothing requires a one-jar-per-SPI split). This mirrors chapter 33's
+  single-project-per-lab pattern rather than splitting into two Maven modules: the two components
+  are functionally independent (a custom Identity Provider for Meridian Trust vs. a custom Required
+  Action for Riverside Health), but they share the exact same dependency coordinates, the exact same
+  target Keycloak version, and the exact same deploy step (drop one jar into /opt/keycloak/providers),
+  so a second module would only have added build-script duplication without buying any real isolation.
+
+  Dependency coordinates were live-verified against the actual jars bundled inside the running
+  quay.io/keycloak/keycloak:26.8.2 image before this POM was written (same method chapter 33 and
+  chapter 39 used: "docker create" + "docker cp" the real jars out, then "javap -c -p" the actual
+  class files — not guessed from older docs). The key finding that makes this POM's dependency list
+  different from chapter 33's: IdentityProvider / IdentityProviderFactory / AbstractIdentityProvider
+  / AbstractIdentityProviderFactory / UserAuthenticationIdentityProvider (identity-broker SPI) AND
+  RequiredActionProvider / RequiredActionFactory / RequiredActionContext (required-action SPI) all
+  live in org.keycloak:keycloak-server-spi-private, NOT in keycloak-server-spi alone (confirmed via
+  "jar tf" + "javap" against the real 26.8.2 jar: the classpath-visible org.keycloak.models.* support
+  types, such as IdentityProviderModel and RequiredActionConfigModel, are in keycloak-server-spi, but
+  the SPI *contracts* for both of this chapter's providers are in keycloak-server-spi-private). This
+  is a different artifact split than chapter 33's UserStorageProvider (server-spi + model-storage),
+  and different again from whatever chapter 39's authenticator/event-listener/protocol-mapper SPIs
+  turned out to need — each SPI family can live in a different jar; always re-verify, never assume
+  the previous chapter's coordinates carry over.
+
+  All four Keycloak/Jakarta dependencies below are scope=provided: Keycloak supplies these classes at
+  runtime from its own /opt/keycloak/lib; bundling them into this provider's jar would duplicate
+  classes already on the server's classpath. Two corrections made against the initial guess while
+  actually compiling this POM: (1) org.keycloak.Config/Config.Scope (needed by the RequiredActionFactory
+  contract's init() method) is NOT in either server-spi artifact — it lives in keycloak-core, confirmed
+  by grepping the real 26.8.2 jar; (2) jakarta.ws.rs-api is NOT pulled in transitively from
+  keycloak-server-spi-private's own POM as first assumed — "mvn clean package" failed with "package
+  jakarta.ws.rs does not exist" until it was added explicitly below, pinned to 3.1.0, the exact version
+  confirmed bundled in the running image (jakarta.ws.rs.jakarta.ws.rs-api-3.1.0.jar under
+  /opt/keycloak/lib/lib/main). No shading or assembly plugin is needed: this jar has no other runtime
+  dependencies at all.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.keycloakmastery.lab40</groupId>
+  <artifactId>custom-idp-and-required-action-spi</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Chapter 40 Custom Identity Provider + Required Action SPI</name>
+  <description>
+    Two independent Keycloak SPI providers in one jar, for chapter 40 of the IAM &amp; Keycloak
+    Mastery course: a custom Identity Provider that brokers a toy stand-in "legacy proprietary SSO"
+    protocol for Meridian Trust (modeling an acquired-institution integration scenario), and a custom
+    Required Action that forces a one-time HIPAA data-handling acknowledgment for Riverside Health.
+  </description>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. -->
+    <keycloak.version>26.8.2</keycloak.version>
+  </properties>
+
+  <dependencies>
+    <!-- org.keycloak.models.IdentityProviderModel, org.keycloak.models.RequiredActionConfigModel,
+         org.keycloak.provider.ProviderConfigProperty, org.keycloak.provider.Provider -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- org.keycloak.broker.provider.{IdentityProvider,IdentityProviderFactory,AbstractIdentityProvider,
+         AbstractIdentityProviderFactory,UserAuthenticationIdentityProvider,AuthenticationRequest,
+         BrokeredIdentityContext,IdentityProviderDataMarshaller,DefaultDataMarshaller}; and
+         org.keycloak.authentication.{RequiredActionProvider,RequiredActionFactory,RequiredActionContext}.
+         Confirmed live, in THIS artifact, for Keycloak 26.8.2 (not keycloak-server-spi alone). -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi-private</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- org.keycloak.Config / org.keycloak.Config.Scope, required by RequiredActionFactory.init().
+         Lives in keycloak-core, not either server-spi artifact — confirmed by grepping the real jar. -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-core</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- jakarta.ws.rs.* (Response, UriInfo, UriBuilder, MultivaluedMap, GET/Path/Context annotations).
+         Version pinned to the exact jar bundled in quay.io/keycloak/keycloak:26.8.2
+         (jakarta.ws.rs.jakarta.ws.rs-api-3.1.0.jar under /opt/keycloak/lib/lib/main). -->
+    <dependency>
+      <groupId>jakarta.ws.rs</groupId>
+      <artifactId>jakarta.ws.rs-api</artifactId>
+      <version>3.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>custom-idp-and-required-action-spi-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -53,8 +53,11 @@ per the drafted briefs, then centrally merged and independently re-verified — 
 for full detail (real bugs found in ch37's live UMA 2.0 lab, OPA/Cedar live-verification findings,
 glossary/quiz merge counts, link checks). **GATE-5 approved 2026-11-11** — confirms the reader can
 secure a real backend/frontend/service account (Part VI) *and* configure fine-grained authorization
-(Part VII). **Part VIII (extending Keycloak, chapters 39-40) is next per the Queue — no gate sits
-immediately after it (the next one, the Final QA gate, is after Part XI).**
+(Part VII). **Part VIII (extending Keycloak, chapters 39-40) is COMPLETE.** Built as two parallel
+subagents per the drafted briefs, each with a real Java-SPI Docker lab (`ch39kc`/18139,
+`ch40kc`/18140), then centrally merged and independently re-verified — see the Done entry below for
+full detail. No gate sits immediately after Part VIII — **Part IX (production, scale & hardening,
+chapters 41-45) is next per the Queue.**
 
 **Shell fixes (2026-11-11, user-requested, off-queue):** the site-wide sidebar nav (`.sidebar`/
 `#sidebar-nav` in `book.js`/`book.css`, used by `roadmap.html`/`glossary.html`/`quizzes.html`/
@@ -130,14 +133,15 @@ visuals/examples where it helps, not just re-chunk existing prose.
 13. ~~Chapters 37-38~~ — done 2026-11-11, see Done below. **GATE-5 approved 2026-11-11** ("approve
     GATE-5", no feedback given).
 
-### Part VIII (extending Keycloak) — **next**
-14. `labs/spi-examples/` (Java SPI source, built alongside chapters 39-40).
-15. Chapters 39-40 — brief to be drafted here when started, per CLAUDE.md §6-7 (custom authenticators,
-    event listeners, protocol mappers in chapter 39; custom identity providers and required actions in
-    chapter 40 — both lab-bearing, real Java SPI compiled and deployed against a real Keycloak).
+### Part VIII (extending Keycloak) — DONE
+14-15. ~~Chapters 39-40~~ — done 2026-11-11, see Done below.
 
-### Part IX (production, scale, hardening)
-16. Chapters 41-45.
+### Part IX (production, scale, hardening) — **next**
+16. Chapters 41-45 — briefs to be drafted here when started, per CLAUDE.md §6-7. Per CLAUDE.md §5: ch41
+    HA/clustering (Infinispan, multi-node, partial lab — single-node sim), ch42 Keycloak on Kubernetes
+    (Operator/Helm, optional kind/minikube lab), ch43 performance tuning/DB considerations (no lab), ch44
+    backup/DR/multi-region (no lab), ch45 security hardening checklist & upgrade/migration strategy (no
+    lab). No gate sits here — the next one is the Final QA gate, after Part XI.
 
 ### Part X (case studies & capstone)
 17. `case-studies.html` index + `case-studies/cs01-cs03` (chapters 46-48's full write-ups).
@@ -468,6 +472,67 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Part VIII complete: chapters 39-40, extending Keycloak via custom SPIs (2026-11-11)
+- Built as two parallel subagents against the full briefs drafted into the Queue above, then centrally
+  merged (`glossary-data.js`, `quiz-data.js`, `nav-data.js`) and independently re-verified by the
+  coordinator (html.parser tag-balance on both files, both mount points + deck markup present, HTTP 200
+  served, zero duplicate glossary terms/quiz ids after merge, all unique deep-dive links across both
+  chapters live-curled to 200, `docker ps -a`/`volume ls`/`network ls` confirmed clean for both isolated
+  stacks, confirmed no stray process left listening on either lab's ports).
+- **Chapter 39 — Writing Custom SPIs** (`chapters/39-custom-spis.html`, 20 slides, 4 diagrams). One Maven
+  project, three independent Java SPI providers (Authenticator, EventListenerProvider, ProtocolMapper),
+  one per case-study org, all actually compiled and deployed into an isolated Docker stack (`ch39kc`,
+  host port 18139). Live-verified that these three SPIs are split across four Keycloak Maven artifacts
+  at `scope=provided` (`keycloak-server-spi`, `keycloak-server-spi-private`, `keycloak-services`,
+  `keycloak-core`) — a different, larger dependency list than chapter 33's two. Real exercises: Meridian
+  Trust's business-hours Authenticator denied/allowed real Direct Grant logins against the *real* server
+  clock (only the authenticator's configured window changed, never the clock); Riverside Health's
+  EventListenerProvider captured a real failed-login line in `docker compose logs`, confirmed
+  realm-scoped (zero matching lines against a different realm); Northwind Apps' ProtocolMapper's
+  `tenant_id` claim decoded out of a real access token, ID token, and `/userinfo` response, confirmed
+  cleanly *absent* (not null) for a user with no attribute set. Five real bugs/gotchas hit and documented
+  honestly: the recurring XML-comment-dash POM trap (chapter 33's bug, hit again independently); a new
+  Docker finding — a rebuilt provider JAR isn't picked up by `docker compose restart`, only by
+  `up -d --force-recreate` (bind mounts don't re-resolve on a plain restart); a real server bug where
+  `context.failure()`'s single-argument overload threw an uncaught exception on the Direct Grant path
+  (fixed with the two-argument overload); a red-herring "Account is not fully set up" error that was
+  actually chapters 22/24's pre-existing Declarative User Profile gap, confirmed by isolating the new
+  authenticator out of the failure; and a `Lightweight access token` client-setting gotcha breaking a
+  `/userinfo` call unrelated to the new mapper's own code. Also cross-confirmed, independently, Keycloak
+  26.8.2's `KC-SERVICES0047` "internal SPI" boot warning against the Server Developer Guide's own prose.
+- **Chapter 40 — Custom Identity Providers & Required Actions** (`chapters/40-custom-idp-and-required-
+  actions.html`, 19 slides, 3 diagrams). Two independent Java SPI providers, isolated as `ch40kc`/18140:
+  a custom Identity Provider broker for Meridian Trust, modeling an invented, explicitly-labeled-as-toy
+  "Cascade SSO" protocol for a fictional acquired bank (no genuinely simple real legacy-SSO protocol was
+  found worth reaching for instead); and a custom Required Action for Riverside Health (a HIPAA
+  acknowledgment step). Live-verified both SPI contracts live in `keycloak-server-spi-private` — the same
+  artifact, despite being unrelated SPI families, and a different split than chapter 33's User Storage
+  SPI needed. Real exercises: a full redirect-out → toy-IdP login → HMAC-signed callback-in → First
+  Broker Login → JIT-provisioned real Keycloak user round trip, run with two different users plus a
+  third re-run confirming repeat-login recognizes the existing federated identity instead of
+  re-provisioning; the HIPAA required action actually intercepted two different clinicians' logins before
+  their sessions completed, with both a real decline (400) and a real accept (cleared `requiredActions`,
+  issued a real auth code) exercised. A genuinely new finding beyond chapter 33's precedent: a custom
+  Required Action needs explicit per-realm registration (`POST .../register-required-action`) before it
+  does anything on that realm, even if a user's `requiredActions` list already names it — the Identity
+  Provider SPI has no equivalent per-realm switch at all. Toy IdP run as a real host Python process
+  (deliberately not containerized — every redirect in the round trip is browser/curl-driven, never
+  server-to-server, so no container-to-host bridging was needed), killed cleanly after the lab.
+- Glossary: merged 29 new terms (15 from ch39's Authenticator/Event-Listener/Protocol-Mapper vocabulary;
+  14 from ch40's Identity-Provider/Required-Action vocabulary) plus extensions to 10 existing terms, two
+  of which (`Required action`, `Unmanaged attribute (Keycloak)`) were requested by both chapters and
+  merged into single combined `chapters`-array additions rather than applied twice. One existing term's
+  prose was tightened during merge: `Authenticator SPI`'s old "forward-pointer to chapters 39-40" was
+  corrected to name only chapter 39, since chapter 40 implements the Identity Provider/Required Action
+  SPIs, not the Authenticator SPI — a real inaccuracy chapter 40's agent flagged rather than silently
+  carried forward. Glossary grew 583 → 612 terms, zero duplicates.
+- Quiz: merged 2 new pools (`custom-spis`: 18 questions; `custom-idp-and-required-actions`: 16
+  questions). One coordinator fix during merge: chapter 39's proposed pool was only 38.9% scenario-typed
+  (7/18), short of the 50% floor — retyped two already case-study-org-framed `bug` questions
+  (`cspi-06`, `cspi-09`) to `scenario` to reach exactly 9/18 = 50%, the same judgment call this project
+  made for chapter 34. Quiz pools grew 39 → 41, questions 656 → 690, zero duplicate ids.
+- `nav-data.js`: `built` flipped `true` for chapters 39 and 40.
 
 ### Part VII complete: chapters 37-38, fine-grained authorization (2026-11-11) — GATE-5 reached
 - Built as two parallel subagents against the full briefs drafted into the Queue above, then centrally

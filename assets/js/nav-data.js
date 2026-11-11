@@ -87,9 +87,9 @@ window.COURSE_NAV = [
   { number: 38, slug: "fine-grained-access-patterns", title: "Fine-Grained Access Patterns", part: "Part VII — Fine-Grained Authorization", minutes: 40, hasLab: false, built: true,
     blurb: "ABAC/ReBAC with Keycloak; a brief OPA/Cedar comparison." },
 
-  { number: 39, slug: "custom-spis", title: "Writing Custom SPIs", part: "Part VIII — Extending Keycloak", minutes: 70, hasLab: true, built: false,
+  { number: 39, slug: "custom-spis", title: "Writing Custom SPIs", part: "Part VIII — Extending Keycloak", minutes: 70, hasLab: true, built: true,
     blurb: "Java hands-on: custom authenticators, event listeners, protocol mappers." },
-  { number: 40, slug: "custom-idp-and-required-actions", title: "Custom Identity Providers & Required Actions", part: "Part VIII — Extending Keycloak", minutes: 60, hasLab: true, built: false,
+  { number: 40, slug: "custom-idp-and-required-actions", title: "Custom Identity Providers & Required Actions", part: "Part VIII — Extending Keycloak", minutes: 60, hasLab: true, built: true,
     blurb: "Advanced SPI: a proprietary SSO integration and a custom required action." },
 
   { number: 41, slug: "high-availability-clustering", title: "High Availability & Clustering", part: "Part IX — Production, Scale & Hardening", minutes: 50, hasLab: true, built: false,

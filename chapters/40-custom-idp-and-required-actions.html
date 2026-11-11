@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Identity Providers &amp; Required Actions — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "custom-idp-and-required-actions";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VIII — Extending Keycloak</span>
+          <span class="badge minutes">~60 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>40. Custom Identity Providers &amp; Required Actions</h1>
+        <p class="lede">Chapter 31 brokered logins through Keycloak's <em>built-in</em> generic OIDC broker —
+        real configuration, zero Java. Chapter 39 (built just before this one) wrote custom SPIs for pieces
+        that run <em>during</em> or <em>alongside</em> a login (an authenticator, an event listener, a protocol
+        mapper). This chapter writes two SPIs Keycloak has no built-in equivalent for at all: a brand-new
+        <strong>Identity Provider</strong> type — a protocol Keycloak was never taught to speak — and a brand-new
+        <strong>Required Action</strong> — a mandatory step enforced only <em>after</em> a login has already
+        succeeded. Both were actually compiled, actually deployed into a running Keycloak 26.8.2, and actually
+        exercised end to end against a real toy external system this lab stood up itself.</p>
+
+        <h2>Why this matters</h2>
+        <p>Two situations a working IAM specialist eventually runs into, neither solved by configuration alone:
+        an acquired company's identity system speaks a protocol nobody packaged a broker for, and a compliance
+        team needs a brand-new mandatory step inserted into login that no built-in required action covers.
+        Both situations are "write real Java against Keycloak's SPI," not "find the right checkbox." This
+        chapter is where that becomes concrete for two SPI families this course hasn't touched yet.</p>
+
+        <p>Sources for this chapter: Keycloak's own <a
+        href="https://www.keycloak.org/docs/latest/server_development/index.html#_implementing_spi">Server
+        Developer Guide — "Implementing an SPI"</a> and <a
+        href="https://www.keycloak.org/docs/latest/server_admin/index.html#_identity_broker_overview">Server
+        Administration Guide — Identity Brokering</a> (version 26.8.2, fetched live for this chapter); the
+        actual class files bundled inside the running <code>quay.io/keycloak/keycloak:26.8.2</code> image,
+        inspected directly with <code>javap</code> (the same live-verification method chapters 33 and 39 used —
+        neither this chapter's Identity Provider SPI contract nor its Required Action SPI contract were assumed
+        to live where an older guide or a different SPI family's chapter might suggest); and this chapter's own
+        lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker Compose stack this chapter
+        owns (<code>labs/custom-idp-and-required-actions/</code>).</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Two separate recalls, one per component. <strong>The custom Identity Provider</strong> is the
+          mechanism underneath chapter 7's IdP/SP/RP trust triangle and chapter 31's hands-on brokering lab.
+          Chapter 31 configured Keycloak's <em>built-in</em> generic OIDC identity-provider type — real
+          configuration against a real external Keycloak realm, but every class involved
+          (<code>OIDCIdentityProvider</code>, and so on) already shipped with the server. This chapter writes a
+          brand-new identity-provider <em>type</em> from scratch — the same role chapter 7 named (an external
+          system that authenticates the user and asserts the result back), speaking a protocol
+          (<strong>"Cascade SSO,"</strong> a toy stand-in invented for this lab) that none of Keycloak's
+          thirteen-plus built-in broker types understand at all.</p>
+          <p><strong>The custom Required Action</strong> is the mechanism underneath chapter 25's required-action
+          configuration. Chapter 25 ordered and configured <em>built-in</em> required actions (Configure OTP,
+          Update Password, Verify Email) inside an authentication flow. This chapter writes a brand-new one:
+          Riverside Health's one-time HIPAA data-handling acknowledgment, discovered and deployed exactly the
+          way chapter 25's built-in actions already work internally, just with code this course wrote instead of
+          code Keycloak ships.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="spi-discovery" data-title="One jar, two unrelated SPIs">
+        <h2>One Maven module, one jar, two unrelated SPI factories</h2>
+        <p>This chapter's lab brief asked for two genuinely independent components — a custom Identity Provider
+        for Meridian Trust, a custom Required Action for Riverside Health — and left it to this chapter's
+        judgment whether that means one Maven module or two. It's <strong>one</strong>, producing one jar,
+        following the exact same "a provider jar can register as many unrelated SPI implementations as it
+        likes" shape Keycloak itself ships (one Keycloak distribution jar routinely contains dozens of unrelated
+        provider factories). The two components here share nothing at runtime — they don't call each other, they
+        don't share config — but they share identical dependency coordinates, the identical target Keycloak
+        version, and the identical "drop one jar into <code>/opt/keycloak/providers</code>" deploy step, so a
+        second Maven module would only have duplicated build-script boilerplate without buying any real
+        isolation. A single jar with two <code>META-INF/services</code> files, one per SPI, is exactly how it
+        was actually built and deployed.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 420" role="img" aria-labelledby="t1 d1">
+            <title id="t1">One provider jar registering two unrelated SPI factories via two META-INF/services files</title>
+            <desc id="d1">A single jar box labeled custom-idp-and-required-action-spi-1.0.0.jar contains two
+            class boxes stacked vertically: MeridianLegacySsoIdentityProviderFactory and
+            RiversideHipaaAcknowledgmentRequiredAction. Each has an arrow down to its own META-INF/services file
+            naming the SPI interface it implements: org.keycloak.broker.provider.IdentityProviderFactory for the
+            first, org.keycloak.authentication.RequiredActionFactory for the second. Both services files feed
+            into one shared box labeled the providers directory, /opt/keycloak/providers, which feeds into one
+            final box: Keycloak server startup, kc.sh build then start, discovers both via the standard Java
+            ServiceLoader mechanism.</desc>
+            <rect x="60" y="20" width="580" height="150" rx="10" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="350" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">custom-idp-and-required-action-spi-1.0.0.jar</text>
+
+            <rect x="90" y="60" width="240" height="44" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="210" y="80" text-anchor="middle" class="diagram-label" font-size="11">MeridianLegacySsoIdentity-</text>
+            <text x="210" y="94" text-anchor="middle" class="diagram-label" font-size="11">ProviderFactory</text>
+
+            <rect x="370" y="60" width="240" height="44" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="490" y="80" text-anchor="middle" class="diagram-label" font-size="11">RiversideHipaaAcknowledgment-</text>
+            <text x="490" y="94" text-anchor="middle" class="diagram-label" font-size="11">RequiredAction</text>
+
+            <text x="350" y="135" text-anchor="middle" class="diagram-label-muted" font-size="11">two unrelated classes, no shared runtime state,</text>
+            <text x="350" y="150" text-anchor="middle" class="diagram-label-muted" font-size="11">packaged in the same jar on purpose (see text)</text>
+
+            <line x1="210" y1="104" x2="210" y2="205" class="diagram-stroke"></line>
+            <line x1="490" y1="104" x2="490" y2="205" class="diagram-stroke"></line>
+
+            <rect x="90" y="205" width="240" height="56" rx="6" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="210" y="226" text-anchor="middle" class="diagram-label" font-size="10">META-INF/services/org.keycloak.</text>
+            <text x="210" y="240" text-anchor="middle" class="diagram-label" font-size="10">broker.provider.</text>
+            <text x="210" y="254" text-anchor="middle" class="diagram-label" font-size="10">IdentityProviderFactory</text>
+
+            <rect x="370" y="205" width="240" height="56" rx="6" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="490" y="226" text-anchor="middle" class="diagram-label" font-size="10">META-INF/services/org.keycloak.</text>
+            <text x="490" y="240" text-anchor="middle" class="diagram-label" font-size="10">authentication.</text>
+            <text x="490" y="254" text-anchor="middle" class="diagram-label" font-size="10">RequiredActionFactory</text>
+
+            <line x1="210" y1="261" x2="330" y2="320" class="diagram-stroke"></line>
+            <line x1="490" y1="261" x2="370" y2="320" class="diagram-stroke"></line>
+
+            <rect x="220" y="320" width="260" height="46" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="350" y="347" text-anchor="middle" class="diagram-label" font-size="12">/opt/keycloak/providers</text>
+
+            <line x1="350" y1="366" x2="350" y2="390" class="diagram-stroke" marker-end="url(#arrow40a)"></line>
+            <defs>
+              <marker id="arrow40a" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <text x="350" y="408" text-anchor="middle" class="diagram-label-muted" font-size="11">Keycloak startup: kc.sh build, then start/start-dev</text>
+          </svg>
+          <figcaption>Figure 40.1 — One jar, two unrelated SPI factories, discovered independently via two
+          separate <code>META-INF/services</code> files — the same Factory-discovery mechanism chapters 33 and
+          39 already used for different SPI families.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="live-verify" data-title="Live-verifying the two SPI contracts">
+        <h2>Live-verifying both SPI contracts against the real 26.8.2 jars</h2>
+        <p>Neither chapter 33's User Storage SPI coordinates nor chapter 39's authenticator/event-listener/
+        protocol-mapper coordinates were assumed to carry over. The same method both chapters used — extract the
+        real jars out of a running <code>quay.io/keycloak/keycloak:26.8.2</code> container with
+        <code>docker create</code> + <code>docker cp</code>, then inspect the actual class files with
+        <code>javap</code> — turned up a genuinely different artifact split for this chapter's two SPIs:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Where each class this chapter needs actually lives, confirmed by <code>javap -p</code> against the real 26.8.2 jars</caption>
+            <thead><tr><th>Class / interface</th><th>Confirmed artifact</th></tr></thead>
+            <tbody>
+              <tr><td><code>IdentityProviderModel</code>, <code>ProviderConfigProperty</code></td><td><code>keycloak-server-spi</code></td></tr>
+              <tr><td><code>IdentityProvider</code>, <code>IdentityProviderFactory</code>, <code>AbstractIdentityProvider</code>, <code>AbstractIdentityProviderFactory</code>, <code>UserAuthenticationIdentityProvider</code>, <code>BrokeredIdentityContext</code></td><td><code>keycloak-server-spi-<strong>private</strong></code></td></tr>
+              <tr><td><code>RequiredActionProvider</code>, <code>RequiredActionFactory</code>, <code>RequiredActionContext</code></td><td><code>keycloak-server-spi-<strong>private</strong></code> (same artifact, different SPI family)</td></tr>
+              <tr><td><code>org.keycloak.Config</code> / <code>Config.Scope</code> (needed by <code>RequiredActionFactory.init()</code>)</td><td><code>keycloak-core</code> — neither server-spi artifact</td></tr>
+              <tr><td><code>jakarta.ws.rs.*</code> (<code>Response</code>, <code>UriInfo</code>, <code>UriBuilder</code>, <code>MultivaluedMap</code>)</td><td><code>jakarta.ws.rs-api:3.1.0</code> — pinned to the exact version bundled in the image, <strong>not</strong> pulled in transitively (confirmed the hard way, see "common mistakes")</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>One finding worth flagging on its own: <code>AbstractOAuth2IdentityProvider</code> — the base class
+        every one of Keycloak's built-in OAuth2/OIDC/social brokers extends — lives in
+        <code>keycloak-services</code>, a much heavier artifact than either server-spi jar, pulling in Keycloak's
+        whole REST layer as a transitive dependency. This chapter's provider deliberately does
+        <strong>not</strong> extend it: Cascade SSO's toy protocol isn't OAuth2-shaped, and extending
+        <code>AbstractIdentityProvider</code> from <code>keycloak-server-spi-private</code> directly keeps this
+        lab's dependency footprint to exactly two Keycloak jars plus <code>keycloak-core</code> plus the
+        JAX-RS API — a real, deliberate design choice worth noticing before reflexively reaching for whatever
+        base class a built-in example happens to use.</p>
+      </section>
+
+      <section class="slide" data-slide="idp-contract" data-title="The custom Identity Provider's contract">
+        <h2>What a custom Identity Provider actually has to implement</h2>
+        <p>Decompiling <code>AbstractIdentityProvider</code>'s real bytecode (not just its method signatures)
+        showed exactly which methods it leaves as genuine no-ops a subclass must override, versus which ones
+        already have a sane default:</p>
+        <ul>
+          <li><code>performLogin(AuthenticationRequest)</code> — <strong>returns <code>null</code> by default.</strong>
+          Must be overridden: this is the "redirect-out" half. It receives the exact
+          broker-endpoint <code>redirect_uri</code> Keycloak has already computed
+          (<code>/realms/{realm}/broker/{alias}/endpoint</code>, chapter 31's fixed convention) and an opaque,
+          Keycloak-minted <code>state</code> value that must be carried through unchanged.</li>
+          <li><code>callback(RealmModel, AuthenticationCallback, EventBuilder)</code> — <strong>also returns
+          <code>null</code> by default.</strong> Must be overridden to return a small JAX-RS sub-resource object
+          (a "resource locator" pattern) — the "callback-in" half, dispatched to whenever a request lands on
+          that same broker-endpoint URL.</li>
+          <li><code>getMarshaller()</code> — already has a sane default (<code>DefaultDataMarshaller</code>); no
+          override needed unless the provider stores structured token data.</li>
+          <li><code>retrieveToken(...)</code> (two overloads) — <strong>fully abstract</strong>, not implemented
+          at all by <code>AbstractIdentityProvider</code>. A token-less protocol like Cascade SSO has nothing
+          real to return here; this lab's provider implements both with a trivial, honestly-labeled stub rather
+          than pretending there's a token to retrieve.</li>
+        </ul>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study: Meridian Trust acquires Cascade Savings Bank</div>
+          <p>Meridian Trust (chapter 2's running bank) has just acquired Cascade Savings Bank, a smaller
+          regional institution. Cascade's employees still sign in through Cascade's own 20-year-old proprietary
+          SSO system — a real, common post-acquisition IAM situation (chapters 9 and 11 already flagged
+          "acquired-and-unaudited" systems as a genuine risk category). Migrating every Cascade employee into
+          Meridian Trust's Keycloak realm on day one isn't realistic; brokering to Cascade's existing system
+          while a longer migration happens in the background is. Keycloak ships no broker for "Cascade SSO"
+          because it's not a real, named protocol — which is exactly the situation that calls for this chapter's
+          SPI rather than chapter 31's configuration-only path.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="toy-protocol" data-title="The toy Cascade SSO protocol">
+        <h2>"Cascade SSO": a teaching stand-in, not a real product</h2>
+        <p><strong>Cascade SSO is invented for this chapter.</strong> It is not a real named vendor system — no
+        genuinely simple real legacy-SSO protocol was found worth reaching for instead of a purpose-built
+        teaching stand-in, so this lab says so plainly rather than pretending otherwise. The protocol is
+        deliberately minimal: a redirect-out, a login the toy IdP handles entirely itself, and a signed
+        redirect-in. Four fields and one shared secret are the whole trust mechanism:</p>
+        <ul>
+          <li><strong>Redirect out</strong> — Keycloak's <code>performLogin()</code> builds
+          <code>GET {legacyBaseUrl}/legacy-sso/authorize?client_id=...&amp;redirect_uri={broker endpoint}&amp;state={state}</code>
+          and 303s the browser there. No network call from the Keycloak server itself — only the browser ever
+          talks to the toy IdP directly.</li>
+          <li><strong>Authentication happens entirely at the toy IdP</strong> — its own login form, its own
+          in-memory user table (standing in for Cascade's real, un-migrated legacy credential store). Keycloak
+          never sees the Cascade password, the same trust-boundary property every real broker (SAML, OIDC,
+          social) also has.</li>
+          <li><strong>Redirect in, signed</strong> — on success, the toy IdP 302s the browser to the exact
+          <code>redirect_uri</code> it was given, appending <code>legacy_user</code>, <code>legacy_email</code>,
+          <code>legacy_first_name</code>, <code>legacy_last_name</code>, the same <code>state</code> unchanged, a
+          unix-seconds <code>ts</code>, and <code>sig</code> — an HMAC-SHA256 over
+          <code>"{legacy_user}|{legacy_email}|{state}|{ts}"</code>, keyed with a secret shared out-of-band with
+          this provider's own configuration.</li>
+          <li><strong>Verification, not trust-by-default</strong> — Keycloak's <code>Endpoint.callback()</code>
+          recomputes that same HMAC and compares it with a constant-time check
+          (<code>MessageDigest.isEqual</code>, not <code>String.equals</code>, to avoid a timing side-channel),
+          rejects a <code>ts</code> older than 300 seconds as a stale/replayed callback, and only then resolves
+          the real Keycloak authentication session behind <code>state</code> via
+          <code>callback.getAndVerifyAuthenticationSession(state)</code>.</li>
+        </ul>
+        <p>Without that signature, anything that can guess the broker-endpoint URL shape could forge a
+        "successful Cascade login" by crafting the right query string directly — the whole point of brokering
+        trust (chapter 7) is that the relying side only accepts an assertion it can <em>verify</em> came from the
+        trusted IdP, never merely one that looks right.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 460" role="img" aria-labelledby="t2 d2">
+            <title id="t2">The redirect-out/callback-in sequence between the browser, Keycloak, and the toy Cascade SSO legacy IdP</title>
+            <desc id="d2">A sequence diagram with three lifelines: Browser (curl) on the left, Keycloak broker
+            endpoint for alias cascade-legacy-sso in the middle, and the toy legacy IdP on the right, listening
+            on port 18141. Step 1: Browser sends GET authorize with kc_idp_hint=cascade-legacy-sso to Keycloak.
+            Step 2: Keycloak's performLogin redirects the browser on to the toy IdP's own authorize endpoint,
+            carrying the broker endpoint URL as redirect_uri and an opaque state value. Step 3: the browser
+            submits real Cascade credentials directly to the toy IdP's login form. Step 4: the toy IdP redirects
+            the browser back to Keycloak's broker endpoint, appending legacy_user, legacy_email, the same state,
+            a timestamp, and an HMAC signature. Step 5: Keycloak's Endpoint.callback verifies the signature,
+            timestamp, and state, and builds a BrokeredIdentityContext. Step 6: Keycloak redirects the browser on
+            to the original application with a real authorization code, after first-broker-login JIT-provisions
+            a new local user.</desc>
+            <rect x="40" y="15" width="140" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="110" y="40" text-anchor="middle" class="diagram-label" font-size="12">Browser (curl)</text>
+            <line x1="110" y1="55" x2="110" y2="430" stroke-dasharray="4 4" class="diagram-stroke"></line>
+
+            <rect x="330" y="15" width="180" height="40" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="420" y="34" text-anchor="middle" class="diagram-label" font-size="11">Keycloak broker endpoint</text>
+            <text x="420" y="48" text-anchor="middle" class="diagram-label" font-size="10">(alias: cascade-legacy-sso)</text>
+            <line x1="420" y1="55" x2="420" y2="430" stroke-dasharray="4 4" class="diagram-stroke"></line>
+
+            <rect x="600" y="15" width="150" height="40" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="675" y="34" text-anchor="middle" class="diagram-label" font-size="11">Toy legacy IdP</text>
+            <text x="675" y="48" text-anchor="middle" class="diagram-label" font-size="10">(toy, :18141)</text>
+            <line x1="675" y1="55" x2="675" y2="430" stroke-dasharray="4 4" class="diagram-stroke"></line>
+
+            <line x1="110" y1="90" x2="418" y2="90" class="diagram-stroke" marker-end="url(#arrow40b)"></line>
+            <text x="265" y="82" text-anchor="middle" class="diagram-label-muted" font-size="10">1. GET /auth?kc_idp_hint=cascade-legacy-sso</text>
+
+            <line x1="420" y1="140" x2="677" y2="140" class="diagram-stroke" marker-end="url(#arrow40b)"></line>
+            <text x="548" y="124" text-anchor="middle" class="diagram-label-muted" font-size="10">2. performLogin(): 303 (via browser) to</text>
+            <text x="548" y="137" text-anchor="middle" class="diagram-label-muted" font-size="10">/legacy-sso/authorize?redirect_uri=&amp;state=</text>
+
+            <line x1="110" y1="200" x2="673" y2="200" class="diagram-stroke" marker-end="url(#arrow40b)"></line>
+            <text x="390" y="184" text-anchor="middle" class="diagram-label-muted" font-size="10">3. Browser submits real Cascade username/password</text>
+            <text x="390" y="197" text-anchor="middle" class="diagram-label-muted" font-size="10">straight to the toy IdP's own login form</text>
+
+            <line x1="675" y1="250" x2="422" y2="250" class="diagram-stroke" marker-end="url(#arrow40b)"></line>
+            <text x="548" y="234" text-anchor="middle" class="diagram-label-muted" font-size="10">4. 302 (via browser): legacy_user, legacy_email,</text>
+            <text x="548" y="247" text-anchor="middle" class="diagram-label-muted" font-size="10">state, ts, sig = HMAC-SHA256(secret, ...)</text>
+
+            <rect x="365" y="285" width="110" height="46" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="420" y="304" text-anchor="middle" class="diagram-label" font-size="10">Endpoint.callback():</text>
+            <text x="420" y="318" text-anchor="middle" class="diagram-label" font-size="10">verify sig+ts+state</text>
+
+            <line x1="420" y1="350" x2="112" y2="350" class="diagram-stroke" marker-end="url(#arrow40b)"></line>
+            <text x="265" y="334" text-anchor="middle" class="diagram-label-muted" font-size="10">5. callback.authenticated() -&gt; First Broker Login</text>
+            <text x="265" y="347" text-anchor="middle" class="diagram-label-muted" font-size="10">JIT-provisions user -&gt; 302 to app with real code</text>
+
+            <text x="420" y="410" text-anchor="middle" class="diagram-label-muted" font-size="11">All six steps run exactly this way in the lab's recorded transcript — see the lab slides.</text>
+
+            <defs>
+              <marker id="arrow40b" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 40.2 — The full redirect-out/callback-in sequence between the browser, Keycloak's
+          broker endpoint, and the toy Cascade SSO legacy IdP, exactly as this chapter's lab ran it.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="lab-idp-setup" data-title="Lab: standing up the IdP side">
+        <h2>Lab: building, deploying, and registering the custom Identity Provider</h2>
+        <p>Isolated stack, project name <code>ch40kc</code>, host port <strong>18140</strong> — never the shared
+        <code>labs/docker/docker-compose.yml</code>, and distinct from chapter 33's <code>ch33kc</code>/18133
+        and chapter 39's <code>ch39kc</code>/18139.</p>
+        <ol class="lab-steps">
+          <li><p><strong>Build the jar and bring the stack up:</strong></p>
+<pre><code>cd labs/custom-idp-and-required-actions
+mvn clean package
+docker compose -p ch40kc up -d</code></pre>
+          <p>Real output, both providers discovered at build time:</p>
+<pre><code>WARN  [org.keycloak.services] (build-11) KC-SERVICES0047: riverside-hipaa-ack
+  (com.riversidehealth.keycloak.hipaaconsent.RiversideHipaaAcknowledgmentRequiredAction)
+  is implementing the internal SPI required-action. This SPI is internal and may change without notice
+WARN  [org.keycloak.services] (build-11) KC-SERVICES0047: meridian-legacy-sso
+  (com.meridiantrust.keycloak.legacysso.MeridianLegacySsoIdentityProviderFactory)
+  is implementing the internal SPI identity_provider. This SPI is internal and may change without notice</code></pre>
+          <p>Both warnings are expected and harmless — the same "internal SPI" notice chapters 33 and 39 saw for
+          their own custom providers. Keycloak genuinely reserves the right to change these interfaces across
+          versions; this lab pins an exact version (26.8.2) for exactly that reason.</p></li>
+          <li><p><strong>Register the Identity Provider on a fresh realm</strong> via the Admin REST API
+          (<code>providerId: "meridian-legacy-sso"</code> — this chapter's factory id, shown alongside every
+          built-in broker type in the realm's own "Add provider" list once deployed):</p>
+<pre><code>curl -X POST "http://localhost:18140/admin/realms/ch40-meridian-trust/identity-provider/instances" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "alias": "cascade-legacy-sso",
+    "displayName": "Cascade Savings Bank (legacy SSO)",
+    "providerId": "meridian-legacy-sso",
+    "enabled": true,
+    "trustEmail": true,
+    "firstBrokerLoginFlowAlias": "first broker login",
+    "config": {
+      "legacyBaseUrl": "http://localhost:18141",
+      "legacyClientId": "meridian-trust-broker",
+      "sharedSecret": "ch40-shared-secret-abc123"
+    }
+  }'
+# -&gt; 201</code></pre></li>
+          <li><p><strong>Start the toy Cascade SSO server as a plain host process</strong> — deliberately
+          <em>not</em> in Docker:</p>
+<pre><code>python3 toy-legacy-idp/legacy_sso_server.py --port 18141 --secret ch40-shared-secret-abc123
+# [toy-legacy-idp] Cascade SSO (toy) listening on http://0.0.0.0:18141</code></pre>
+          <p>Every redirect in this round trip is followed by the <strong>browser</strong> (curl, standing in for
+          one), never by the Keycloak container reaching the toy IdP server-to-server —
+          <code>performLogin()</code> only builds a <code>Location</code> header string, making no outbound call
+          itself. So the toy IdP only ever needs to be reachable from whatever machine drives the curl commands,
+          and no <code>extra_hosts</code>/<code>host.docker.internal</code> container-to-host bridging is needed
+          at all, unlike a setup where the Keycloak container itself needed to call out.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-idp-roundtrip" data-title="Lab: the real round trip">
+        <h2>Lab: the real redirect-out/callback-in round trip, headless</h2>
+        <p>Chapter 31's lab followed redirects by hand with a cookie jar instead of a real browser; this lab
+        does the same. <code>kc_idp_hint</code> skips the login picker and goes straight to Cascade:</p>
+<pre><code>curl -s -D - -o /dev/null -c cookies.txt \
+  "http://localhost:18140/realms/ch40-meridian-trust/protocol/openid-connect/auth?\
+client_id=meridian-dashboard&amp;redirect_uri=http%3A%2F%2Flocalhost%3A18140%2Fcallback&amp;\
+response_type=code&amp;scope=openid&amp;state=readerstate1&amp;kc_idp_hint=cascade-legacy-sso"
+
+HTTP/1.1 303 See Other
+Location: http://localhost:18140/realms/ch40-meridian-trust/broker/cascade-legacy-sso/login?...</code></pre>
+          <p>Following that, Keycloak's own <code>performLogin()</code> call produced exactly the redirect this
+          chapter's provider was written to build:</p>
+<pre><code>HTTP/1.1 303 See Other
+Location: http://localhost:18141/legacy-sso/authorize?client_id=meridian-trust-broker&amp;\
+redirect_uri=http%3A%2F%2Flocalhost%3A18140%2Frealms%2Fch40-meridian-trust%2Fbroker%2F\
+cascade-legacy-sso%2Fendpoint&amp;state=gIU0GzuZV9ECi01xWnrXmwutOBNs4OoFbJeGYxL-lqY.1oRxQlXzxfw...</code></pre>
+          <p>The toy IdP's real login form (fetched live, not narrated) renders exactly those hidden fields back
+          to the reader, and a real <code>POST</code> of <code>jmartinez</code> / <code>CascadeP@ss1</code>
+          produces a real signed redirect:</p>
+<pre><code>HTTP/1.0 302 Found
+Location: http://localhost:18140/realms/ch40-meridian-trust/broker/cascade-legacy-sso/endpoint?\
+legacy_user=jmartinez&amp;legacy_email=j.martinez%40cascadesavings.example&amp;...&amp;\
+ts=1794394492&amp;sig=bba09363f34e7df00f2fcb70895ce9df75ad0f61958d3a4b4451ffd3019f7265</code></pre>
+          <p>Following <em>that</em> Location is where this chapter's <code>Endpoint.callback()</code> actually
+          ran — verified the signature, accepted the timestamp, resolved the real authentication session, and
+          handed Keycloak a real <code>BrokeredIdentityContext</code>. The response proves it ran Keycloak's own
+          First Broker Login logic next, not a shortcut:</p>
+<pre><code>HTTP/1.1 302 Found
+Location: http://localhost:18140/realms/ch40-meridian-trust/login-actions/first-broker-login?...</code></pre>
+          <p>Two more redirects later (First Broker Login's own "no conflicting local account, trustEmail=true"
+          branch — chapter 31's exact decision tree, Figure 31.3, taken for real here against a toy IdP instead
+          of a real Keycloak realm) lands back at the application's own <code>redirect_uri</code> with a genuine
+          authorization code, exchanged for genuine tokens:</p>
+<pre><code>curl -X POST http://localhost:18140/realms/ch40-meridian-trust/protocol/openid-connect/token \
+  --data-urlencode "grant_type=authorization_code" --data-urlencode "client_id=meridian-dashboard" \
+  --data-urlencode "code=$CODE" --data-urlencode "redirect_uri=http://localhost:18140/callback"
+# -&gt; 200, decoded access_token:
+{
+  "preferred_username": "jmartinez",
+  "email": "j.martinez@cascadesavings.example",
+  "given_name": "Javier",
+  "family_name": "Martinez"
+}</code></pre>
+      </section>
+
+      <section class="slide" data-slide="lab-idp-verify" data-title="Lab: JIT provisioning, confirmed">
+        <h2>Lab: confirming JIT provisioning and provenance</h2>
+        <p>Chapter 31's federated-identity record exists here too — confirmed live, this time against a toy
+        legacy IdP instead of a real Keycloak realm:</p>
+<pre><code>curl "http://localhost:18140/admin/realms/ch40-meridian-trust/users/$USER_ID/federated-identity" \
+  -H "Authorization: Bearer $TOKEN"
+# -&gt; [{"identityProvider":"cascade-legacy-sso","userId":"jmartinez","userName":"jmartinez"}]</code></pre>
+        <p>This provider's own <code>importNewUser()</code> override also stamps provenance onto the new local
+        user — <code>user.setSingleAttribute("legacySource", "cascade-sso")</code> — so an auditor years later
+        can tell this specific account's identity originated from the acquired Cascade system rather than a
+        native Meridian Trust signup (chapter 11's compliance concerns, made concrete). Whether that attribute
+        actually survives on the user record turned out to depend on a realm setting this chapter's "common
+        mistakes" section covers in full — the short version: it silently didn't, until the realm's user profile
+        had <code>unmanagedAttributePolicy</code> set to <code>ENABLED</code>, after which a second Cascade user
+        (<code>rwong</code>) ran through the identical round trip and <em>did</em> keep the attribute, confirmed
+        by a direct <code>GET</code> of both users side by side.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a custom Identity Provider's <code>importNewUser()</code>/<code>updateBrokeredUser()</code>
+          override sets a custom attribute with no error, but a later <code>GET</code> of that user shows no
+          <code>attributes</code> field at all, the cause is almost always the realm's Declarative User Profile
+          <code>unmanagedAttributePolicy</code> defaulting to disabled (chapter 33 hit the exact same thing from
+          a completely different SPI family) — not a bug in the attribute-setting call itself.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="ra-contract" data-title="The custom Required Action's contract">
+        <h2>What a custom Required Action actually has to implement</h2>
+        <p>Decompiling Keycloak's own built-in <code>TermsAndConditions</code> required action (a genuinely
+        close precedent — "accept a notice before continuing" is exactly this chapter's HIPAA acknowledgment's
+        shape) gave this chapter its reference implementation pattern, confirmed from real bytecode rather than
+        guessed:</p>
+        <ul>
+          <li>One class can implement <strong>both</strong> <code>RequiredActionProvider</code> (the
+          per-invocation behavior) and <code>RequiredActionFactory</code> (the registration metadata) —
+          Keycloak's own built-in action does exactly this, with <code>create(session)</code> simply returning
+          <code>this</code> for a stateless provider.</li>
+          <li><code>requiredActionChallenge(context)</code> renders the page: <code>context.form()</code> returns
+          a <code>LoginFormsProvider</code>; <code>.setAttribute("user", ...)</code> then
+          <code>.createForm("riverside-hipaa-consent.ftl")</code> builds the actual HTTP response, handed to
+          <code>context.challenge(...)</code>.</li>
+          <li><code>processAction(context)</code> reads the submitted form
+          (<code>context.getHttpRequest().getDecodedFormParameters()</code>): a <code>cancel</code> field present
+          means decline — call <code>context.failure(...)</code>, which hard-fails the whole login attempt;
+          otherwise call <code>context.success()</code>, which lets the queued session proceed.</li>
+        </ul>
+        <p>The HTML page itself is deployed as a <strong>theme resource</strong>, not a whole custom theme:
+        Keycloak's built-in "classpath" Theme Resource Provider (confirmed live via <code>javap</code> against
+        the real <code>ClasspathThemeResourceProviderFactory</code> class) automatically scans every provider
+        jar for a <code>theme-resources/templates/</code> directory and merges whatever it finds into whichever
+        theme is currently active. One FreeMarker file
+        (<code>theme-resources/templates/riverside-hipaa-consent.ftl</code>), modeled structurally on Keycloak's
+        own built-in <code>terms.ftl</code> (decompiled/extracted from the running image's theme jar as a
+        structural reference only — the HIPAA-specific text is original to this course), was enough; no
+        <code>META-INF/services</code> registration or whole-theme fork was needed for the page itself.</p>
+      </section>
+
+      <section class="slide" data-slide="authenticator-vs-required-action" data-title="During vs. after authentication">
+        <h2>Required action vs. authenticator: during vs. after</h2>
+        <p>Chapter 39's custom authenticator and this chapter's custom required action can both block a login
+        from completing — which is exactly why beginners conflate them, the same confusion chapter 25's
+        "common mistakes" section already flagged for the <em>built-in</em> version of each. The distinction
+        holds for custom ones too, and matters more here because both are now code this course wrote, not
+        Keycloak's own:</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 780 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Where a custom authenticator and a custom required action each sit on the login timeline</title>
+            <desc id="d3">A horizontal timeline from left to right: Login request, then a zone labeled DURING
+            authentication containing chapter 39's custom authenticator (can refuse authentication outright),
+            then a milestone labeled Credentials verified, then a second zone labeled AFTER authentication,
+            before session, containing this chapter's custom required action alongside chapter 25's built-in
+            ones (can only insert a mandatory extra step, never un-verify a correct credential), then a final
+            milestone labeled Session issued, tokens minted.</desc>
+            <line x1="40" y1="130" x2="740" y2="130" class="diagram-stroke"></line>
+
+            <circle cx="60" cy="130" r="7" class="diagram-fill-accent-strong diagram-stroke"></circle>
+            <text x="60" y="160" text-anchor="middle" class="diagram-label-muted" font-size="11">Login request</text>
+
+            <rect x="130" y="60" width="220" height="130" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="240" y="80" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">DURING authentication</text>
+            <rect x="150" y="95" width="180" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="240" y="118" text-anchor="middle" class="diagram-label" font-size="10">Ch. 39 custom</text>
+            <text x="240" y="132" text-anchor="middle" class="diagram-label" font-size="10">authenticator</text>
+            <text x="240" y="170" text-anchor="middle" class="diagram-label-muted" font-size="9">can refuse auth outright</text>
+
+            <circle cx="400" cy="130" r="7" class="diagram-fill-accent-strong diagram-stroke"></circle>
+            <text x="400" y="30" text-anchor="middle" class="diagram-label-muted" font-size="10">Credentials</text>
+            <text x="400" y="43" text-anchor="middle" class="diagram-label-muted" font-size="10">verified</text>
+
+            <rect x="450" y="60" width="260" height="130" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="580" y="80" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">AFTER authentication, before session</text>
+            <rect x="470" y="95" width="220" height="60" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="580" y="112" text-anchor="middle" class="diagram-label" font-size="10">Ch. 40 custom required action</text>
+            <text x="580" y="126" text-anchor="middle" class="diagram-label" font-size="10">(HIPAA ack) + ch. 25's built-in ones</text>
+            <text x="580" y="140" text-anchor="middle" class="diagram-label" font-size="10">(Configure OTP, Update Password)</text>
+            <text x="580" y="170" text-anchor="middle" class="diagram-label-muted" font-size="9">can only add a step, never un-verify a credential</text>
+
+            <circle cx="740" cy="130" r="7" class="diagram-fill-accent-strong diagram-stroke"></circle>
+            <text x="700" y="160" text-anchor="middle" class="diagram-label-muted" font-size="11">Session issued,</text>
+            <text x="700" y="173" text-anchor="middle" class="diagram-label-muted" font-size="11">tokens minted</text>
+          </svg>
+          <figcaption>Figure 40.3 — A custom authenticator (chapter 39) runs during the credential check and can
+          refuse authentication outright; a custom required action (this chapter) runs only after credentials
+          already verified, and can only add a mandatory step, never cause a correct credential to fail.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study: Riverside Health's HIPAA acknowledgment</div>
+          <p>Riverside Health (chapter 2's running hospital network) needs every clinician to re-acknowledge its
+          HIPAA patient-data-handling notice at least once before they can proceed past login — a compliance
+          control, not an authentication control. A custom authenticator would be the wrong tool even though it
+          could technically block the same login: it runs <em>during</em> credential verification, which is the
+          wrong conceptual place for "did you acknowledge a policy," and it would wrongly suggest the
+          acknowledgment is part of proving who the clinician is rather than a separate, after-the-fact gate.
+          A required action is the right shape precisely because it models "login succeeded, but one more
+          mandatory step stands between that and a usable session" — exactly Riverside's real requirement.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-ra-setup" data-title="Lab: registering the required action — a real gotcha">
+        <h2>Lab: deploying the Required Action — and a genuinely new gotcha</h2>
+        <p>The Identity Provider SPI and the Required Action SPI differ in one important operational way, found
+        only by actually trying it: a freshly discovered custom Identity Provider shows up immediately in a
+        realm's "Add provider" picker once the jar is deployed. A freshly discovered custom Required Action does
+        <strong>not</strong> automatically turn on anywhere — confirmed live:</p>
+<pre><code>curl "http://localhost:18140/admin/realms/ch40-riverside-health/authentication/required-actions" \
+  -H "Authorization: Bearer $TOKEN" | grep -i riverside
+# (no output at all -- not in the list, even though the jar is deployed and the realm exists)
+
+curl "http://localhost:18140/admin/realms/ch40-riverside-health/authentication/unregistered-required-actions" \
+  -H "Authorization: Bearer $TOKEN"
+# -&gt; [{"providerId":"riverside-hipaa-ack","name":"Riverside Health – HIPAA Data Handling Acknowledgment"}]</code></pre>
+        <p>It sits in that "unregistered" list on <em>every</em> realm until explicitly registered, per realm,
+        with its own endpoint:</p>
+<pre><code>curl -X POST "http://localhost:18140/admin/realms/ch40-riverside-health/authentication/register-required-action" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"providerId":"riverside-hipaa-ack","name":"Riverside Health – HIPAA Data Handling Acknowledgment"}'
+# -&gt; 204, and the realm's required-actions list now shows it, enabled, priority 1001</code></pre>
+        <p>Only <em>then</em> does assigning it to a specific user (chapter 22's exact per-user pattern for
+        <code>priya.patel</code>'s <code>CONFIGURE_TOTP</code>) actually do anything at login time:</p>
+<pre><code>curl -X PUT "http://localhost:18140/admin/realms/ch40-riverside-health/users/$USER_ID" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"requiredActions": ["riverside-hipaa-ack"]}'
+# -&gt; 204</code></pre>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a user's <code>requiredActions</code> list includes a custom action's provider id but login
+          proceeds straight through as if it weren't there at all, the cause is very likely that the action was
+          never <code>register-required-action</code>'d on <em>that specific realm</em> — a per-realm
+          enable/disable switch the Identity Provider SPI simply doesn't have an equivalent of, which is exactly
+          why this surprised the reader of this lab the first time.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="lab-ra-trigger" data-title="Lab: the login actually blocks">
+        <h2>Lab: a real session genuinely blocked, then genuinely released</h2>
+        <p>With the action registered and assigned to Riverside clinician <code>dr.chen</code>, a completely
+        correct password does <strong>not</strong> reach the application:</p>
+<pre><code>curl -X POST ".../login-actions/authenticate?..." --data-urlencode "username=dr.chen" \
+  --data-urlencode "password=RiversideP@ss1"
+HTTP/1.1 302 Found
+Location: http://localhost:18140/realms/ch40-riverside-health/login-actions/required-action?\
+execution=riverside-hipaa-ack&amp;...</code></pre>
+        <p>Fetching that URL renders this provider's real FreeMarker page, with the clinician's own name pulled
+        from the <code>user</code> attribute this chapter's <code>requiredActionChallenge()</code> set:</p>
+<pre><code>&lt;p&gt;Hello Alicia, before you can continue, Riverside Health requires every clinician
+to acknowledge the following for this login session: ...&lt;/p&gt;
+&lt;form ... &gt;
+  &lt;input name="submitAction" id="kc-accept" type="submit" value="I Acknowledge"/&gt;
+  &lt;input name="cancel" id="kc-decline" type="submit" value="Decline"/&gt;
+&lt;/form&gt;</code></pre>
+        <p>Submitting <strong>decline</strong> hard-fails the whole attempt (a real <code>400</code>, a real
+        <code>data-page-id="login-error"</code> error page — login is genuinely over, not merely paused).
+        Submitting <strong>accept</strong> on a fresh attempt instead redirects straight on to the application
+        with a real authorization code, and a follow-up <code>GET</code> of the user confirms
+        <code>requiredActions</code> is now empty — Keycloak clears a satisfied one-time required action from
+        the user record automatically, exactly as chapter 25 described for the built-in ones.</p>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Re-run the decline path yourself and read the resulting error page's text closely — it says
+          something generic ("An error occurred, please login again through your application"), not anything
+          HIPAA-specific, even though <code>processAction()</code> calls
+          <code>context.failure("riversideHipaaAckDeclined")</code>. Why doesn't that string show up on the
+          page? (The common-mistakes slide answers it directly — think it through first.)</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul>
+          <li>If <code>mvn clean package</code> fails with <code>Non-parseable POM ... in comment after two
+          dashes (--)</code>, the cause is a bare <code>--</code> inside an XML comment — the exact same trap
+          chapter 33 hit, hit again here while writing this POM's own explanatory comments. Replace with an
+          em dash or split the comment.</li>
+          <li>If compilation fails with <code>package jakarta.ws.rs does not exist</code> despite depending on
+          <code>keycloak-server-spi-private</code>, the cause is assuming Maven pulls it in transitively — it
+          doesn't, here; it needs its own explicit <code>provided</code>-scope dependency, pinned to the exact
+          version the target Keycloak image bundles.</li>
+          <li>If compilation fails on <code>org.keycloak.Config</code> while implementing
+          <code>RequiredActionFactory.init()</code>, the cause is reaching for either server-spi artifact — that
+          class lives in <code>keycloak-core</code> instead.</li>
+          <li>If a custom Identity Provider's JIT-provisioned user is missing a custom attribute the provider
+          clearly set with no error, the cause is almost always the realm's Declarative User Profile
+          <code>unmanagedAttributePolicy</code> defaulting to disabled (chapter 33's gotcha, confirmed to recur
+          independently for this completely different SPI family) — not a bug in the attribute-setting call.</li>
+          <li>If a user's <code>requiredActions</code> includes a custom action's provider id and login still
+          sails straight through, the cause is very likely that the action was never explicitly
+          <code>register-required-action</code>'d on that specific realm — a per-realm switch this SPI has that
+          the Identity Provider SPI simply doesn't.</li>
+          <li>If <code>context.failure("someMessageCode")</code> produces only Keycloak's generic "An error
+          occurred" page instead of anything specific, the cause is that <code>messageCode</code> is a realm
+          message-bundle <strong>key</strong>, not display text — it only renders custom text if a matching
+          entry exists in a <code>theme-resources/messages/messages_en.properties</code> file (deliberately
+          left out of this lab to keep message-bundle customization, a different topic, separate from the one
+          new mechanism being taught here).</li>
+          <li>If a beginner reaches for a custom <em>authenticator</em> (chapter 39) to enforce a policy
+          acknowledgment like this chapter's HIPAA notice, the fix is recognizing it as a required action
+          instead: anything that should gate "a session becomes usable" <em>after</em> a credential has already
+          verified belongs after authentication, not woven into it.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>A custom Identity Provider SPI is the mechanism underneath chapter 31's brokering lab: chapter 31
+          configured a built-in broker type; this chapter wrote a brand-new broker type from scratch.</li>
+          <li>A custom Required Action SPI is the mechanism underneath chapter 25's required-action
+          configuration: chapter 25 ordered built-in actions; this chapter wrote a brand-new one.</li>
+          <li><code>AbstractIdentityProvider.performLogin()</code> and <code>.callback()</code> return
+          <code>null</code> by default — a subclass must override both, confirmed directly from the real
+          bytecode, not assumed from the method signature alone.</li>
+          <li>The redirect-out/callback-in shape every broker needs is: build a redirect carrying Keycloak's own
+          broker-endpoint URL and opaque state, let the external system authenticate the user entirely itself,
+          and verify (never just trust) whatever comes back on the callback.</li>
+          <li>A required action runs only after a credential has already verified — it can add a mandatory step,
+          but it can never cause a correct credential to be rejected; a custom authenticator (chapter 39) is the
+          tool for anything that should be able to do that.</li>
+          <li>A freshly discovered custom Identity Provider is usable immediately once deployed; a freshly
+          discovered custom Required Action is not — it must be explicitly registered per realm via
+          <code>register-required-action</code> before assigning it to any user does anything.</li>
+          <li>Theme resources (<code>theme-resources/templates/*.ftl</code> bundled inside a provider jar) let a
+          required action add one new rendered page to the active theme without forking a whole theme.</li>
+          <li>The Declarative User Profile's <code>unmanagedAttributePolicy</code> gotcha from chapter 33
+          recurred here, independently, for a completely different SPI family — a sign it's a general Keycloak
+          behavior worth remembering, not a one-off quirk of the User Storage SPI specifically.</li>
+          <li>Neither this chapter's toy Cascade SSO protocol nor its toy legacy-IdP server is a real vendor
+          product — both are purpose-built teaching stand-ins, said so plainly rather than implied otherwise.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "I don't see why we need a whole custom Identity Provider for Cascade Savings Bank — can't we just write a custom authenticator that calls out to Cascade's login API during Meridian Trust's own login flow?" What's wrong with that plan?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>That plan would require Meridian Trust's Keycloak realm to collect the Cascade password directly and forward it somewhere, which defeats the entire point of brokering: the trust boundary chapter 7 describes depends on the external system authenticating the user itself, with Keycloak never seeing that credential at all. A custom authenticator that proxies a password through is a credential-forwarding anti-pattern, not brokering. The correct shape is exactly this chapter's redirect-out/callback-in Identity Provider: the browser is sent to Cascade's own login form, Cascade authenticates the user with its own credential, and only a signed assertion of the result comes back to Keycloak.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does <code>Endpoint.callback()</code> verify an HMAC signature over the callback's fields instead of simply trusting whatever query parameters arrive at the broker endpoint?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The broker endpoint's URL shape (<code>/realms/{realm}/broker/{alias}/endpoint</code>) is a fixed, publicly knowable convention (chapter 31 documented it directly) — without a signature, anyone who can guess or observe that shape could craft a query string claiming to be any Cascade user and have Keycloak JIT-provision or log in as them, with no real authentication having happened at all. The HMAC, keyed with a secret shared only between the toy IdP and this provider's configuration, is what lets Keycloak verify the callback actually originated from the trusted toy IdP rather than merely looking like it did.</p>
+          </details></li>
+          <li><details>
+            <summary>Riverside Health's compliance team asks whether the HIPAA acknowledgment required action can ever prevent an employee with a correct password and correct OTP from logging in. What's the accurate answer, and why?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>No — not in the sense of rejecting correct credentials. A required action runs only after authentication has already succeeded; it can insert a mandatory extra step (decline it, and the login attempt as a whole fails), but it cannot cause a correct password/OTP combination to be treated as incorrect. That distinction matters for the compliance team specifically: the acknowledgment is a post-authentication gate on session completion, not an authentication control, so it should never be described to an auditor as "part of verifying who the clinician is."</p>
+          </details></li>
+          <li><details>
+            <summary>A new custom required action is deployed and its jar is confirmed present in /opt/keycloak/providers, but assigning it to a test user's requiredActions list seems to do nothing at login. Walk through the most likely cause and how to confirm it.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The most likely cause is that the action was never explicitly registered on that specific realm — unlike a custom Identity Provider, a freshly discovered custom Required Action sits in that realm's <code>unregistered-required-actions</code> list until a separate <code>POST .../authentication/register-required-action</code> call runs. Confirm it by GETting <code>/admin/realms/{realm}/authentication/unregistered-required-actions</code>: if the provider id shows up there, that's the cause, and the fix is registering it before expecting the per-user assignment to have any effect.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does this chapter's Identity Provider extend AbstractIdentityProvider (from keycloak-server-spi-private) directly instead of extending AbstractOAuth2IdentityProvider the way Keycloak's own built-in Google/GitHub/OIDC providers do?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>AbstractOAuth2IdentityProvider lives in keycloak-services, a much heavier artifact that pulls in Keycloak's whole REST layer as a transitive dependency, and it bakes in OAuth2-specific assumptions (token endpoints, client secrets, grant types) that the toy Cascade SSO protocol simply doesn't have — it's a plain redirect-and-signed-assertion protocol, not OAuth2-shaped at all. Extending the lighter AbstractIdentityProvider directly keeps the dependency footprint to exactly what this provider actually needs, and avoids inheriting OAuth2 machinery that would never be used.</p>
+          </details></li>
+          <li><details>
+            <summary>What, specifically, does "the toy IdP's redirect_uri parameter" actually point at, and who sets that value?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It points at Keycloak's own fixed broker-endpoint URL for this specific Identity Provider alias — <code>/realms/{realm}/broker/cascade-legacy-sso/endpoint</code>, chapter 31's documented convention — and Keycloak itself sets that value, handing it to this provider's <code>performLogin()</code> through the <code>AuthenticationRequest</code> parameter's <code>getRedirectUri()</code>. The provider never invents or hardcodes that URL; it simply forwards the value Keycloak already computed on to the toy IdP as a query parameter, which the toy IdP must then echo back unchanged on its own callback redirect.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_implementing_spi">Keycloak Server Developer Guide — "Implementing an SPI" (the general Factory/Provider/ServiceLoader pattern every Keycloak SPI follows, including both of this chapter's)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_identity_broker_overview">Keycloak Server Administration Guide — Identity Brokering overview (the built-in broker types this chapter's custom one has no counterpart among)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#_identity_broker_first_login">Keycloak Server Administration Guide — First Login Flow (the JIT-provisioning decision this chapter's lab actually walked through)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/index.html#con-required-actions_server_administration_guide">Keycloak Server Administration Guide — Required Actions (the concept this chapter's custom action extends)</a></li>
+          <li><a href="https://central.sonatype.com/artifact/org.keycloak/keycloak-server-spi-private">Maven Central — org.keycloak:keycloak-server-spi-private (the artifact this chapter's live coordinate research confirmed holds both SPI contracts)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "custom-idp-and-required-actions", 15);
+    SlideDeck.init({ chapterSlug: "custom-idp-and-required-actions" });
+  });
+</script>
+</body>
+</html>

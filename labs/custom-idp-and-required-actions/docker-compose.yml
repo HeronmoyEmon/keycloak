@@ -1,0 +1,63 @@
+# Chapter 40's own, isolated Keycloak + PostgreSQL stack.
+#
+# A separate compose file from labs/docker/docker-compose.yml (the shared stack every other Keycloak
+# chapter uses) and from chapter 33's/39's own per-chapter stacks, for the same reason chapter 33 gave:
+# this chapter needs a Keycloak instance with its own custom provider jar mounted into
+# /opt/keycloak/providers/, which no other chapter's stack should be asked to carry around. Project
+# name ch40kc, host port 18140 -- the two things this chapter was told to isolate on, so it can run
+# alongside the shared stack, chapter 33's ch33kc/18133, and chapter 39's ch39kc/18139 without any
+# collision.
+#
+#   cd labs/custom-idp-and-required-actions
+#   mvn clean package
+#   docker compose -p ch40kc up -d
+#   # wait for Keycloak to answer on http://localhost:18140, then:
+#   docker compose -p ch40kc exec keycloak /opt/keycloak/bin/kc.sh build
+#   docker compose -p ch40kc restart keycloak
+#
+# The toy Cascade SSO legacy IdP (toy-legacy-idp/legacy_sso_server.py) is NOT part of this compose
+# file -- it runs as a plain host process (python3 legacy_sso_server.py --port 18141 --secret ...),
+# reachable at http://localhost:18141. This is deliberate, not an oversight: every redirect in this
+# chapter's broker round trip is followed by the BROWSER (or, in this lab, curl standing in for one),
+# never by the Keycloak container reaching out to the toy IdP server-to-server -- so the toy IdP only
+# ever needs to be reachable from the host the curl commands run on, and no container-to-host network
+# bridging (extra_hosts/host.docker.internal) is needed at all. See the chapter text for the full
+# request-by-request trace that makes this concrete.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch40_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev, matching every other chapter's lab stack -- no TLS/hostname configuration needed for
+    # a local teaching lab.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18140:8080"
+    volumes:
+      - ./target/custom-idp-and-required-action-spi-1.0.0.jar:/opt/keycloak/providers/custom-idp-and-required-action-spi-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch40_pg_data:

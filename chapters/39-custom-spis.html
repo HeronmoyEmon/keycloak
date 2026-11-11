@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing Custom SPIs — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "custom-spis";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part VIII — Extending Keycloak</span>
+          <span class="badge minutes">~70 min</span>
+          <span class="badge lab">Hands-on lab</span>
+        </div>
+        <h1>39. Writing Custom SPIs: Authenticators, Event Listeners, Protocol Mappers</h1>
+        <p class="lede">Chapter 33 wrote one Keycloak Service Provider Interface implementation — a
+        User Storage SPI provider — end to end. This chapter writes three more, chosen because
+        they're the three a working Keycloak developer reaches for most often, not because they're
+        mechanically related to each other: a custom <strong>Authenticator</strong> (Meridian Trust's
+        business-hours login gate), a custom <strong>Event Listener</strong> (Riverside Health's
+        failed-login audit log), and a custom <strong>Protocol Mapper</strong> (Northwind Apps' tenant
+        ID claim). Every command, every piece of Java, and every real failure below actually ran
+        against a real Keycloak 26.8.2 instance while writing this chapter — including an uncaught
+        server exception this chapter's own lab triggered and fixed, kept in rather than edited out.</p>
+
+        <h2>Why this matters</h2>
+        <p>Chapter 1 named "extensibility" — a plugin architecture so an organization can add custom
+        logic without forking the product — as part of what makes a mature IAM system mature, and
+        pointed forward to this Part for the details. An IAM specialist who only knows "configure the
+        built-in options" hits a wall the moment a client's real requirement isn't one of them: a
+        bank that needs a fraud-aware login condition no built-in authenticator covers, a hospital
+        that needs a specific, grep-able audit format no built-in event listener produces, a SaaS
+        company that needs a claim computed from business logic no built-in mapper type expresses. All
+        three of today's providers answer "write a small, focused class against a documented Java
+        interface" — the same answer, three different interfaces.</p>
+
+        <p>Sources for this chapter: Keycloak's own <a
+        href="https://www.keycloak.org/docs/latest/server_development/index.html">Server Developer
+        Guide</a> (version 26.8.2, fetched live for this chapter — its Authentication SPI and Event
+        Listener SPI sections, specifically; see the next slide for what the guide does <em>not</em>
+        cover); Maven Central, queried live to pin exact dependency coordinates; the real jars inside
+        the running <code>quay.io/keycloak/keycloak:26.8.2</code> image, inspected directly; and this
+        chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker
+        Compose stack this chapter owns (<code>labs/custom-spis/</code>).</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 1 named <strong>extensibility</strong> as part of what a mature IAM system
+          provides, and chapter 33 made the mechanism concrete for one SPI (User Storage). This
+          chapter is the same mechanism, applied three more times. One distinction worth drawing
+          explicitly here, because chapter 40 depends on it: an <strong>Authenticator</strong> (today's
+          first SPI) runs <em>during</em> the credential check itself and can prevent a login from
+          succeeding at all — it is a different insertion point from a <strong>Required Action</strong>
+          (chapter 40's subject, and already introduced conceptually in chapter 22/25), which only ever
+          runs <em>after</em> authentication has already succeeded, to force an extra step before the
+          session is considered complete. Beginners conflate the two constantly, because both can show
+          the user a form mid-login — the real difference is whether the flow can still fail at that
+          point (Authenticator: yes; Required Action: no, the user is already authenticated).</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="spi-pattern" data-title="The pattern every Keycloak SPI follows">
+        <h2>One pattern, instantiated four times now</h2>
+        <p>Chapter 33 described the Factory/Provider/<code>ServiceLoader</code> shape for the User
+        Storage SPI. All three of today's SPIs follow the identical shape — with one real exception,
+        confirmed directly from the actual interfaces rather than assumed (see the Northwind Apps
+        slide below). A <strong>Factory</strong> class is discovered exactly once, at server boot, via
+        a <code>META-INF/services</code> text file naming its fully qualified class name — the standard
+        Java <code>ServiceLoader</code> convention, read from Keycloak's own
+        <code>/opt/keycloak/providers</code> directory at build/start time. The factory then produces
+        <strong>Provider</strong> instances on demand.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="t1 d1">
+            <title id="t1">The general Factory/ServiceLoader/Provider discovery pattern every Keycloak SPI follows</title>
+            <desc id="d1">A provider JAR, bind-mounted into /opt/keycloak/providers, contains a factory
+            class and a META-INF/services text file naming that class. At server build/boot time,
+            Keycloak's ServiceLoader mechanism reads that file and discovers the factory exactly once.
+            The factory then produces Provider instances on demand, one per use, each implementing
+            whichever SPI-specific interface Keycloak core calls into at request time. This same shape
+            applies to all four SPIs covered so far across chapters 33 and 39: User Storage, Authenticator,
+            Event Listener, and Protocol Mapper -- with one real exception for Protocol Mapper, covered on
+            a later slide.</desc>
+            <rect x="20" y="20" width="230" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="135" y="44" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Provider JAR</text>
+            <text x="135" y="62" text-anchor="middle" class="diagram-label-muted" font-size="10">/opt/keycloak/providers/</text>
+            <text x="135" y="80" text-anchor="middle" class="diagram-label-muted" font-size="9">Factory class +</text>
+            <text x="135" y="94" text-anchor="middle" class="diagram-label-muted" font-size="9">META-INF/services file</text>
+
+            <line x1="250" y1="65" x2="330" y2="65" class="diagram-stroke" marker-end="url(#a39-1)"/>
+            <text x="290" y="52" text-anchor="middle" class="diagram-label-muted" font-size="8">build/boot</text>
+
+            <rect x="335" y="20" width="230" height="90" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="450" y="44" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">ServiceLoader</text>
+            <text x="450" y="62" text-anchor="middle" class="diagram-label-muted" font-size="9">reads the services file,</text>
+            <text x="450" y="76" text-anchor="middle" class="diagram-label-muted" font-size="9">discovers the Factory</text>
+            <text x="450" y="94" text-anchor="middle" class="diagram-label-muted" font-size="9">exactly once</text>
+
+            <line x1="565" y1="65" x2="645" y2="65" class="diagram-stroke" marker-end="url(#a39-1)"/>
+            <text x="605" y="52" text-anchor="middle" class="diagram-label-muted" font-size="8">create()</text>
+
+            <rect x="650" y="20" width="230" height="90" rx="8" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="765" y="44" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Provider instance</text>
+            <text x="765" y="62" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">created on demand,</text>
+            <text x="765" y="76" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">implements the SPI-specific</text>
+            <text x="765" y="94" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">interface Keycloak core calls</text>
+
+            <line x1="765" y1="110" x2="765" y2="150" class="diagram-stroke" marker-end="url(#a39-1)"/>
+            <rect x="200" y="155" width="700" height="80" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="550" y="178" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Four real SPIs, same pattern</text>
+            <text x="550" y="198" text-anchor="middle" class="diagram-label-muted" font-size="10">User Storage (ch.33) · Authenticator (today) · Event Listener (today) · Protocol Mapper (today, one exception)</text>
+            <text x="550" y="216" text-anchor="middle" class="diagram-label-muted" font-size="9">Keycloak's own built-in LDAP, jboss-logging, and attribute mappers use these same interfaces -- not special-cased.</text>
+            <defs>
+              <marker id="a39-1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 39.1 — The same Factory/ServiceLoader/Provider discovery shape underlies every
+          Keycloak SPI this course has written against so far.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">A real documentation gap, confirmed live</div>
+          <p>Keycloak's own Server Developer Guide has a dedicated walkthrough for implementing an
+          Authenticator ("Implementing an Authenticator" / "Implementing an AuthenticatorFactory") and
+          for Event Listener SPI usage — but, checked directly against the live guide while writing
+          this chapter, it has <strong>no equivalent walkthrough for writing a Java
+          <code>ProtocolMapper</code> class</strong>; its "Protocol Mapper" coverage is specifically
+          about <em>script-based</em> (JavaScript) mappers, a different mechanism entirely. This
+          chapter's Northwind Apps mapper was built by inspecting the real interfaces on the real jar
+          and the pattern of Keycloak's own built-in mappers (chapter 24's territory) instead — said
+          plainly here rather than implying a guide section exists that doesn't.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="three-contracts" data-title="Three contracts, three insertion points">
+        <h2>Each SPI's own contract — and where it slots into a real request</h2>
+        <p>The shared discovery mechanism is identical; what each provider actually gets asked to do,
+        and when, is not. Live-verified directly against the real 26.8.2 interfaces (see the next
+        slide's verification trail):</p>
+        <div class="table-wrap">
+          <table>
+            <caption>The three SPIs this chapter implements, their core lifecycle hook, and where each one intercepts a real request</caption>
+            <thead><tr><th>SPI</th><th>Core interface method(s)</th><th>Runs when</th></tr></thead>
+            <tbody>
+              <tr><td>Authenticator</td><td><code>authenticate(AuthenticationFlowContext)</code>, <code>action(...)</code></td><td>As one execution inside an authentication flow (chapter 25), alongside built-in executions like Username Validation and Password — can call <code>context.success()</code> or <code>context.failure()</code></td></tr>
+              <tr><td>Event Listener</td><td><code>onEvent(Event)</code>, <code>onEvent(AdminEvent, boolean)</code></td><td>After every login/user event and every admin action (chapter 28's event bus), for any realm that has this provider's id enabled under its Events config</td></tr>
+              <tr><td>Protocol Mapper</td><td><code>transformAccessToken(...)</code>, <code>transformIDToken(...)</code>, <code>transformUserInfoToken(...)</code></td><td>During token/UserInfo response assembly (chapter 15/16's territory), once per client scope/client the mapper is attached to</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 280" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Three separate insertion points in a login/token lifecycle, one per SPI</title>
+            <desc id="d2">A horizontal lifecycle from left to right: Login request arrives, then
+            Authentication flow execution (where the Authenticator SPI intercepts, able to block the
+            flow), then Login succeeds or fails (the Event Listener SPI intercepts here, observing the
+            outcome either way, including LOGIN_ERROR specifically), then Token minting (where the
+            Protocol Mapper SPI intercepts, shaping the token's claims after the login outcome is
+            already decided). A caption below notes each SPI sees a different slice of the same request,
+            and none of the three can see or affect what another is doing.</desc>
+            <rect x="10" y="110" width="150" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="85" y="140" text-anchor="middle" class="diagram-label" font-size="11">Login request</text>
+            <line x1="160" y1="135" x2="210" y2="135" class="diagram-stroke" marker-end="url(#a39-2)"/>
+
+            <rect x="215" y="40" width="190" height="60" rx="7" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="310" y="63" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="11">Authenticator SPI</text>
+            <text x="310" y="80" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">Meridian Trust -- can block the flow</text>
+            <line x1="310" y1="100" x2="310" y2="110" class="diagram-stroke" stroke-dasharray="4 3"/>
+            <rect x="215" y="110" width="190" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="310" y="140" text-anchor="middle" class="diagram-label" font-size="11">Auth flow execution</text>
+            <line x1="405" y1="135" x2="455" y2="135" class="diagram-stroke" marker-end="url(#a39-2)"/>
+
+            <rect x="460" y="110" width="190" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="555" y="140" text-anchor="middle" class="diagram-label" font-size="11">Login succeeds / LOGIN_ERROR</text>
+            <line x1="555" y1="160" x2="555" y2="170" class="diagram-stroke" stroke-dasharray="4 3"/>
+            <rect x="460" y="175" width="190" height="60" rx="7" class="diagram-fill-success diagram-stroke"/>
+            <text x="555" y="198" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Event Listener SPI</text>
+            <text x="555" y="215" text-anchor="middle" class="diagram-label" font-size="9">Riverside Health's audit log</text>
+            <line x1="650" y1="135" x2="700" y2="135" class="diagram-stroke" marker-end="url(#a39-2)"/>
+
+            <rect x="705" y="110" width="185" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="797" y="140" text-anchor="middle" class="diagram-label" font-size="11">Token/UserInfo minting</text>
+            <line x1="797" y1="110" x2="797" y2="80" class="diagram-stroke" stroke-dasharray="4 3"/>
+            <rect x="705" y="20" width="185" height="55" rx="7" class="diagram-fill-info diagram-stroke"/>
+            <text x="797" y="42" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Protocol Mapper SPI</text>
+            <text x="797" y="58" text-anchor="middle" class="diagram-label" font-size="9">Northwind Apps -- shapes claims</text>
+
+            <text x="450" y="265" text-anchor="middle" class="diagram-label-muted" font-size="10">Each SPI sees a different slice of the same request. None of the three can see or affect what another is doing.</text>
+            <defs>
+              <marker id="a39-2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 39.2 — The three SPIs this chapter implements intercept three genuinely
+          different moments of the same login, in a fixed order: authenticate, then observe, then mint.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="live-verify" data-title="Live-verifying the Maven coordinates">
+        <h2>Live-verifying four dependency jars, not guessing from chapter 33's two</h2>
+        <p>Chapter 33's lab needed exactly two Keycloak artifacts (<code>keycloak-server-spi</code>,
+        <code>keycloak-model-storage</code>). Assuming the same two would cover today's three SPIs
+        would have been a guess, not a verification — so this chapter repeated chapter 33's method
+        from scratch: <code>docker run --rm --entrypoint sh quay.io/keycloak/keycloak:26.8.2 -c "find
+        /opt/keycloak/lib ..."</code> to see which jars the real server actually bundles, then
+        <code>unzip -l</code> and <code>javap -p</code> on each candidate to confirm exactly which
+        class lives in which jar, then a direct <code>curl</code> against
+        <code>repo1.maven.org</code> to confirm Maven Central publishes the identical 26.8.2 version of
+        each one.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Where this chapter's required classes actually live in Keycloak 26.8.2, confirmed by inspecting the real jars -- a genuinely different, larger list than chapter 33 needed</caption>
+            <thead><tr><th>Artifact (version 26.8.2, scope <code>provided</code>)</th><th>What this chapter's code needs from it</th></tr></thead>
+            <tbody>
+              <tr><td><code>keycloak-server-spi</code></td><td><code>KeycloakSession</code>, <code>RealmModel</code>, <code>UserModel</code>, <code>ProviderConfigProperty</code>, <code>ProtocolMapperModel</code>, <code>UserSessionModel</code>, <code>ClientSessionContext</code>, <code>AuthenticationExecutionModel</code></td></tr>
+              <tr><td><code>keycloak-server-spi-private</code></td><td><code>Authenticator</code>, <code>AuthenticatorFactory</code>, <code>ConfigurableAuthenticatorFactory</code>, <code>AuthenticationFlowContext</code>, <code>AuthenticationFlowError</code>, <code>EventListenerProvider</code>, <code>EventListenerProviderFactory</code>, <code>Event</code>, <code>EventType</code>, <code>Errors</code>, <code>EventBuilder</code>, and the base <code>ProtocolMapper</code> interface itself (confirmed <strong>not</strong> in <code>keycloak-server-spi</code> alone)</td></tr>
+              <tr><td><code>keycloak-services</code></td><td><code>AbstractOIDCProtocolMapper</code>, <code>OIDCAccessTokenMapper</code>, <code>OIDCIDTokenMapper</code>, <code>UserInfoTokenMapper</code>, <code>OIDCAttributeMapperHelper</code> — the OIDC-specific half of the Protocol Mapper SPI, confirmed by <code>unzip -l</code> to be absent from both server-spi jars</td></tr>
+              <tr><td><code>keycloak-core</code></td><td><code>AccessToken</code>, <code>IDToken</code>, <code>AccessTokenResponse</code> — confirmed <code>AccessToken extends IDToken</code> directly via <code>javap</code>, which is why one <code>setTenantClaim(IDToken, ...)</code> helper method correctly handles both token types</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>All four were confirmed present at exactly <code>26.8.2</code> on Maven Central
+        (<code>repo1.maven.org</code> returned <code>200</code> for all four jar URLs) — no
+        nearest-version substitute needed for any of them, same standard chapter 33 held itself to.
+        All four are declared <code>scope=provided</code> in this chapter's <code>pom.xml</code>,
+        same reasoning as chapter 33: the server already supplies these exact classes at runtime.</p>
+      </section>
+
+      <section class="slide" data-slide="project-structure" data-title="One Maven project, three packages">
+        <h2>Why one Maven project, not three</h2>
+        <p>Chapter 33's precedent was one Maven project per lab, because that lab had exactly one
+        provider. This chapter deliberately builds <strong>one Maven project producing one JAR</strong>
+        containing all three providers, each in its own Java package named for the case-study org it
+        belongs to (<code>com.meridiantrust.keycloak.businesshours</code>,
+        <code>com.riversidehealth.keycloak.loginaudit</code>,
+        <code>com.northwindapps.keycloak.tenantmapper</code>) — not three separate Maven modules.</p>
+        <p>The reasoning: all three SPIs are small, have zero dependencies on each other, and share the
+        identical build/deploy mechanics chapter 33 already established (<code>mvn package</code>, bind
+        mount into <code>/opt/keycloak/providers</code>, <code>kc.sh build</code>, restart). Three
+        separate Maven modules would mean three separate JARs, three separate bind mounts in the
+        compose file, and three separate "did I rebuild before restarting" failure points — for no
+        real isolation benefit, since nothing here needs independent versioning or independent
+        deployment. The package-per-org split still documents the separation that actually matters:
+        which org's problem each class solves.</p>
+      </section>
+
+      <section class="slide" data-slide="case-meridian" data-title="Meridian Trust: a business-hours Authenticator">
+        <h2>Meridian Trust: a business-hours login gate</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank with a
+          fraud-aware authentication posture (chapter 9): online banking logins outside its call
+          center's staffed hours are disproportionately likely to be automated credential-stuffing
+          attempts rather than real customers, so the bank wants a hard gate — not a risk score, not a
+          flag for later review, an outright denial — on logins outside a configured window. No
+          built-in Keycloak authenticator expresses "deny unless the current wall-clock hour falls in
+          this configured range," so it's a genuine case for a custom Authenticator SPI provider.</p>
+        </div>
+        <pre><code>public class BusinessHoursAuthenticator implements Authenticator {
+    static final String CONFIG_START_HOUR_UTC = "startHourUtc";
+    static final String CONFIG_END_HOUR_UTC = "endHourUtc";
+
+    public void authenticate(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
+        int startHour = readHourConfig(configModel, CONFIG_START_HOUR_UTC, 9);
+        int endHour = readHourConfig(configModel, CONFIG_END_HOUR_UTC, 17);
+        int currentHourUtc = ZonedDateTime.now(ZoneOffset.UTC).getHour();
+
+        if (isWithinWindow(currentHourUtc, startHour, endHour)) {
+            context.success();
+            return;
+        }
+        context.getEvent().error(Errors.ACCESS_DENIED);
+        Response challenge = Response.status(Response.Status.FORBIDDEN)
+                .type(MediaType.APPLICATION_JSON)
+                .entity("{\"error\":\"access_denied\",\"error_description\":\"...\"}")
+                .build();
+        context.failure(AuthenticationFlowError.ACCESS_DENIED, challenge);  // see "A real bug" below
+    }
+
+    public boolean requiresUser() { return false; }  // decision depends only on the clock
+    // action(), configuredFor(), setRequiredActions(), close() -- see labs/custom-spis/ for the rest
+}</code></pre>
+        <p><code>requiresUser()</code> returns <code>false</code> deliberately: this authenticator's
+        decision depends only on the wall clock, never on which user is logging in, so it doesn't need
+        the flow to have already resolved a <code>UserModel</code> before it runs. Its
+        <code>AuthenticatorFactory</code> counterpart exposes exactly two admin-configurable properties
+        (<code>startHourUtc</code>, <code>endHourUtc</code>, both defaulting to a 9-17 UTC window) via
+        <code>ConfigurableAuthenticatorFactory</code> — the interface that makes an authenticator show
+        up with real config fields in the Authentication flow editor, rather than a fixed, unconfigurable
+        toggle.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 220" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Authenticator vs. Required Action: two different insertion points, often confused</title>
+            <desc id="d3">Two parallel timelines. Top timeline: Authenticator, labeled "runs during the
+            credential check" -- a box showing "credentials submitted" leading into "Authenticator SPI
+            decides" which forks into either "context.success(), flow continues" or "context.failure(),
+            login never completes." Bottom timeline: Required Action, labeled "runs after the credential
+            check" -- a box showing "credentials already verified, login already succeeded" leading into
+            "Required Action SPI (chapter 40) runs" which leads only to "session finalized once satisfied"
+            -- with a note that a Required Action cannot cause the login itself to fail, only delay when
+            the session is considered complete.</desc>
+            <text x="450" y="20" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Two insertion points beginners conflate</text>
+
+            <rect x="20" y="40" width="200" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="120" y="65" text-anchor="middle" class="diagram-label" font-size="10">Credentials submitted</text>
+            <line x1="220" y1="60" x2="270" y2="60" class="diagram-stroke" marker-end="url(#a39-3)"/>
+            <rect x="275" y="40" width="220" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="385" y="65" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Authenticator SPI decides (today)</text>
+            <line x1="495" y1="50" x2="545" y2="30" class="diagram-stroke" marker-end="url(#a39-3)"/>
+            <line x1="495" y1="70" x2="545" y2="90" class="diagram-stroke" marker-end="url(#a39-3)"/>
+            <rect x="550" y="10" width="220" height="35" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="660" y="32" text-anchor="middle" class="diagram-label" font-size="10">success() -- flow continues</text>
+            <rect x="550" y="75" width="220" height="35" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="660" y="97" text-anchor="middle" class="diagram-label" font-size="10">failure() -- login never completes</text>
+
+            <rect x="20" y="140" width="260" height="40" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="150" y="165" text-anchor="middle" class="diagram-label" font-size="9">Credentials already verified -- login succeeded</text>
+            <line x1="280" y1="160" x2="330" y2="160" class="diagram-stroke" marker-end="url(#a39-3)"/>
+            <rect x="335" y="140" width="220" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="445" y="165" text-anchor="middle" class="diagram-label" font-size="10">Required Action SPI runs (ch. 40)</text>
+            <line x1="555" y1="160" x2="605" y2="160" class="diagram-stroke" marker-end="url(#a39-3)"/>
+            <rect x="610" y="140" width="260" height="40" rx="6" class="diagram-fill-success diagram-stroke"/>
+            <text x="740" y="160" text-anchor="middle" class="diagram-label" font-size="9">Session finalized once satisfied</text>
+            <text x="740" y="174" text-anchor="middle" class="diagram-label" font-size="8">cannot fail the login itself</text>
+            <defs>
+              <marker id="a39-3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 39.3 — An Authenticator can still fail the login outright; a Required Action
+          (chapter 40) only ever delays when an already-successful login's session is considered complete.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="case-riverside" data-title="Riverside Health: a failed-login audit listener">
+        <h2>Riverside Health: a distinguishable failed-login audit trail</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p><span class="org-chip riverside">Riverside Health</span> needs a HIPAA-relevant record
+          (chapter 11) of every failed login against clinician/administrative accounts, in a format
+          its compliance team can reliably grep out of server logs — distinguishable from Keycloak's
+          own built-in <code>jboss-logging</code> event listener (chapter 28), which logs every error
+          event at the same log level with no org-specific framing. A custom
+          <code>EventListenerProvider</code> is the mechanism: it sees the exact same event stream the
+          built-in listener does, and can log whichever subset it cares about however it likes.</p>
+        </div>
+        <pre><code>public class FailedLoginAuditEventListenerProvider implements EventListenerProvider {
+    static final String AUDIT_PREFIX = "RIVERSIDE-HIPAA-LOGIN-AUDIT";
+
+    public void onEvent(Event event) {
+        if (event.getType() != EventType.LOGIN_ERROR) return;
+        System.out.println(formatLine(event));   // see "Logging mechanism" note below
+    }
+
+    public void onEvent(AdminEvent event, boolean includeRepresentation) {
+        // Deliberate no-op -- admin events (chapter 28) are a different stream, out of this
+        // chapter's scope.
+    }
+    // formatLine() builds "RIVERSIDE-HIPAA-LOGIN-AUDIT | time=... | realm=... | userId=... | ..."
+}</code></pre>
+        <p><strong>Logging mechanism, named honestly</strong>: this provider writes to
+        <code>System.out</code> directly, not a logging framework call. A real production listener
+        would hook into the organization's actual logging/SIEM pipeline — this lab uses stdout
+        specifically because it's guaranteed to land in <code>docker compose logs</code> regardless of
+        how the server's own logging framework happens to be configured, which is exactly what this
+        chapter's lab needs to capture a real, verifiable transcript. The trade-off is named, not
+        hidden.</p>
+        <p>No realm-filtering logic appears anywhere in this class. <code>EventListenerProvider</code>
+        implementations are only ever invoked for a realm that has that provider's id explicitly
+        enabled under that realm's own Events configuration (chapter 28) — confirmed live in this
+        chapter's own lab below, by triggering a failed login against a <em>different</em> realm and
+        confirming zero matching log lines appeared.</p>
+      </section>
+
+      <section class="slide" data-slide="case-northwind" data-title="Northwind Apps: a tenant_id claim mapper">
+        <h2>Northwind Apps: injecting a tenant_id claim</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p><span class="org-chip northwind">Northwind Apps</span> runs a multi-tenant B2B SaaS
+          product (chapter 2): every one of its downstream applications needs to know which customer
+          organization ("tenant") a given login belongs to, ideally without an extra lookup call per
+          request. A custom <code>ProtocolMapper</code> that reads a <code>tenant_id</code> user
+          attribute and injects it as a real claim into the access token, ID token, and UserInfo
+          response makes that information available to every application that already trusts
+          Northwind's tokens, with zero changes needed in those applications.</p>
+        </div>
+        <pre><code>public class TenantIdProtocolMapper extends AbstractOIDCProtocolMapper
+        implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
+
+    static final String USER_ATTRIBUTE_NAME = "tenant_id";  // deliberately hardcoded, see text
+
+    public AccessToken transformAccessToken(AccessToken token, ProtocolMapperModel mappingModel,
+            KeycloakSession session, UserSessionModel userSession, ClientSessionContext ctx) {
+        setTenantClaim(token, mappingModel, userSession); return token;
+    }
+    // transformIDToken(...) and transformUserInfoToken(...) call the identical helper --
+    // AccessToken extends IDToken, confirmed via javap, so one setTenantClaim(IDToken, ...)
+    // method correctly handles access tokens, ID tokens, and the UserInfo response's token shape.
+
+    private static void setTenantClaim(IDToken token, ProtocolMapperModel mappingModel,
+            UserSessionModel userSession) {
+        UserModel user = userSession.getUser();
+        String tenantId = user == null ? null : user.getFirstAttribute(USER_ATTRIBUTE_NAME);
+        if (tenantId == null || tenantId.isEmpty()) return;  // omit entirely, not a null claim
+        OIDCAttributeMapperHelper.mapClaim(token, mappingModel, tenantId);
+    }
+}</code></pre>
+        <p>The source attribute name is deliberately hardcoded rather than exposed as its own
+        admin-configurable field — chapter 24's built-in <code>UserAttributeMapper</code> already
+        covers the general "pick any attribute, map it to any claim" case; re-deriving that generic
+        config UI here would duplicate chapter 24's own territory instead of teaching this chapter's
+        actual subject.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 200" role="img" aria-labelledby="t4 d4">
+            <title id="t4">A real structural asymmetry: Protocol Mapper collapses Factory and Provider into one class</title>
+            <desc id="d4">Two side-by-side comparisons. Left: Authenticator and EventListenerProvider each
+            require two separate classes, a Factory discovered once at boot and a Provider/instance
+            created per use, connected by a labeled arrow "create() returns a NEW or cached instance of a
+            different class." Right: ProtocolMapper, labeled "extends ProviderFactory itself" with a single
+            box, and AbstractOIDCProtocolMapper.create() shown returning "this" with an arrow looping back
+            into the same box rather than pointing at a separate box -- confirmed directly from the real
+            interface before this chapter's class was written, not assumed from the SPI's name.</desc>
+            <rect x="20" y="30" width="200" height="50" rx="7" class="diagram-fill-surface diagram-stroke"/>
+            <text x="120" y="52" text-anchor="middle" class="diagram-label" font-size="10">AuthenticatorFactory /</text>
+            <text x="120" y="66" text-anchor="middle" class="diagram-label" font-size="10">EventListenerProviderFactory</text>
+            <line x1="220" y1="55" x2="300" y2="55" class="diagram-stroke" marker-end="url(#a39-4)"/>
+            <text x="260" y="40" text-anchor="middle" class="diagram-label-muted" font-size="8">create() returns</text>
+            <rect x="305" y="30" width="200" height="50" rx="7" class="diagram-fill-accent-strong diagram-stroke"/>
+            <text x="405" y="52" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Authenticator /</text>
+            <text x="405" y="66" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">EventListenerProvider instance</text>
+            <text x="260" y="95" text-anchor="middle" class="diagram-label-muted" font-size="9">two separate classes, two lifecycles</text>
+
+            <rect x="610" y="30" width="270" height="70" rx="7" class="diagram-fill-success diagram-stroke"/>
+            <text x="745" y="54" text-anchor="middle" class="diagram-label" font-weight="700" font-size="10">ProtocolMapper</text>
+            <text x="745" y="70" text-anchor="middle" class="diagram-label" font-size="9">extends ProviderFactory&lt;ProtocolMapper&gt;</text>
+            <text x="745" y="84" text-anchor="middle" class="diagram-label" font-size="9">itself -- create() returns `this`</text>
+            <path d="M 835 95 C 870 120, 835 140, 760 100" class="diagram-stroke" fill="none" marker-end="url(#a39-4)"/>
+            <text x="745" y="150" text-anchor="middle" class="diagram-label-muted" font-size="9">one class, Factory and Provider collapsed</text>
+
+            <defs>
+              <marker id="a39-4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 39.4 — Confirmed directly from <code>AbstractOIDCProtocolMapper.create()</code>
+          on the real 26.8.2 jar: Protocol Mapper's SPI genuinely does not split into two classes the way
+          Authenticator and Event Listener do.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="lab-build" data-title="Lab: building the project — a real POM bug, again">
+        <h2>Lab: building the project, including a familiar real failure</h2>
+        <ol class="lab-steps">
+          <li><p><strong>First attempt: the exact same POM bug chapter 33 hit.</strong> This chapter's
+          <code>pom.xml</code> comment block independently included real prose containing
+          <code>--</code> (double hyphens, used as a plain-English dash) while explaining the live
+          dependency-verification trail — and XML comments cannot contain <code>--</code> anywhere in
+          their body, with no escape mechanism:</p>
+          <pre><code>[ERROR] Non-parseable POM .../pom.xml: in comment after two dashes (--) next
+character must be &gt; not   (position: START_DOCUMENT seen ...tery course:\n\n
+- com.meridiantrust.keycloak.businesshours   -- ... @6:53)</code></pre>
+          <p>Fixed the same way chapter 33 fixed it: replacing every <code>--</code> inside the comment
+          body with a single hyphen, not an escape sequence (none exists). Worth stating plainly: this
+          is not a rare mistake specific to one chapter — writing prose inside an XML comment and
+          habitually using an em-dash-style <code>--</code> is an easy, recurring trap.</p></li>
+
+          <li><p><strong>Clean build, for real, on the very next attempt:</strong></p>
+          <pre><code>$ mvn clean package
+...
+[INFO] Compiling 5 source files with javac [debug release 21] to target/classes
+[INFO] Building jar: .../target/custom-spis-1.0.0.jar
+[INFO] BUILD SUCCESS</code></pre>
+          <p>No compile errors this time — the live interface verification two slides back paid off
+          directly: every method signature this chapter's three classes override matched the real
+          26.8.2 interfaces on the first real attempt, unlike chapter 33's lab, which hit a genuine
+          missing-override compile error.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-deploy" data-title="Lab: deploying, and a real internal-SPI warning">
+        <h2>Lab: deploying the JAR, and a finding straight from the server's own boot log</h2>
+        <ol class="lab-steps">
+          <li><p>Bring up this chapter's own isolated stack (project name <code>ch39kc</code>, host
+          port 18139 — a standalone compose file, same pattern as chapter 33, never an edit to the
+          shared <code>labs/docker/docker-compose.yml</code>), confirm the JAR mounted as a real file,
+          then re-augment the server:</p>
+          <pre><code>cd labs/custom-spis
+docker compose -p ch39kc up -d
+docker compose -p ch39kc exec keycloak ls -la /opt/keycloak/providers/
+docker compose -p ch39kc exec keycloak /opt/keycloak/bin/kc.sh build</code></pre>
+          <pre><code>WARN  [org.keycloak.services] KC-SERVICES0047: northwind-tenant-id-mapper (...TenantIdProtocolMapper)
+is implementing the internal SPI protocol-mapper. This SPI is internal and may change without notice
+WARN  [org.keycloak.services] KC-SERVICES0047: meridian-business-hours (...BusinessHoursAuthenticatorFactory)
+is implementing the internal SPI authenticator. This SPI is internal and may change without notice
+WARN  [org.keycloak.services] KC-SERVICES0047: riverside-failed-login-audit (...FailedLoginAuditEventListenerProviderFactory)
+is implementing the internal SPI eventsListener. This SPI is internal and may change without notice</code></pre>
+          <p><strong>A real finding, cross-checked against the documentation, not just the boot
+          log</strong>: all three providers trigger a <code>KC-SERVICES0047</code> warning the User
+          Storage SPI (chapter 33) never did. Checking Keycloak's own Server Developer Guide directly
+          confirmed this is not incidental — its "Authentication SPI" and "Event Listener SPI" sections
+          both carry the identical prose disclaimer: <em>"This is an internal SPI. While it was stable
+          in the previous releases, any new release of Keycloak can change it without prior notice."</em>
+          Worth knowing as an IAM specialist deciding whether to build on these interfaces for a real
+          deployment: stable enough to document and build against, but explicitly not contractually
+          guaranteed the way a clearly public API would be.</p></li>
+
+          <li><p>Confirm all three providers are genuinely known to the server via the Admin REST
+          API's own <code>serverinfo</code> endpoint:</p>
+          <pre><code>meridian-business-hours        (under providers.authenticator)
+riverside-failed-login-audit   (under providers.eventsListener)
+northwind-tenant-id-mapper     (under providers.protocol-mapper)</code></pre>
+          <p>All three confirmed present, listed right alongside Keycloak's own built-in providers for
+          each SPI.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-meridian-test" data-title="Lab: Meridian Trust — allow, deny, and a real 500">
+        <h2>Lab: real direct-grant logins, real allow and deny — and a real server bug</h2>
+        <ol class="lab-steps">
+          <li><p>Copied the realm's built-in "direct grant" flow (same duplicate-then-modify pattern
+          Keycloak itself requires for any built-in flow), added
+          <code>meridian-business-hours</code> as a <code>REQUIRED</code> execution, and bound it as
+          the realm's <code>directGrantFlow</code>.</p></li>
+
+          <li><p><strong>A real, unrelated red herring hit first</strong>: a fresh direct-grant login
+          for a brand-new test user failed with <code>"Account is not fully set up"</code> —
+          <em>before the new authenticator had even run</em>, confirmed by temporarily disabling it
+          and reproducing the identical error. The real cause: the realm's Declarative User Profile
+          requires <code>firstName</code>/<code>lastName</code>/<code>email</code>, which the fresh
+          test user didn't have set, triggering a dynamically-computed required action — the same
+          <code>VERIFY_PROFILE</code>-shaped gotcha chapter 24's own lab already documented, hit again
+          independently here. Fixed with <code>kcadm.sh update</code>, zero code involved.</p></li>
+
+          <li><p><strong>The real bug this chapter's lab actually found</strong>: with the test user
+          fixed, a login outside the configured window returned not a clean denial but a bare
+          <code>HTTP 500</code>:</p>
+          <pre><code>{"error":"unknown_error","error_description":"For more on this error consult the server log."}</code></pre>
+          <p>The server's own log showed the <code>LOGIN_ERROR</code> event had fired correctly
+          (<code>error="access_denied"</code>, including this authenticator's own
+          <code>meridian_business_hours_window</code> detail) — and then an uncaught
+          <code>AuthenticationFlowException</code>:</p>
+          <pre><code>ERROR [org.keycloak.services.error.KeycloakErrorHandler] Uncaught server error:
+org.keycloak.authentication.AuthenticationFlowException
+  at org.keycloak.authentication.DefaultAuthenticationFlow.processResult(...)
+  at org.keycloak.protocol.oidc.grants.ResourceOwnerPasswordCredentialsGrantType.process(...)</code></pre>
+          <p>Root cause: the single-argument <code>context.failure(AuthenticationFlowError)</code>
+          overload — which correctly emits the event — assumes a browser exists to render a challenge
+          page for, and throws when none exists on the Direct Grant code path specifically. Fixed by
+          always supplying an explicit challenge <code>Response</code> (a small JSON body, not an HTML
+          error page via <code>context.form()</code>, which is meant for the browser flow) via the
+          two-argument <code>context.failure(AuthenticationFlowError, Response)</code> overload
+          instead.</p></li>
+
+          <li><p><strong>Fixed, and genuinely reproduced both branches against the real clock</strong>
+          — not a mocked one. Rather than fake the server's time, this lab changed only the
+          authenticator's <em>configured</em> window and re-ran the identical login against the real
+          wall clock each time:</p>
+          <pre><code># Window 13:00-14:00 UTC, real current hour 10 -- DENY
+{"error":"access_denied","error_description":"Meridian Trust online banking is only
+available 13:00-14:00 UTC. Current UTC hour: 10."}        # real HTTP 403
+
+# Window 0:00-24:00 UTC, same real current hour 10 -- ALLOW
+{"access_token":"eyJhbGciOiJSUzI1NiIs...", ...}            # real HTTP 200</code></pre>
+          <p>Re-ran this exact pair fresh, immediately before writing this slide, and got the
+          identical real 403-then-200 pair — a reproducible transcript, not a one-off capture.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-riverside-test" data-title="Lab: Riverside Health — a real captured log line">
+        <h2>Lab: a real failed login, captured in a real distinguishable log line</h2>
+        <ol class="lab-steps">
+          <li><p>Enabled the listener on the <code>riverside-health</code> realm only
+          (<code>eventsEnabled: true</code>, <code>eventsListeners</code> including
+          <code>riverside-failed-login-audit</code>), created a real clinician test user with a real
+          password credential, then attempted a real login with the wrong password:</p>
+          <pre><code>curl -s -X POST ".../realms/riverside-health/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" -d "grant_type=password" \
+  -d "username=dalia.khan" -d "password=WrongPassword!"</code></pre>
+          <pre><code>{"error":"invalid_grant","error_description":"Invalid user credentials"}   # real HTTP 400</code></pre>
+          <p>And the real, distinguishable line this produced in <code>docker compose logs
+          keycloak</code>:</p>
+          <pre><code>RIVERSIDE-HIPAA-LOGIN-AUDIT | time=2026-11-11T10:55:21.082Z | realm=riverside-health |
+clientId=admin-cli | userId=2a9fe76a-fe28-42ef-82e4-99c1bcfa4535 | ipAddress=172.25.0.1 |
+error=invalid_user_credentials | details={auth_method=openid-connect, grant_type=password,
+client_auth_method=client-secret, username=dalia.khan}</code></pre></li>
+
+          <li><p><strong>Confirmed the realm scoping is real, not assumed</strong>: a second wrong-password
+          attempt against a completely different realm on the same server
+          (<code>meridian-trust</code>, which does <em>not</em> have this listener enabled) produced
+          zero matching log lines — confirmed by grepping fresh logs for the audit prefix immediately
+          after. The scoping is enforced by Keycloak's own per-realm Events configuration, not by any
+          realm-name check written into this class.</p></li>
+
+          <li><p>Re-ran the whole sequence fresh at the end: a new failed login against
+          <code>riverside-health</code> produced a fresh, correctly-formatted audit line within the
+          same second — reproducible, not a one-off.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-northwind-test" data-title="Lab: Northwind Apps — a real decoded claim">
+        <h2>Lab: a real minted token, a real decoded tenant_id claim — and a real client-setting surprise</h2>
+        <ol class="lab-steps">
+          <li><p>Set the <code>northwind-apps</code> realm's User Profile
+          <code>unmanagedAttributePolicy</code> to <code>ENABLED</code> — the same persistence gotcha
+          chapters 22, 24, and 33 already documented, hit a fourth time here: without it, writing
+          <code>tenant_id</code> via <code>kcadm.sh</code> would have silently failed to persist at
+          all, not merely stayed hidden from the REST response.</p></li>
+
+          <li><p>Created a test user with a real <code>tenant_id=acme-logistics</code> attribute,
+          attached <code>northwind-tenant-id-mapper</code> directly to the <code>admin-cli</code>
+          client, then minted and decoded a real token:</p>
+          <pre><code>curl -s -X POST ".../realms/northwind-apps/protocol/openid-connect/token" \
+  -d "client_id=admin-cli" -d "grant_type=password" -d "scope=openid" \
+  -d "username=amara.diallo" -d "password=..."</code></pre>
+          <p>Decoded access token payload (real, from this run): <code>"tenant_id":"acme-logistics"</code>.
+          Decoded ID token payload: the identical claim. So far as expected.</p></li>
+
+          <li><p><strong>A real surprise at the UserInfo step</strong>:</p>
+          <pre><code>curl -s ".../realms/northwind-apps/protocol/openid-connect/userinfo" -H "Authorization: Bearer $TOKEN"</code></pre>
+          <pre><code>HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="northwind-apps", error="invalid_token",
+error_description="Lightweight access token not allowed for userinfo endpoint"</code></pre>
+          <p>Root cause, found by inspecting the client's own attributes: <code>admin-cli</code> has
+          <strong>"Always use lightweight access token" enabled by default</strong> in this Keycloak
+          version — a mode that omits most profile claims from the access token itself, and which
+          Keycloak's UserInfo endpoint refuses outright. Nothing wrong with the mapper or its config;
+          fixed by disabling that one client setting
+          (<code>client.use.lightweight.access.token.enabled=false</code>), unrelated to this chapter's
+          own code.</p></li>
+
+          <li><p>Retested with the setting disabled: a fresh UserInfo call returned
+          <code>"tenant_id":"acme-logistics"</code> alongside the user's standard claims — all three
+          transform paths (access token, ID token, UserInfo) now confirmed with real, independently
+          decoded output.</p></li>
+
+          <li><p><strong>Confirmed the absent-attribute case too</strong>: a second test user with no
+          <code>tenant_id</code> attribute at all produced a decoded token with <em>no</em>
+          <code>tenant_id</code> key present — not a null or empty-string claim — matching the mapper's
+          own early-return logic exactly.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If an XML parse error points at a POM comment, the cause is almost always a literal
+          <code>--</code> sequence inside that comment's prose text — this chapter hit the exact same
+          failure chapter 33 did, independently, by habitually writing a plain-English dash the same
+          way. There is no escape mechanism; rewrite the prose to avoid the sequence.</li>
+          <li>If a custom Authenticator's <code>context.failure(AuthenticationFlowError)</code> call
+          (the single-argument overload) produces a bare <code>HTTP 500</code> instead of a clean OAuth
+          error on the Direct Grant code path specifically, use the two-argument
+          <code>context.failure(AuthenticationFlowError, Response)</code> overload instead, with an
+          explicitly built JSON <code>Response</code> rather than an HTML error page meant for the
+          browser flow.</li>
+          <li>If "Account is not fully set up" appears for a test user you just created, check whether
+          it's actually your new authenticator's fault before debugging the authenticator — disable it
+          temporarily and reproduce the login attempt; if the error persists, the real cause is almost
+          always a Declarative User Profile gap (missing required fields), not the code you just wrote.</li>
+          <li>If a UserInfo call returns <code>"Lightweight access token not allowed for userinfo
+          endpoint"</code> even though your Protocol Mapper's config correctly includes
+          <code>userinfo.token.claim</code>, check the client's own "Always use lightweight access
+          token" setting — <code>admin-cli</code> has it enabled by default, and it's unrelated to
+          anything the mapper's code or config controls.</li>
+          <li>If a rebuilt provider JAR doesn't seem to take effect after <code>mvn clean package</code>
+          even though the build succeeded, check whether the Keycloak container was only
+          <code>restart</code>ed rather than recreated — a plain restart can keep serving the old
+          bind-mounted file's content; recreate the container
+          (<code>docker compose up -d --force-recreate &lt;service&gt;</code>) to force the bind mount
+          to re-resolve against the current host file. This is a different failure mode from chapter
+          33's "bind-mounted JAR becomes a directory" bug, not the same one recurring.</li>
+          <li>If a custom attribute a Protocol Mapper's <code>getFirstAttribute()</code> call expects
+          to find comes back <code>null</code> even though you just set it via <code>kcadm.sh</code>,
+          check the realm's Declarative User Profile <code>unmanagedAttributePolicy</code> first —
+          chapters 22, 24, 33, and now 39 have all independently hit the same persistence gap.</li>
+          <li>Don't conflate an Authenticator (runs during the credential check, can still fail the
+          login) with a Required Action (chapter 40 — runs only after the login has already succeeded,
+          and cannot fail it). Both can show the user a form mid-login, which is exactly why the two
+          get confused.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Every Keycloak SPI this course has written against — User Storage (ch. 33), Authenticator,
+          Event Listener, and (with one real exception) Protocol Mapper — shares the same Factory/
+          ServiceLoader/Provider discovery shape.</li>
+          <li>The one real exception: <code>ProtocolMapper</code> extends <code>ProviderFactory</code>
+          itself, and <code>AbstractOIDCProtocolMapper.create()</code> returns <code>this</code> —
+          confirmed directly from the real interface, not assumed from the SPI's name.</li>
+          <li>An Authenticator runs <em>during</em> the credential check and can still fail the login
+          outright; a Required Action (chapter 40) only ever runs <em>after</em> login has already
+          succeeded and cannot fail it — a distinction worth its own callout since it's a common point
+          of confusion.</li>
+          <li>Keycloak's own Server Developer Guide explicitly marks both the Authentication SPI and
+          the Event Listener SPI as "internal" in prose, matching the live
+          <code>KC-SERVICES0047</code> boot warning this chapter's own lab triggered for all three
+          providers (User Storage, chapter 33, triggered no such warning).</li>
+          <li>The single-argument <code>context.failure(AuthenticationFlowError)</code> overload can
+          throw an uncaught exception on the Direct Grant code path — always supply an explicit
+          challenge <code>Response</code> via the two-argument overload instead.</li>
+          <li>A realm's Declarative User Profile gaps and <code>unmanagedAttributePolicy</code> setting
+          continue to surface as real, independent gotchas across completely different SPIs
+          (Authenticator here, Protocol Mapper here, User Storage in chapter 33) — not a one-off.</li>
+          <li>A bind-mounted provider JAR rebuilt while its container is already running needs the
+          container recreated, not merely restarted, to pick up the new file — a different real Docker
+          gotcha than chapter 33's "becomes an empty directory" one.</li>
+          <li>A client's "Always use lightweight access token" setting (enabled by default on
+          <code>admin-cli</code>) causes the UserInfo endpoint to reject that token outright — unrelated
+          to anything a Protocol Mapper's own code or config controls.</li>
+          <li>One Maven project, three packages (one per case-study org) was this chapter's own
+          judgment call, justified by all three SPIs sharing identical build/deploy mechanics and having
+          zero dependencies on each other — not a Keycloak requirement.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Why does Meridian Trust's <code>BusinessHoursAuthenticator</code> return
+            <code>false</code> from <code>requiresUser()</code>, and would it be wrong to return
+            <code>true</code> instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>
+            <code>requiresUser()</code> is an honest signal about what the authenticator's own logic
+            actually needs — this one's decision depends only on the current wall-clock hour, never on
+            which user is logging in, so it genuinely doesn't need the flow to have already resolved a
+            <code>UserModel</code>. Returning <code>true</code> wouldn't necessarily break anything by
+            itself, but it would misrepresent what the authenticator actually does and could force an
+            ordering constraint (this execution must come after one that resolves a user) that this
+            logic doesn't actually need — worth getting right because another developer reading the
+            flow config later will reasonably infer the authenticator touches the user if that flag says so.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague's custom Authenticator denies a Direct Grant login with
+            <code>context.failure(AuthenticationFlowError.ACCESS_DENIED)</code> (the single-argument
+            overload) and gets back an HTTP 500 instead of a clean error. Walk through what's actually
+            happening, confirmed by this chapter's own lab.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The
+            single-argument overload does correctly tag the resulting event (confirmed live: the
+            <code>LOGIN_ERROR</code> event fired with <code>error="access_denied"</code>) — the problem
+            is what happens next. That overload assumes there's a browser to render a challenge response
+            for, and on the Direct Grant code path specifically (no browser involved at all), it throws
+            an uncaught <code>AuthenticationFlowException</code> from
+            <code>DefaultAuthenticationFlow.processResult</code>, which the REST layer turns into a bare
+            <code>HTTP 500 unknown_error</code> instead of a clean OAuth error. The fix is the
+            two-argument <code>context.failure(AuthenticationFlowError, Response)</code> overload,
+            supplying an explicit JSON <code>Response</code> as the challenge rather than relying on the
+            framework to build one that doesn't apply to this code path.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does Riverside Health's event listener need no realm-filtering code at all,
+            and how was that confirmed rather than assumed?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>
+            Keycloak only ever invokes an <code>EventListenerProvider</code>'s <code>onEvent()</code>
+            for a realm that has that provider's id explicitly listed under that realm's own Events
+            configuration (<code>eventsListeners</code>) — the scoping happens one layer above this
+            class, not inside it. Confirmed live in this chapter's lab, not just assumed: a failed login
+            was triggered against a second realm (<code>meridian-trust</code>) that does <em>not</em>
+            have this listener enabled, and grepping fresh logs immediately afterward found zero
+            matching audit lines for that attempt — proving the scoping is real and enforced by realm
+            configuration, not by any code this class contains.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does <code>TenantIdProtocolMapper</code> need only one
+            <code>setTenantClaim(IDToken, ...)</code> helper method to handle both the access token and
+            the ID token, rather than two separate implementations?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>
+            Confirmed directly via <code>javap</code> on the real 26.8.2 jar before writing the class:
+            <code>org.keycloak.representations.AccessToken</code> extends
+            <code>org.keycloak.representations.IDToken</code>. Since an <code>AccessToken</code> genuinely
+            <em>is</em> an <code>IDToken</code> (not merely a similarly-shaped class), a single method
+            typed to accept an <code>IDToken</code> parameter can be called with either a real access
+            token or a real ID token object, and <code>OIDCAttributeMapperHelper.mapClaim(...)</code>
+            places the claim correctly either way without the method needing to know which one it
+            received.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, in terms a reader who only read this chapter (not chapter 33) could
+            follow, why Protocol Mapper's SPI shape is a genuine exception to the Factory/Provider
+            pattern, rather than this chapter simply skipping a step out of laziness.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>
+            Authenticator and EventListenerProvider each need a separate Factory class because they
+            model two genuinely different lifecycle stages: something expensive-ish that happens once at
+            boot (discovery, and any setup work), and something cheap that happens per use (the actual
+            instance Keycloak core calls into). <code>ProtocolMapper</code> doesn't need that split
+            because it's cheap and stateless enough on both sides — confirmed directly by inspecting
+            <code>AbstractOIDCProtocolMapper.create()</code> on the real jar, which simply returns
+            <code>this</code> rather than constructing anything new. The SPI's own design collapses
+            Factory and Provider into one class here; this chapter's single-class
+            <code>TenantIdProtocolMapper</code> isn't a shortcut, it's the shape the real interface
+            actually has.</p>
+          </details></li>
+          <li><details>
+            <summary>A reader asks: "Since Keycloak's own docs call the Authenticator and Event
+            Listener SPIs 'internal,' should a real organization avoid building on them?" What's the
+            honest answer this chapter gives?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not
+            necessarily avoid them, but go in with eyes open about what "internal" means here: both
+            SPIs are documented with a full walkthrough in Keycloak's own Server Developer Guide, and
+            the live boot-time <code>KC-SERVICES0047</code> warning this chapter's own lab triggered
+            confirms they're stable enough to actively use — "internal" means Keycloak reserves the
+            right to change the interface across a release without the same backward-compatibility
+            guarantee a clearly public API would carry, not that the interface is unsupported or
+            unreliable today. A real organization building on these should budget for re-testing a
+            custom provider against each major Keycloak upgrade (chapter 45's territory), the same way
+            chapter 33 already flagged for the User Storage SPI's own version-pinning concerns.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_auth_spi">Keycloak Server Developer Guide — Authentication SPI (version 26.8.2, explicitly marked an internal SPI in the guide's own prose)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#implementing-an-authenticator">Keycloak Server Developer Guide — "Implementing an Authenticator" (the concrete walkthrough this chapter's Meridian Trust provider follows the same shape of)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_events">Keycloak Server Developer Guide — Event Listener SPI (also explicitly marked internal in the guide's own prose)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_development/index.html#_implementing_spi">Keycloak Server Developer Guide — "Implementing an SPI" (the general Factory/Provider/ServiceLoader pattern every Keycloak SPI follows, same section chapter 33 cited)</a></li>
+          <li><a href="https://central.sonatype.com/artifact/org.keycloak/keycloak-server-spi-private">Maven Central — org.keycloak:keycloak-server-spi-private (the module confirmed to hold Authenticator/AuthenticatorFactory/EventListenerProvider/EventListenerProviderFactory for 26.8.2)</a></li>
+          <li><a href="https://central.sonatype.com/artifact/org.keycloak/keycloak-services">Maven Central — org.keycloak:keycloak-services (the module confirmed to hold AbstractOIDCProtocolMapper and its OIDC-specific subinterfaces for 26.8.2)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "custom-spis", 15);
+    SlideDeck.init({ chapterSlug: "custom-spis" });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# Chapter 39's own, isolated Keycloak + PostgreSQL stack -- a standalone compose file, same pattern
+# chapter 33 used, NOT an override of labs/docker/docker-compose.yml (the shared stack every
+# chapter-20+ chapter uses, which should never be asked to carry a custom provider JAR around
+# permanently) and NOT edited directly either.
+#
+#   cd labs/custom-spis
+#   mvn clean package
+#   docker compose -p ch39kc up -d
+#
+# Keycloak is published on host port 18139 (http://localhost:18139), per this course's convention
+# of giving each chapter's own isolated lab stack its own project name + port.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch39_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev, matching every other chapter's lab stack -- no TLS/hostname setup needed for a
+    # local teaching lab. start-dev auto-detects and re-augments for a changed providers/ directory
+    # on its own at each boot; this lab still runs `kc.sh build` explicitly as its own step anyway
+    # (see README.md), both because that is the command a production deployment (started with plain
+    # `start`) genuinely requires, and to make the "re-augment, then restart" mechanism visible.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18139:8080"
+    volumes:
+      # The built provider JAR, mounted read-only into Keycloak's own providers directory. Build it
+      # first (mvn clean package) -- per chapter 33's own documented gotcha, this bind mount becomes
+      # a silently-empty directory on both sides if the host-side file doesn't exist yet at
+      # container-creation time.
+      - ./target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch39_pg_data:
