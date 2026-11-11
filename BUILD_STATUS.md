@@ -51,6 +51,17 @@ real bugs found/fixed in each chapter, new `labs/ldap-federation/`, `labs/custom
 **Part VII (fine-grained authorization, chapters 37-38) is next per the Queue — GATE-5 sits right after
 it.**
 
+**Shell fixes (2026-11-11, user-requested, off-queue):** the site-wide sidebar nav (`.sidebar`/
+`#sidebar-nav` in `book.js`/`book.css`, used by `roadmap.html`/`glossary.html`/`quizzes.html`/
+`labs.html` and — until this fix — chapter 00) scrolled with the page and always listed all 50 chapters
+flat. Fixed: `.sidebar` is now `position: sticky` with its own internal scroll, and each Part renders as
+a collapsible native `<details>`/`<summary>` group (open only for the Part containing the current
+chapter). Also fixed: the theme was silently following the OS/browser `prefers-color-scheme`, overriding
+a reader's choice on return visits — removed that media query from `book.css` and made `book.js`
+`initThemeAndFont()` default explicitly to `light` and always apply a theme, so it now only changes when
+the reader clicks the theme toggle. Committed `3364b2b`, pushed. **Chapter 00 then converted to the
+slide-deck template** (it was the last chapter still on the old book-shell layout — see Done below).
+
 ## Queue
 
 Ordered; one item at a time. Each chapter's full brief gets drafted into this file (replacing its queue
@@ -395,6 +406,25 @@ no stray containers, volumes, or networks from this round's lab work (shared or 
 project) remain.
 
 ## Done
+
+### Chapter 00 converted to the slide-deck template (2026-11-11)
+- Chapter 00 was the last chapter left on the old book-shell layout (the reference-set build on
+  2026-11-10 built it as a book page, before the slide-deck redesign existed; it was never swept up into
+  the 02-30 redesign rollout since that rollout's scope was explicitly "already-built content chapters").
+  Converted now at the user's request, same content/order, re-chunked into 12 slides (`intro`, `mastery`,
+  `grading`, `environment-setup`, `course-map`, `study-loop`, `three-orgs`, `glossary`, `takeaways`,
+  `self-check`, `quiz`, `deep-dive`).
+- Self-check questions (5) previously had no shown answer (pre-dating the 2026-11-10 click-to-reveal
+  rule) — all 5 now have real, chapter-grounded model answers in the `<details>` pattern.
+- Fixed a pre-existing miscount carried over from the original prose: the chapter said "11 Parts" in two
+  places while its own table/takeaways listed 12 (0 through XI) — corrected both to "12 Parts" to match
+  the table, CLAUDE.md §5's own Part list, and chapter 1's "Where Keycloak fits" framing.
+- No glossary/quiz changes needed: 0 glossary terms and a 12-question pool were already correctly
+  flagged low on purpose (orientation chapter, per CLAUDE.md §6's explicit allowance) and remain
+  unchanged.
+- Verified: `html.parser` tag-balance clean, 12 `data-slide` ids present, both mount points
+  (`chapter-glossary-mount`, `quiz-mount`) present, HTTP 200 served locally, `SlideDeck.init`/outline
+  panel present in the served HTML.
 
 ### Reference set (chapters 00-02, GATE-1)
 - 2026-11-10 shell design system complete: `assets/css/book.css`/`print.css`, `assets/js/book.js`/
