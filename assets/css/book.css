@@ -155,7 +155,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
   background: var(--surface); border-bottom: 1px solid var(--border);
   padding: 0.65em 1em; flex-wrap: wrap; row-gap: 0.5em;
 }
-.top-bar .brand { font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 0.5em; }
+.top-bar .brand { font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 0.5em; min-width: 0; }
+.top-bar .brand .brand-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top-bar .brand .mark {
   width: 1.6em; height: 1.6em; border-radius: 7px; background: var(--accent);
   color: var(--accent-contrast); display: inline-flex; align-items: center; justify-content: center;

@@ -43,8 +43,17 @@ window.SlideDeck = (function () {
     var idx = nav.findIndex ? nav.findIndex(function (c) { return c.slug === chapterSlug; }) : -1;
     var prevChapter = (idx > 0) ? nav[idx - 1] : null;
     var nextChapter = (idx !== -1 && idx < nav.length - 1) ? nav[idx + 1] : null;
+    var currentChapter = idx !== -1 ? nav[idx] : null;
     var root = window.SITE_ROOT || "";
     function chapterHref(c) { return root + "chapters/" + pad2(c.number) + "-" + c.slug + ".html"; }
+
+    var brandEl = document.querySelector(".top-bar .brand");
+    if (brandEl && currentChapter) {
+      brandEl.title = "IAM & Keycloak Mastery — back to roadmap";
+      var safeTitle = (currentChapter.number + ". " + currentChapter.title)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      brandEl.innerHTML = '<span class="mark">IK</span><span class="brand-text">' + safeTitle + "</span>";
+    }
 
     var outlineList = document.getElementById("slide-outline");
     var progressMini = document.getElementById("deck-progress-mini");
