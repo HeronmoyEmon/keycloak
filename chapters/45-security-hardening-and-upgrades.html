@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security Hardening &amp; Upgrade Strategy — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "security-hardening-and-upgrades";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IX — Production, Scale &amp; Hardening</span>
+          <span class="badge minutes">~40 min</span>
+        </div>
+        <h1>45. Security Hardening &amp; Upgrade Strategy</h1>
+        <p class="lede">This chapter builds nothing new. It's a checklist chapter: every defense in it was
+        already argued for (chapter 9), specified as a protocol-level best current practice (chapter 18), or
+        configured and tested against a live realm (chapter 30) — plus two items this course genuinely hasn't
+        covered yet, because they live specifically at the "operating Keycloak in production" layer rather
+        than at the concept or protocol layer. The second half turns to a different but related problem: how
+        to move a running Keycloak deployment to a newer version without breaking it, which is its own
+        discipline, not an afterthought to hardening.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist is judged less on whether they can configure a feature once in a lab, and more
+        on whether a production deployment they're responsible for stays secure and available for years, across
+        dozens of point releases. Sources: Keycloak's own Server Administration Guide ("Mitigating security
+        threats" chapter) and Upgrading Guide, both fetched live for Keycloak <strong>26.8.2</strong> (confirmed
+        as the current release during this chapter's research); Keycloak's own 2024 release-cadence
+        announcement; and the National Vulnerability Database for specific, named CVEs. Nothing below is
+        general IAM hardening advice relabeled as Keycloak-specific — every claim is either a direct quote from
+        a live-fetched Keycloak source or a pointer back to the exact course chapter that already built it.</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>This chapter doesn't introduce a new concept — it's a synthesis. Chapter 9 named the threats
+          (credential stuffing, phishing, token theft, session hijacking, MFA fatigue) and pointed most of them
+          at "chapter 18" and "chapter 30" without re-deriving the fixes. Chapter 18 supplied the OAuth/OIDC
+          protocol-level best current practice (PKCE everywhere, <code>state</code>/<code>iss</code> validation,
+          safe token storage). Chapter 30 turned chapter 5's and chapter 9's arguments into real, tested realm
+          fields on a live Keycloak instance (password policy, brute-force lockout, OTP policy). Chapter 19
+          and chapter 29 described the architecture and session model a production deployment actually runs.
+          This chapter's job is to collect all of that into one checklist a working IAM specialist would
+          actually carry into a production readiness review — and to add the handful of items that only show
+          up once you're the one operating the server: admin-interface isolation, SSRF mitigation, and how to
+          move to a new version without an outage or a silent security regression.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="checklist-perimeter" data-title="Checklist, part 1: perimeter &amp; admin access">
+        <h2>The hardening checklist, part 1 — perimeter and admin access</h2>
+        <p>Keycloak's official Server Administration Guide devotes a chapter to this material ("Mitigating
+        security threats") — its live table of contents for 26.8.2 lists, by name, <em>Host</em>,
+        <em>Admin endpoints and Admin Console</em>, <em>Password guess: brute force attacks</em>,
+        <em>Password policies</em>, <em>Clickjacking</em>, <em>SSL/HTTPS requirement</em>, <em>CSRF attacks</em>,
+        <em>Unspecific redirect URIs</em>, and <em>Mitigating Server-Side Request Forgery (SSRF)</em>, among
+        others — confirmed directly against the live page. The guide itself is one very large single-page
+        document; rather than re-paraphrase every subsection from a page this chapter couldn't fully reproduce
+        verbatim, each row below is backed by a source this chapter could independently and specifically
+        confirm.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 900 340" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Three layers of hardening responsibility, and where each item was actually built in this course</title>
+            <desc id="d1">Three columns. Column one, perimeter and admin access: hostname and strict-hostname mode (flagged in chapter 20, enforced here), admin console and REST API isolation (new in this chapter), and SSRF mitigation via Keycloak's client URI pattern executor (new in this chapter). Column two, realm and authentication configuration: password policy (configured in chapter 30), brute-force detection (threat named in chapter 9, configured in chapter 30), and MFA/OTP policy (concept in chapter 5, configured in chapter 30). Column three, protocol and token handling: redirect URI exact-match (mechanics in chapter 13, enforced in Keycloak in chapter 24), CSRF/state-parameter defense (chapter 18's OAuth/OIDC best current practice), and token storage and lifetimes (chapter 18 for storage, chapter 29 for session/token lifetime behavior). A footer banner states this chapter's actual contribution is the checklist itself plus the two genuinely new items: admin isolation and SSRF.</desc>
+
+            <rect x="20" y="20" width="270" height="40" rx="6" class="diagram-fill-danger diagram-stroke"/>
+            <text x="155" y="45" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Perimeter &amp; admin access</text>
+
+            <rect x="315" y="20" width="270" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="450" y="45" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Realm &amp; authentication</text>
+
+            <rect x="610" y="20" width="270" height="40" rx="6" class="diagram-fill-info diagram-stroke"/>
+            <text x="745" y="45" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Protocol &amp; tokens</text>
+
+            <rect x="20" y="75" width="270" height="235" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="35" y="100" class="diagram-label" font-size="11" font-weight="700">Hostname &amp; strict mode</text>
+            <text x="35" y="116" class="diagram-label-muted" font-size="10">flagged ch.20, enforced here</text>
+            <text x="35" y="148" class="diagram-label" font-size="11" font-weight="700">Admin console/REST isolation</text>
+            <text x="35" y="164" class="diagram-label-muted" font-size="10">NEW — this chapter</text>
+            <text x="35" y="196" class="diagram-label" font-size="11" font-weight="700">SSRF mitigation</text>
+            <text x="35" y="212" class="diagram-label-muted" font-size="10">client URI pattern executor</text>
+            <text x="35" y="228" class="diagram-label-muted" font-size="10">NEW — this chapter</text>
+
+            <rect x="315" y="75" width="270" height="235" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="330" y="100" class="diagram-label" font-size="11" font-weight="700">Password policy</text>
+            <text x="330" y="116" class="diagram-label-muted" font-size="10">configured in ch.30</text>
+            <text x="330" y="148" class="diagram-label" font-size="11" font-weight="700">Brute-force detection</text>
+            <text x="330" y="164" class="diagram-label-muted" font-size="10">threat in ch.9, config in ch.30</text>
+            <text x="330" y="196" class="diagram-label" font-size="11" font-weight="700">MFA / OTP policy</text>
+            <text x="330" y="212" class="diagram-label-muted" font-size="10">concept ch.5, config ch.30</text>
+
+            <rect x="610" y="75" width="270" height="235" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="625" y="100" class="diagram-label" font-size="11" font-weight="700">Redirect URI exact-match</text>
+            <text x="625" y="116" class="diagram-label-muted" font-size="10">mechanics ch.13, enforced ch.24</text>
+            <text x="625" y="148" class="diagram-label" font-size="11" font-weight="700">CSRF / state parameter</text>
+            <text x="625" y="164" class="diagram-label-muted" font-size="10">ch.18's BCP mechanism</text>
+            <text x="625" y="196" class="diagram-label" font-size="11" font-weight="700">Token storage &amp; lifetimes</text>
+            <text x="625" y="212" class="diagram-label-muted" font-size="10">storage ch.18, sessions ch.29</text>
+
+            <rect x="20" y="295" width="860" height="35" rx="6" class="diagram-fill-accent diagram-stroke"/>
+            <text x="450" y="317" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">This chapter's real contribution: the checklist itself, plus admin isolation and SSRF — genuinely new material</text>
+          </svg>
+          <figcaption>Figure 45.1 — Most of Keycloak's official hardening checklist is a recall of chapters
+          already built; admin-interface isolation and SSRF mitigation are the two items new to this chapter.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="admin-isolation-ssrf" data-title="Admin isolation &amp; SSRF — the new material">
+        <h2>Admin-interface isolation and SSRF — the two genuinely new items</h2>
+        <p>Two items on Keycloak's own checklist don't trace back to an earlier chapter, because they only
+        matter once you're the one running the server behind a real reverse proxy, not writing a client
+        against someone else's Keycloak. Both are backed by real, named vulnerabilities, not hypothetical
+        risk.</p>
+        <ul>
+          <li><strong>Admin endpoints and Admin Console isolation.</strong> Keycloak's own guidance is to not
+          expose the <code>/admin</code> path through a public-facing reverse proxy at all — serve it only on
+          an internal network, a separate management port, or behind its own access control. This isn't a
+          theoretical nicety: <strong>CVE-2025-10939</strong> (confirmed live against the National Vulnerability
+          Database) describes exactly the failure mode the guidance exists to prevent — a reverse proxy
+          (documented against HAProxy) that normalizes or forwards relative/non-normalized paths can be tricked
+          into exposing <code>/admin</code> as if it were reachable from a path meant to stay public, even when
+          the operator's intent was to block it. Separately, <strong>CVE-2024-11736</strong> (fixed in Keycloak
+          26.0.8) let an admin-level attacker read server environment variables and system properties by
+          placing placeholder expressions inside backchannel-logout or other admin-configured URLs — a reminder
+          that "admin-only" access still needs its own blast-radius thinking, not blanket trust.</li>
+          <li><strong>Mitigating Server-Side Request Forgery (SSRF).</strong> Several Keycloak features ask an
+          administrator to configure a URL the server itself will later fetch — an identity provider's
+          discovery endpoint, a backchannel logout URL, a client's JWKS URI. If that URL is attacker-influenced
+          (a multi-tenant SaaS platform letting tenants self-register clients, for instance), the server can be
+          made to issue requests to internal-only addresses it would never otherwise reach. Keycloak's own
+          mitigation is a configurable <strong>Secure Client URIs pattern executor</strong> — a client policy
+          component that restricts which URI patterns a client registration is allowed to use for exactly these
+          server-fetched fields, closing the gap between "any admin can configure any URL" and "only URLs
+          matching an allow-listed pattern are accepted."</li>
+        </ul>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>26.8.2 also hardened the Admin REST API itself in a way worth calling out here rather than filing
+          under "yet another breaking change": tokens used against the Admin REST API must now carry the
+          <code>kc-admin-api</code> scope and its audience, confirmed live from the official Upgrading Guide. A
+          custom automation client or service account that previously worked by holding <em>any</em> valid
+          token now gets a flat <code>401 Unauthorized</code> until that scope is explicitly assigned — a
+          default-deny change to exactly the kind of "ambient trust" an admin-interface isolation checklist item
+          is trying to close. The escape hatch, <code>--spi-admin-audience-check-enabled=false</code>, exists
+          but the docs explicitly discourage using it.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="checklist-protocol" data-title="Checklist, part 2: realm &amp; protocol defenses, as a table">
+        <h2>The hardening checklist, part 2 — as a straight reference table</h2>
+        <p>Collecting Figure 45.1 into one table, with the exact course chapter each item was actually built
+        in, so this can function as a real pre-production checklist rather than a diagram you have to
+        re-read.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak's own "Mitigating security threats" checklist items (names confirmed live against the 26.8.2 Server Administration Guide), mapped to where each is built in this course</caption>
+            <thead><tr><th>Checklist item</th><th>What it defends against</th><th>Built in</th></tr></thead>
+            <tbody>
+              <tr><td>Hostname / strict hostname mode</td><td>Host-header injection, fraudulent token issuer URLs</td><td>Chapter 20 (flagged), this chapter (enforced); <code>keycloak.org/server/hostname</code></td></tr>
+              <tr><td>Admin endpoints / Admin Console isolation</td><td>Reverse-proxy path-confusion exposing <code>/admin</code> (CVE-2025-10939); admin-URL placeholder env-var leaks (CVE-2024-11736)</td><td>New in this chapter</td></tr>
+              <tr><td>Brute-force detection (off by default)</td><td>Credential stuffing, password guessing — with a documented DoS trade-off if tuned too aggressively</td><td>Chapter 9 (threat), chapter 30 (realm fields, tested live)</td></tr>
+              <tr><td>Password policies</td><td>Weak/guessable passwords, password reuse</td><td>Chapter 30 (real <code>passwordPolicy</code> syntax, tested)</td></tr>
+              <tr><td>MFA / OTP policy</td><td>A correctly guessed or phished password alone being sufficient</td><td>Chapter 5 (concept), chapter 30 (realm fields)</td></tr>
+              <tr><td>SSL/HTTPS requirement</td><td>Credentials and tokens traveling in plaintext</td><td>Chapter 20/21 (Require SSL), this chapter (hostname/TLS)</td></tr>
+              <tr><td>Unspecific (wildcard) redirect URIs</td><td>Authorization code/token theft via an attacker-controlled redirect target</td><td>Chapter 13 (exact-match mechanics), chapter 24 (Keycloak's own narrower wildcard rule)</td></tr>
+              <tr><td>CSRF attacks on the login/consent flow</td><td>Forged authorization callbacks</td><td>Chapter 18 (<code>state</code> parameter, RFC 9700)</td></tr>
+              <tr><td>Clickjacking</td><td>A hidden iframe tricking a user into submitting a login/consent action</td><td>Chapter 21/30 (Security Defenses tab's security headers)</td></tr>
+              <tr><td>SSRF via server-fetched URLs (IdP discovery, backchannel logout, JWKS)</td><td>Server-side requests to internal/attacker-chosen addresses</td><td>New in this chapter (Secure Client URIs pattern executor)</td></tr>
+              <tr><td>Compromised / long-lived access and refresh tokens</td><td>Stolen-token blast radius</td><td>Chapter 18 (storage, BFF pattern), chapter 29 (lifetimes, revocation)</td></tr>
+              <tr><td>Admin REST API audience/scope enforcement</td><td>Any valid token being usable against admin endpoints</td><td>New in this chapter (26.8.2's <code>kc-admin-api</code> scope requirement)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>It's tempting to treat this table as "done once, done forever." It isn't — Keycloak's own guide
+          names a real trade-off inside one of its own rows: brute-force detection, left at aggressive settings,
+          becomes a denial-of-service lever an attacker who knows real usernames can pull deliberately against
+          your legitimate users (chapter 30 named this too). A hardening checklist is a set of dials to
+          balance, not a set of switches to flip to "maximum" and forget.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Meridian Trust">
+        <h2>Case study: Meridian Trust turns this checklist into audit evidence</h2>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> is a retail bank under PCI-DSS v4.0.1, and
+          chapter 11 already mapped three of PCI-DSS's twelve requirements onto IAM concepts this course
+          teaches by name: Requirement 7 (restrict access by business need-to-know — least privilege),
+          Requirement 8 (unique IDs and MFA into the Cardholder Data Environment), and Requirement 10 (log and
+          monitor access). This chapter's checklist is where Meridian's security team turns those requirement
+          numbers into the specific, auditable configuration an assessor actually checks:</p>
+          <ul>
+            <li><strong>Requirement 8 evidence</strong> is chapter 30's password policy and OTP policy fields,
+            captured on Meridian's online-banking realm exactly as that chapter tested them — a documented
+            control, not a verbal claim.</li>
+            <li><strong>Requirement 10 evidence</strong> depends on this chapter's admin-isolation item directly:
+            an assessor asking "who can reach the admin console, and is that access logged and restricted"
+            gets a much weaker answer if <code>/admin</code> sits reachable through the same public reverse
+            proxy that serves customer login traffic. Meridian's assessor-facing answer is the opposite of
+            CVE-2025-10939's failure mode — <code>/admin</code> isolated to an internal network path, with the
+            26.8.2 <code>kc-admin-api</code> audience check as a second, independent layer behind it.</li>
+            <li><strong>SSRF matters specifically to Meridian</strong> because a retail bank's Keycloak realm is
+            exactly the kind of deployment where another team might eventually ask to self-register a client
+            or an identity provider against a partner's OIDC endpoint — the Secure Client URIs pattern executor
+            is the control that keeps that convenience from becoming a path to Meridian's own internal network.</li>
+            <li><strong>The upgrade-strategy half of this chapter matters to Meridian for a PCI-DSS reason too:</strong>
+            Requirement 6 of PCI-DSS (not covered in chapter 11's three-requirement excerpt, but real) demands
+            timely patching of known vulnerabilities — a bank that defers upgrades past a disclosed CVE like
+            the five named in 26.8.x's own release notes is accumulating exactly the kind of documented,
+            auditable risk PCI-DSS exists to catch.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="upgrade-versioning" data-title="What Keycloak's own version numbers promise">
+        <h2>What Keycloak's own version numbers actually promise you</h2>
+        <p>Before a safe-upgrade procedure makes sense, it helps to know what Keycloak itself commits to across
+        a version bump. Per Keycloak's own October 2024 release-cadence announcement (fetched live, and
+        consistent with the version history observed up through 26.8.2):</p>
+        <ul>
+          <li><strong>Four minor releases a year</strong> (the second number in <code>26.8.2</code>), and
+          <strong>a major release every 2-3 years</strong> (the first number) — this course's labs run
+          26.8.2, a patch release (the third number) within the 26.x major line.</li>
+          <li><strong>"The currently default version for a Feature or an API can not change in a minor
+          release"</strong> — quoted directly from Keycloak's own announcement. A default behavior change is
+          reserved for a major version, with one explicit exception this chapter already hit: a documented,
+          named security fix (a CVE) can change default behavior inside a patch release, precisely because
+          leaving a known, exploitable default in place until the next major would be worse.</li>
+          <li><strong>Deprecation has a guaranteed runway:</strong> a feature or API version can be deprecated
+          in a minor release but "will not be removed until the next major version" — quoted directly.</li>
+          <li><strong>The guarantee only covers fully-supported features and APIs</strong> — preview features
+          and non-public APIs can change at any time, which is exactly why this course's own chapters
+          repeatedly flag a feature as "preview" before relying on it.</li>
+        </ul>
+        <p>That framing is what makes the 26.8.x breaking changes below legible: they aren't Keycloak breaking
+        its own promise, they're the explicit, documented exception the promise itself carves out for
+        security.</p>
+      </section>
+
+      <section class="slide" data-slide="upgrade-procedure" data-title="A safe upgrade procedure">
+        <h2>A safe upgrade procedure</h2>
+        <p>Keycloak's own Upgrading Guide states its procedure plainly: "review the migration changes, upgrade
+        the server, upgrade the adapters, upgrade the client libraries," in that order — but it's a release-by-
+        release change log, not an operational runbook for how to execute that safely against a production
+        system with real data. The five steps below close that gap, built from the guide's own content plus
+        chapter 44's backup material and chapter 28's monitoring material.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 980 260" role="img" aria-labelledby="t2 d2">
+            <title id="t2">A five-step safe-upgrade procedure, left to right</title>
+            <desc id="d2">Five boxes connected by arrows, left to right. Step 1, Read release notes: review each version's own "Migrating to" section between your current version and the target, not just the latest one. Step 2, Back up first: a database dump is the real source of truth; a realm export is only a configuration-level snapshot, per chapter 44. Step 3, Test in non-prod: run the real upgrade against a disposable realm or environment first. Step 4, Staged rollout: roll node-by-node, unless a specific release note flags that change as unsafe to roll. Step 5, Monitor after: watch events and logs, per chapter 28, for the specific regressions the release notes named. A footer note states that not every change supports a rolling upgrade — 26.8.2's own client-registration-policy security fix explicitly requires a full stop of the cluster, not a node-by-node roll.</desc>
+
+            <rect x="20" y="70" width="170" height="120" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="105" y="94" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">1. Read release notes</text>
+            <text x="105" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">review each version's</text>
+            <text x="105" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">"Migrating to" notes</text>
+            <text x="105" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">not just the latest</text>
+
+            <line x1="190" y1="130" x2="235" y2="130" class="diagram-stroke" marker-end="url(#arrowU1)"/>
+
+            <rect x="235" y="70" width="170" height="120" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="320" y="94" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">2. Back up first</text>
+            <text x="320" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">DB dump = source of</text>
+            <text x="320" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">truth; realm export =</text>
+            <text x="320" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">config snapshot (ch.44)</text>
+
+            <line x1="405" y1="130" x2="450" y2="130" class="diagram-stroke" marker-end="url(#arrowU1)"/>
+
+            <rect x="450" y="70" width="170" height="120" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="535" y="94" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">3. Test non-prod</text>
+            <text x="535" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">run the real upgrade</text>
+            <text x="535" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">against a disposable</text>
+            <text x="535" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">realm/env first</text>
+
+            <line x1="620" y1="130" x2="665" y2="130" class="diagram-stroke" marker-end="url(#arrowU1)"/>
+
+            <rect x="665" y="70" width="150" height="120" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="740" y="94" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">4. Staged rollout</text>
+            <text x="740" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">roll node-by-node —</text>
+            <text x="740" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">unless a release note</text>
+            <text x="740" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">flags it as unsafe</text>
+
+            <line x1="815" y1="130" x2="845" y2="130" class="diagram-stroke" marker-end="url(#arrowU1)"/>
+
+            <rect x="845" y="70" width="115" height="120" rx="8" class="diagram-fill-danger diagram-stroke"/>
+            <text x="902" y="94" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">5. Monitor</text>
+            <text x="902" y="118" text-anchor="middle" class="diagram-label-muted" font-size="10">watch events</text>
+            <text x="902" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">&amp; logs (ch.28)</text>
+            <text x="902" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">for regressions</text>
+
+            <rect x="20" y="210" width="940" height="38" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="490" y="233" text-anchor="middle" class="diagram-label-muted" font-size="11">Not every change supports step 4 as a roll — 26.8.2's client-registration-policy CVE fix explicitly requires a full cluster stop</text>
+
+            <defs>
+              <marker id="arrowU1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 45.2 — A safe-upgrade procedure: read the notes, back up, test in non-prod, roll
+          out staged (where supported), then monitor.</figcaption>
+        </figure>
+
+        <p>The real breaking changes below — confirmed live against the 26.8.0, 26.8.1, and 26.8.2 sections of
+        the official Upgrading Guide — are exactly what step 1 is for, and show why "read the release notes" is
+        not a formality:</p>
+        <ul>
+          <li><strong>26.8.2:</strong> protocol-mapper create/update/delete through the Admin REST API now needs
+          explicit realm-management permission; the Admin REST API itself now requires the <code>kc-admin-api</code>
+          token scope (above); and a client-registration-policy fix for <strong>CVE-2026-109081</strong> is
+          explicitly flagged as <em>not</em> safe for a rolling upgrade — the guide states a rolling upgrade
+          "is not supported for this change," requiring a full cluster stop instead.</li>
+          <li><strong>26.8.1:</strong> <strong>CVE-2026-107121</strong> changes SMTP StartTLS from silently
+          falling back to plaintext on a failed upgrade, to failing the send outright — a deliberate,
+          security-motivated behavior change that could surprise an operator who only reads the headline
+          "SMTP fix."</li>
+          <li><strong>26.8.0:</strong> <strong>CVE-2026-12388</strong> blocks identity-provider mappers from
+          granting admin roles unless an explicit, <code>manage-realm</code>-gated switch is turned on —
+          closing a privilege-escalation path that existed by default before this release.</li>
+        </ul>
+        <p>None of these are the kind of change a "just click upgrade" workflow catches before it's already in
+        production — which is the entire argument for step 1 existing at all.</p>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <ul class="common-mistakes">
+          <li>If you see a reader treat this chapter's checklist as new security advice to learn, the cause is
+          missing the point — it's a recall and a cross-reference, and the actual depth for most rows lives in
+          chapters 5, 9, 13, 18, 24, 29, and 30. Re-reading this chapter is not a substitute for those.</li>
+          <li>If you see a brute-force lockout tuned as aggressively as possible "for safety," the cause is
+          missing Keycloak's own documented trade-off: an attacker who knows real usernames can trigger
+          lockouts deliberately as a denial-of-service tactic — chapter 30 already demonstrated this live.</li>
+          <li>If you see an Admin Console reachable on the same public hostname and port as customer-facing
+          login, the cause is skipping the admin-isolation checklist item entirely — exactly the exposure
+          CVE-2025-10939 describes a reverse-proxy misconfiguration creating.</li>
+          <li>If you see an automation client or service account suddenly get <code>401 Unauthorized</code>
+          against the Admin REST API right after a 26.8.2 upgrade, with no code change on the client side, the
+          cause is almost certainly the new <code>kc-admin-api</code> scope/audience requirement — the token is
+          still valid, it just no longer carries a scope the Admin REST API now insists on.</li>
+          <li>If you see a team run a rolling, node-by-node upgrade across every single version bump without
+          reading that version's own "Migrating to" notes first, the cause is treating "rolling upgrade" as
+          always safe by default — 26.8.2's own client-registration-policy fix is a documented counter-example.</li>
+          <li>If you see "we exported the realm JSON" treated as equivalent to "we have a backup," the cause is
+          conflating a configuration-level export with a real database backup — chapter 44 covers exactly this
+          distinction and what a realm export does and doesn't capture.</li>
+          <li>If you see a feature flagged "preview" in Keycloak's own docs relied on as if it had the same
+          backward-compatibility guarantee as a fully-supported feature, the cause is missing the explicit
+          carve-out in Keycloak's own versioning announcement: compatibility guarantees apply only to
+          fully-supported features and APIs, not preview ones.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <p class="lede">This chapter is mostly a cross-reference, not a new-concept chapter, so its new-term
+        count is intentionally low — most of its vocabulary (brute-force attack, redirect URI, token storage,
+        strict hostname resolution, the Security Defenses tab) already has a glossary entry from chapters 9,
+        13, 18, 21, and 30, extended here to also point back at this chapter rather than duplicated.</p>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>This chapter's hardening checklist is a synthesis: most rows were already built in chapters 5, 9, 13, 18, 24, 29, and 30 — the value is in collecting them into one pre-production checklist, not re-teaching them.</li>
+          <li>Admin-interface isolation and SSRF mitigation are the two genuinely new items, because they only matter once you're operating Keycloak, not integrating against it.</li>
+          <li>CVE-2025-10939 shows admin-endpoint isolation isn't theoretical: a reverse-proxy path-normalization bug could expose <code>/admin</code> even when the operator intended to block it.</li>
+          <li>Keycloak 26.8.2 added a second, independent layer of Admin REST API hardening — a <code>kc-admin-api</code> scope/audience requirement — on top of whatever role-based permissions a token already carries.</li>
+          <li>Brute-force detection is off by default in Keycloak and has a documented downside (it can become a denial-of-service lever against legitimate users) — hardening settings are dials to balance, not switches to max out.</li>
+          <li>Keycloak ships 4 minor releases a year and a major release every 2-3 years; by its own stated policy, a default behavior cannot change inside a minor release except as an explicit, documented security exception.</li>
+          <li>A safe upgrade is a procedure, not a single command: read every version's own migration notes between your version and the target, back up the database (not just a realm export), test in non-production, roll out staged where that's actually supported, and monitor afterward.</li>
+          <li>Not every Keycloak change supports a rolling, node-by-node upgrade — 26.8.2's client-registration-policy security fix explicitly requires a full cluster stop, which only a reader who read that version's release notes would know in advance.</li>
+          <li>For Meridian Trust, this checklist isn't abstract hygiene — PCI-DSS Requirements 7, 8, and 10 (chapter 11) turn directly into auditable evidence from this chapter's specific controls, and Requirement 6's patching expectation is the whole argument for the upgrade-strategy half of this chapter.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "chapter 45 is where I'll finally learn how to secure Keycloak." Is that framing accurate? What should they expect instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not quite. Most of the actual security depth — password policy and brute-force mechanics, OAuth/OIDC best current practice, MFA — was already built in chapters 5, 9, 18, and 30. This chapter collects those into one pre-production checklist and adds two items that only show up once you're operating the server: admin-interface isolation and SSRF mitigation, plus a separate discipline (safe upgrades). They should expect a reference and a cross-check, not a first introduction to security.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does Keycloak's own guide describe brute-force detection as having a "downside," and why does that matter when setting failureFactor for a real realm?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because an attacker who already knows a target's username doesn't need to guess their password correctly to cause harm — they can deliberately submit wrong passwords just to trigger the lockout, denying the real user access. A very low failureFactor makes this denial-of-service attack cheaper to pull off, so the setting is a balance between blocking credential-guessing and avoiding an easy DoS lever, not a dial to simply turn to its most aggressive value.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, in terms CVE-2025-10939 makes concrete, why "put the admin console behind a reverse proxy" is not automatically the same as "the admin console is isolated."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A reverse proxy only isolates what it's actually configured to block, and CVE-2025-10939 showed a real case (documented against HAProxy) where relative or non-normalized paths could reach <code>/admin</code> even though the operator's intent was to expose only <code>/realms</code> publicly. The proxy being present isn't the control — the proxy correctly normalizing and rejecting any path that resolves to <code>/admin</code> is the control, and that has to be verified, not assumed.</p>
+          </details></li>
+          <li><details>
+            <summary>Your team is about to upgrade a production Keycloak cluster from 26.7.x straight to 26.8.2, skipping the intermediate point releases' own release notes because "we're going straight to the target version." What's wrong with that plan, using a real example from this chapter?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Keycloak's own Upgrading Guide is organized as one "Migrating to X" section per version, and each one can carry its own breaking change — skipping intermediate versions' notes means missing changes that apply regardless of which version you started from. A concrete example from this chapter: 26.8.2's client-registration-policy fix (CVE-2026-109081) explicitly does not support a rolling upgrade, which a team that only read the final target version's summary might not catch before starting a node-by-node roll that version doesn't actually support for that change.</p>
+          </details></li>
+          <li><details>
+            <summary>A service account that has worked fine against the Admin REST API for months suddenly gets 401 Unauthorized right after a 26.8.2 upgrade, with zero code changes on the client side. Diagnose it.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>26.8.2 added a requirement that tokens used against the Admin REST API carry the <code>kc-admin-api</code> scope and its audience — a token that's otherwise completely valid and previously worked now fails this new check unless that scope has been explicitly assigned to the client/service account. The fix is assigning the scope, not debugging the client's existing permissions, which likely haven't changed at all.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does PCI-DSS Requirement 10 (log and monitor access) make Keycloak's admin-isolation checklist item specifically relevant to Meridian Trust, beyond "it's good practice"?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Requirement 10 demands Meridian be able to answer "who could reach administrative functions, and is that access controlled and logged" with real evidence, not a verbal assurance. If the admin console shares a public path with customer-facing login traffic, that answer is weaker — isolating <code>/admin</code> to an internal path, with the 26.8.2 audience check as a second layer, is the specific configuration an assessor can verify, turning a general best practice into Requirement-10-shaped audit evidence.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/server_admin/">Keycloak 26.8.2 Server Administration Guide (the "Mitigating security threats" chapter's live table of contents was confirmed from this page)</a></li>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/upgrading/">Keycloak 26.8.2 Upgrading Guide — the authoritative, version-by-version "Migrating to X" breaking-change log</a></li>
+          <li><a href="https://www.keycloak.org/server/hostname">Keycloak — Configuring the hostname (strict-hostname mode and why it prevents Host-header injection)</a></li>
+          <li><a href="https://www.keycloak.org/2024/10/release-updates.html">Keycloak's own October 2024 release-cadence and versioning-guarantee announcement</a></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-10939">NVD — CVE-2025-10939 (admin path exposure via reverse-proxy path confusion)</a></li>
+          <li><a href="https://nvd.nist.gov/vuln/detail/CVE-2024-11736">NVD — CVE-2024-11736 (admin-URL placeholder environment-variable disclosure, fixed in 26.0.8)</a></li>
+          <li><a href="https://github.com/keycloak/keycloak/security/advisories">Keycloak project security advisories on GitHub</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "security-hardening-and-upgrades", 15);
+    SlideDeck.init({ chapterSlug: "security-hardening-and-upgrades" });
+  });
+</script>
+</body>
+</html>

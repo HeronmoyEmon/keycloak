@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Performance Tuning &amp; Database Considerations — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "performance-tuning";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IX — Production, Scale &amp; Hardening</span>
+          <span class="badge minutes">~40 min</span>
+        </div>
+        <h1>43. Performance Tuning &amp; Database Considerations</h1>
+        <p class="lede">A Keycloak realm that works perfectly in a chapter-20-style single-node lab can still
+        fall over the first week it carries real traffic — not because anything is "broken," but because
+        nobody sized the database connection pool, the JVM heap, or the cache for what production actually
+        asks of it. This chapter is about that sizing: where load really concentrates in a running Keycloak
+        deployment, and the specific, live-verified knobs — database choice and tuning, the connection pool,
+        JVM/GC flags, and cache sizing — that keep it responsive once real users (and real automation) show
+        up.</p>
+        <p class="meta-sources">Sources digested: Keycloak's own <em>Configuring the database</em>, <em>High
+        Availability</em>, <em>Getting started: Scaling and tuning</em>, and <em>Observability</em> guides,
+        plus the Keycloak Benchmark project's JVM options reference — all live-checked against
+        keycloak.org on 2026-11-11 against the current release, Keycloak 26.8.2.</p>
+
+        <h2>Why this matters</h2>
+        <p>An IAM specialist doesn't get credit for standing up Keycloak — they get paged when it's slow.
+        Chapter 41 proved that clustering and Infinispan caching keep a session visible across nodes;
+        chapter 29 explained what state Keycloak actually tracks per user. Neither chapter answers a
+        question every production deployment eventually asks: <em>why is the token endpoint suddenly slow
+        at 9 a.m. on a Monday, and which of the five knobs above is the one to turn?</em> This chapter builds
+        the diagnostic vocabulary and the specific, sourced tuning knobs to answer that — using <span
+        class="org-chip meridian">Meridian Trust</span>'s high-volume banking traffic as the running
+        example, because its login/refresh/step-up-auth volume is exactly the shape Keycloak's own capacity
+        guidance is written to size for.</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Three earlier chapters already built the pieces this chapter tunes. Chapter 19 drew Keycloak's
+          architecture diagram with a database and an embedded cache sitting next to the server, and promised
+          "chapter 43 covers performance tuning and database sizing in depth." Chapter 29 explained
+          <em>what</em> state Keycloak actually tracks per user — sessions, refresh tokens, offline
+          sessions — the thing that has to live somewhere and be found quickly. Chapter 41 explained
+          <em>how</em> that state stays consistent across multiple nodes via Infinispan, and which caches are
+          genuinely distributed versus local. This chapter doesn't re-explain any of that; it asks the
+          operational question those three leave open: given that architecture and that state, how big does
+          each moving part — the database connection pool, the JVM heap, the cache itself — actually need to
+          be, and what breaks first if you get it wrong?</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="where-load-concentrates" data-title="Where load actually concentrates">
+        <h2>Where load actually concentrates</h2>
+        <p>"Keycloak is slow" is rarely one problem — it's usually one of four distinct traffic shapes
+        stressing one specific backend resource, each already introduced in an earlier chapter:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Four traffic shapes that load a real Keycloak deployment differently</caption>
+            <thead><tr><th>Traffic shape</th><th>Typical caller</th><th>What it stresses first</th></tr></thead>
+            <tbody>
+              <tr><td>Browser password/refresh logins (chapter 8, 29)</td><td>End users via a web or mobile app</td><td>The sessions/clientSessions Infinispan cache (chapter 41) — mostly memory, light on the database once a session exists</td></tr>
+              <tr><td>Client-credentials / service-to-service grants (chapter 36)</td><td>Backend services calling each other, often on a tight polling loop</td><td>Mostly stateless token signing — little session state, but very high raw request-per-second counts from automation, not humans</td></tr>
+              <tr><td>Bulk Admin REST API calls (chapter 27)</td><td>Provisioning scripts, CI/CD pipelines, SCIM-style sync jobs</td><td>The database directly — every create/update is a write that can't be served from a read cache, and often invalidates cache entries on every cluster node</td></tr>
+              <tr><td>Event writes (chapter 28)</td><td>Keycloak itself, on every login/admin action, if event persistence is enabled</td><td>An append-heavy database write per event — easy to underestimate because it scales with login volume, not admin activity</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 350" role="img" aria-labelledby="t43-1 d43-1">
+            <title id="t43-1">Four traffic shapes entering one Keycloak node, which in turn leans on its local cache and its database</title>
+            <desc id="d43-1">Four boxes at the top represent browser logins, service-to-service client-credential grants, bulk Admin REST automation, and event writes. Each has an arrow pointing down into a single central box labeled Keycloak node. From that node, two arrows branch down to two boxes: an Infinispan cache box on the left, and a database box on the right, representing the two backends every request ultimately leans on in different proportions.</desc>
+
+            <rect x="8" y="20" width="168" height="58" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="92" y="42" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Browser logins</text>
+            <text x="92" y="57" text-anchor="middle" class="diagram-label-muted" font-size="9">password/refresh</text>
+            <text x="92" y="70" text-anchor="middle" class="diagram-label-muted" font-size="9">(ch. 8, 29)</text>
+
+            <rect x="198" y="20" width="168" height="58" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="282" y="42" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Service-to-service</text>
+            <text x="282" y="57" text-anchor="middle" class="diagram-label-muted" font-size="9">client-credential grants</text>
+            <text x="282" y="70" text-anchor="middle" class="diagram-label-muted" font-size="9">(ch. 36)</text>
+
+            <rect x="388" y="20" width="168" height="58" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="472" y="42" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Bulk Admin REST</text>
+            <text x="472" y="57" text-anchor="middle" class="diagram-label-muted" font-size="9">automation / CI pipelines</text>
+            <text x="472" y="70" text-anchor="middle" class="diagram-label-muted" font-size="9">(ch. 27)</text>
+
+            <rect x="578" y="20" width="174" height="58" rx="7" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="665" y="42" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Event writes</text>
+            <text x="665" y="57" text-anchor="middle" class="diagram-label-muted" font-size="9">one per login/admin action</text>
+            <text x="665" y="70" text-anchor="middle" class="diagram-label-muted" font-size="9">(ch. 28)</text>
+
+            <line x1="92" y1="78" x2="258" y2="148" class="diagram-stroke"></line>
+            <line x1="282" y1="78" x2="292" y2="148" class="diagram-stroke"></line>
+            <line x1="472" y1="78" x2="322" y2="148" class="diagram-stroke"></line>
+            <line x1="665" y1="78" x2="356" y2="148" class="diagram-stroke"></line>
+
+            <rect x="220" y="150" width="160" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="300" y="175" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="13">Keycloak node</text>
+            <text x="300" y="192" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">(Quarkus distribution)</text>
+
+            <line x1="260" y1="210" x2="190" y2="262" class="diagram-stroke"></line>
+            <line x1="340" y1="210" x2="570" y2="262" class="diagram-stroke"></line>
+
+            <rect x="40" y="264" width="300" height="70" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="190" y="290" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Infinispan cache (chapter 41)</text>
+            <text x="190" y="308" text-anchor="middle" class="diagram-label-muted" font-size="10">sessions, realms, users, keys</text>
+            <text x="190" y="322" text-anchor="middle" class="diagram-label-muted" font-size="10">mostly served from memory</text>
+
+            <rect x="420" y="264" width="300" height="70" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="570" y="290" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Database</text>
+            <text x="570" y="308" text-anchor="middle" class="diagram-label-muted" font-size="10">system of record + event log</text>
+            <text x="570" y="322" text-anchor="middle" class="diagram-label-muted" font-size="10">reached through the Agroal pool</text>
+          </svg>
+          <figcaption>Figure 43.1 — All four traffic shapes arrive at the same Keycloak node, but lean on the
+          cache (chapter 41) and the database in very different proportions.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="database-support" data-title="Database support, live-verified">
+        <h2>Database support: live-verified, not memorized</h2>
+        <p>Chapter 19 listed PostgreSQL, MariaDB, MySQL, Microsoft SQL Server, and Oracle Database as
+        Keycloak's officially supported database vendors. That list is stable — but the specific <em>tested
+        versions</em> behind it change every release, which is exactly why this chapter re-verifies them live
+        against keycloak.org's current <em>Configuring the database</em> guide rather than reusing an older
+        snapshot:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak 26.8.2's officially tested database versions, live-verified 2026-11-11 against
+            keycloak.org's current server guide — re-check this table before trusting it in a later session,
+            since it is exactly the kind of number this course's own rules forbid memorizing</caption>
+            <thead><tr><th>Vendor</th><th><code>--db</code> value</th><th>Tested version</th><th>Supported range</th></tr></thead>
+            <tbody>
+              <tr><td>PostgreSQL</td><td><code>postgres</code></td><td>18</td><td>18.x, 17.x, 16.x, 15.x, 14.x — this course's own labs since chapter 20 use Postgres 17, within range</td></tr>
+              <tr><td>Amazon Aurora PostgreSQL</td><td><code>postgres</code></td><td>17.5</td><td>17.x, 16.x, 15.x</td></tr>
+              <tr><td>MariaDB Server</td><td><code>mariadb</code></td><td>11.8</td><td>11.8, 11.4, 10.11, 10.6 (all LTS)</td></tr>
+              <tr><td>MySQL</td><td><code>mysql</code></td><td>8.4</td><td>8.4, 8.0 (both LTS)</td></tr>
+              <tr><td>Microsoft SQL Server</td><td><code>mssql</code></td><td>2022</td><td>2022, 2019; Azure SQL variants track "latest"</td></tr>
+              <tr><td>Oracle Database</td><td><code>oracle</code></td><td>23.5</td><td>23.x (23.5+), 19c (19.3+); RAC supported on the same engine versions</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Two migration-mechanics facts matter more for tuning than the version numbers themselves. First,
+        schema changes are entirely Keycloak's own responsibility via its <code>connections-jpa</code>
+        provider's <code>migrationStrategy</code> option — <code>update</code> (the default, applies pending
+        changes automatically), <code>manual</code> (writes a SQL file for a DBA to review and run), or
+        <code>validate</code> (fails startup if the schema isn't already current). Hand-editing Keycloak's
+        own tables or adding ad-hoc indexes outside that mechanism risks breaking an assumption a future
+        migration relies on — it is not a sanctioned tuning lever. Second, a MySQL-specific gotcha: starting
+        with MySQL 8.0.30, a server-level setting called <code>sql_generate_invisible_primary_key</code> can
+        auto-generate primary keys for tables created without one, which collides with Keycloak's own schema
+        initialization and fails migrations with a "Multiple primary key defined" error — it must be set to
+        <code>OFF</code> before installing or upgrading Keycloak on MySQL 8.0.30+.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Common mistake</div>
+          <p>If a fresh Keycloak install on MySQL fails startup with a "Multiple primary key defined (1068)"
+          error, the cause is almost never a Keycloak bug — it's <code>sql_generate_invisible_primary_key</code>
+          still set to its MySQL 8.0.30+ default. Check that server setting before filing a bug report.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="database-vendor-tuning" data-title="Vendor-specific database tuning">
+        <h2>Vendor-specific tuning knobs that actually move the needle</h2>
+        <p>Beyond picking a supported version, Keycloak's own database guide documents several vendor-specific
+        behaviors that directly affect throughput under real load — not generic database advice, but things
+        Keycloak itself configures or assumes:</p>
+        <ul>
+          <li><strong>PostgreSQL asynchronous commits.</strong> Transactions that only touch ephemeral tables
+          — persisted user sessions, client sessions, or events — use PostgreSQL's <code>synchronous_commit =
+          off</code> by default, trading a small window of durability risk on a crash for lower write latency
+          on exactly the high-volume, low-stakes writes session/event traffic generates. Logouts still force a
+          synchronous commit, because losing a logout record has real security consequences. This can be
+          disabled with <code>--spi-connections-jpa--quarkus--async-commit=false</code> if an organization's
+          durability requirements demand it.</li>
+          <li><strong>Writer/reader instance targeting (PostgreSQL/Aurora).</strong> When PostgreSQL or Amazon
+          Aurora PostgreSQL runs with separate writer and reader instances, Keycloak must always connect to
+          the writer — it sets the JDBC driver's <code>targetServerType</code> property to
+          <code>primary</code> by default specifically to avoid ever landing on a read replica during a
+          failover or switchover. A team that assumes it can point Keycloak's read traffic at a cheaper reader
+          instance to save cost is working against a deliberate safety default, not an oversight.</li>
+          <li><strong>MySQL/MariaDB connection lifetime vs. <code>wait_timeout</code>.</strong> Keycloak
+          defaults <code>db-pool-max-lifetime</code> to 7 hours 50 minutes specifically because MySQL/MariaDB's
+          own default <code>wait_timeout</code> is 8 hours — a pooled connection must be recycled by Keycloak
+          <em>before</em> the server itself silently closes it, or the pool starts handing out dead
+          connections that fail with "No operations allowed after connection closed." If an organization
+          lowers its own <code>wait_timeout</code> without lowering <code>db-pool-max-lifetime</code> to
+          match, this exact failure reappears.</li>
+          <li><strong>Transaction isolation under concurrent logins (MySQL/MariaDB).</strong> Keycloak's
+          optional <code>stateless</code> feature (next slide) sets the isolation level to
+          <code>READ COMMITTED</code> specifically to avoid deadlocks caused by gap locks on upsert statements
+          under concurrent logins — a real, documented failure mode under exactly the kind of login-burst
+          traffic a bank's morning rush produces.</li>
+        </ul>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p><span class="org-chip meridian">Meridian Trust</span> runs PostgreSQL with a writer and two
+          reader replicas for its broader banking platform, and an early design review proposed pointing
+          Keycloak's read-heavy traffic (session/token lookups) at a reader to offload the writer. Keycloak's
+          own <code>targetServerType=primary</code> default exists precisely to prevent this: Keycloak's reads
+          and writes are tightly coupled to the same transaction boundaries (a login reads and writes a
+          session in close succession), so a reader instance that lags the writer even slightly can serve
+          stale or missing data mid-login. The reader replicas stay reserved for the bank's other, genuinely
+          read-only reporting workloads instead.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="connection-pool" data-title="Sizing the connection pool (Agroal)">
+        <h2>Sizing the connection pool: Agroal, confirmed by name</h2>
+        <p>Keycloak's Quarkus distribution does not name its JDBC connection pool technology in the prose of
+        its own database guide — but it doesn't have to, because the pool's own metric names give it away
+        directly. Keycloak's observability guide documents three database connection pool metrics:
+        <code>agroal_available_count</code> (idle connections), <code>agroal_active_count</code> (connections
+        in active use), and <code>agroal_awaiting_count</code> (threads waiting for a connection to free up).
+        Those names confirm, straight from Keycloak's own current documentation, that the underlying pool is
+        <strong>Agroal</strong> — the connection-pool implementation built into Quarkus itself, not HikariCP or
+        any other library a Java developer might expect by default.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak's documented connection-pool options (confirmed against keycloak.org/server/db)</caption>
+            <thead><tr><th>Option</th><th>Controls</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td><code>db-pool-initial-size</code></td><td>Connections opened immediately at startup</td><td>Not stated — treat as 0 unless set</td></tr>
+              <tr><td><code>db-pool-min-size</code></td><td>Floor the pool shrinks back to when idle</td><td>Not stated — treat as 0 unless set</td></tr>
+              <tr><td><code>db-pool-max-size</code></td><td>Ceiling the pool grows to under load</td><td>100</td></tr>
+              <tr><td><code>db-pool-max-lifetime</code></td><td>How long a connection stays open before forced recycling</td><td>Vendor-dependent (MySQL/MariaDB: 7h50m, per the previous slide)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Keycloak's own High Availability guide gives one specific, quotable recommendation that overrides
+        the intuition that "bigger max is always safer": <strong>set initial, min, and max to the same
+        value.</strong> Two independent reasons back this up. First, opening a brand-new database connection
+        is itself slow — doing it mid-request delays that specific response, and a traffic spike that forces
+        many new connections open at once (a "stampede") makes the slowdown worse, not better. Pre-opening the
+        full pool at startup avoids ever paying that cost during real traffic. Second, an open connection lets
+        the database cache the query plans run on it — PostgreSQL, for instance, only promotes a query to a
+        server-side prepared statement after it has run roughly five times on the <em>same</em> connection.
+        Closing and reopening connections constantly (what a 0-floor pool does under light load) throws that
+        cache away repeatedly, which costs more than the memory a few idle connections uses.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 300" role="img" aria-labelledby="t43-2 d43-2">
+            <title id="t43-2">On-demand connection pool versus a fixed-size connection pool under the same traffic spike</title>
+            <desc id="d43-2">Left panel: a Keycloak node connects to an Agroal pool with only a few connections pre-opened; under a traffic spike it must create several new connections on demand, shown as a separate set of dashed circles, each one slow to open and starting with no cached query plan. Right panel: a Keycloak node connects to an Agroal pool where every connection, matching the maximum size, is already open and warm; the same spike is served immediately with no new connections created.</desc>
+            <line x1="380" y1="15" x2="380" y2="285" class="diagram-stroke"></line>
+
+            <text x="190" y="26" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">On-demand pool (initial/min = 0)</text>
+            <rect x="60" y="48" width="130" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="125" y="72" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Keycloak node</text>
+            <line x1="125" y1="88" x2="125" y2="116" class="diagram-stroke"></line>
+            <rect x="30" y="118" width="320" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="190" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">Agroal pool</text>
+            <circle cx="70" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="100" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="220" cy="165" r="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="3,2"></circle>
+            <circle cx="250" cy="165" r="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="3,2"></circle>
+            <circle cx="280" cy="165" r="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="3,2"></circle>
+            <circle cx="310" cy="165" r="10" class="diagram-fill-warning diagram-stroke" stroke-dasharray="3,2"></circle>
+            <text x="85" y="192" text-anchor="middle" class="diagram-label-muted" font-size="8">always open</text>
+            <text x="265" y="192" text-anchor="middle" class="diagram-label-muted" font-size="8">created now — slow,</text>
+            <text x="265" y="203" text-anchor="middle" class="diagram-label-muted" font-size="8">no cached statements</text>
+            <line x1="190" y1="218" x2="190" y2="244" class="diagram-stroke"></line>
+            <rect x="130" y="246" width="120" height="36" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="190" y="268" text-anchor="middle" class="diagram-label" font-size="11">Database</text>
+
+            <text x="570" y="26" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Fixed-size pool (initial = min = max)</text>
+            <rect x="505" y="48" width="130" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="570" y="72" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Keycloak node</text>
+            <line x1="570" y1="88" x2="570" y2="116" class="diagram-stroke"></line>
+            <rect x="410" y="118" width="320" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="570" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">Agroal pool</text>
+            <circle cx="450" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="480" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="510" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="630" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="660" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="690" cy="165" r="10" class="diagram-fill-success diagram-stroke"></circle>
+            <text x="570" y="192" text-anchor="middle" class="diagram-label-muted" font-size="8">all pre-opened — ready immediately,</text>
+            <text x="570" y="203" text-anchor="middle" class="diagram-label-muted" font-size="8">statement cache already warm</text>
+            <line x1="570" y1="218" x2="570" y2="244" class="diagram-stroke"></line>
+            <rect x="510" y="246" width="120" height="36" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="570" y="268" text-anchor="middle" class="diagram-label" font-size="11">Database</text>
+          </svg>
+          <figcaption>Figure 43.2 — The same traffic spike served by an on-demand pool (new connections
+          created mid-spike, slow and cold) versus a fixed-size pool (every connection already open and
+          warm).</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Common mistake</div>
+          <p>If <code>agroal_awaiting_count</code> climbs under load, the instinctive fix is "raise
+          <code>db-pool-max-size</code>." Keycloak's own observability guide warns this isn't always right —
+          a larger pool can simply push the bottleneck onto the database itself, which then becomes the slow
+          part. It also recommends checking whether <code>http-pool-max-threads</code> (the HTTP worker thread
+          count) is set higher than the database can actually support, and lowering it to match instead of
+          growing the pool — fewer, well-matched threads reduce contention rather than just moving it
+          downstream.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="jvm-heap-gc" data-title="JVM heap &amp; GC tuning">
+        <h2>JVM heap and garbage-collection tuning</h2>
+        <p>Keycloak's Quarkus distribution still runs on a JVM (there is no native-image option for the
+        features this course relies on), so standard JVM heap and GC flags apply — but Keycloak's own
+        benchmark project scopes the recommendation down to a short, specific list rather than every flag the
+        JVM supports:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>JVM flags named in Keycloak's own benchmark/tuning guidance</caption>
+            <thead><tr><th>Flag</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>-XX:MaxRAMPercentage</code> / <code>-XX:MinRAMPercentage</code> / <code>-XX:InitialRAMPercentage</code></td><td>Size the heap as a share of visible memory — the right choice in a container, where the JVM can see the container's memory limit</td></tr>
+              <tr><td><code>-Xms</code> / <code>-Xmx</code></td><td>Absolute initial/maximum heap size — the right choice outside a container, on a fixed host</td></tr>
+              <tr><td><code>-XX:+UseG1GC</code></td><td>Enable the G1 garbage collector</td></tr>
+              <tr><td><code>-XX:MaxGCPauseMillis</code></td><td>Target maximum GC pause time</td></tr>
+              <tr><td><code>-Xlog:gc:file=&lt;path&gt;</code></td><td>Write GC activity to a log file for later analysis</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Two pieces of general guidance matter more than any single flag value. First, Keycloak's own
+        <em>Scaling and tuning</em> guide advises profiling before resizing: "it is best to determine what is
+        contributing to the increased footprint using a heap dump" rather than guessing at a bigger number.
+        Second, the same guide states a clear preference — "adjusting the memory request and limit is
+        preferable to horizontal scaling" — when the problem is genuinely memory pressure rather than raw
+        request throughput; adding nodes doesn't fix an undersized heap on each one. A heap set too small
+        makes GC run more often (shorter pauses, but constant ones); a heap set too large lengthens individual
+        pauses — the right size sits between those two failure modes, found by measuring under real load, not
+        guessed in advance.</p>
+        <p>The getting-started guide also names a signal worth recognizing before touching the JVM at all:
+        excessive response times that trace back to an oversized HTTP work queue often mean the fix is load
+        shedding (rejecting or queuing less aggressively) rather than more memory — a symptom that looks like
+        "needs more heap" but is actually "is accepting more concurrent work than it can finish."</p>
+      </section>
+
+      <section class="slide" data-slide="cache-tuning" data-title="Cache-tuning trade-offs">
+        <h2>Cache-tuning trade-offs, building on chapter 41</h2>
+        <p>Chapter 41 already established the mechanics: Keycloak's embedded Infinispan splits caches into
+        distributed ones (sessions and their variants, replicated across nodes) and local ones (realms, users,
+        keys, authorization, crl — kept fresh by cross-node invalidation, falling back to the database on a
+        miss). This chapter only adds the tuning layer on top of that split.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 260" role="img" aria-labelledby="t43-3 d43-3">
+            <title id="t43-3">A local cache serving as a read-through accelerator in front of the database</title>
+            <desc id="d43-3">A Keycloak node sends a request to its local cache. On a cache hit, the result is served immediately back to the node. On a cache miss, the request continues on to the database, which answers and also refills the cache entry for next time, before the result returns to the node.</desc>
+            <rect x="20" y="100" width="140" height="56" rx="7" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="90" y="124" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">Keycloak node</text>
+            <text x="90" y="140" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">makes a request</text>
+
+            <line x1="160" y1="128" x2="228" y2="128" class="diagram-stroke" marker-end="url(#arrowA)"></line>
+            <defs>
+              <marker id="arrowA" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+
+            <rect x="230" y="100" width="180" height="56" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="320" y="122" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Local cache (ch. 41)</text>
+            <text x="320" y="138" text-anchor="middle" class="diagram-label-muted" font-size="9">realms, users, keys</text>
+
+            <path d="M320,100 C320,40 150,40 90,100" fill="none" class="diagram-stroke"></path>
+            <text x="200" y="40" text-anchor="middle" class="diagram-label-muted" font-size="9">hit — served immediately, no DB round trip</text>
+
+            <line x1="410" y1="128" x2="478" y2="128" class="diagram-stroke" marker-end="url(#arrowB)"></line>
+            <defs>
+              <marker id="arrowB" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-warning"></path>
+              </marker>
+            </defs>
+            <text x="444" y="118" text-anchor="middle" class="diagram-label-muted" font-size="8">miss</text>
+
+            <rect x="480" y="100" width="180" height="56" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="570" y="122" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Database</text>
+            <text x="570" y="138" text-anchor="middle" class="diagram-label-muted" font-size="9">always-authoritative source</text>
+
+            <path d="M570,156 C570,210 330,210 320,156" fill="none" class="diagram-stroke" stroke-dasharray="4,3"></path>
+            <text x="440" y="222" text-anchor="middle" class="diagram-label-muted" font-size="9">miss result also refills the cache entry for next time</text>
+          </svg>
+          <figcaption>Figure 43.3 — A local cache is a read-through accelerator, not a second source of
+          truth: a miss always falls through to the database and refills the cache on the way back.</figcaption>
+        </figure>
+
+        <p>Two concrete tuning levers follow directly from that model. First, cache <em>size</em> is a real
+        setting, not just an on/off switch — Keycloak's High Availability guide recommends growing the
+        <code>users</code> cache by roughly 2x and the <code>realms</code> cache by roughly 4x the number of
+        concurrently active clients once that count exceeds about 2,500, specifically because an undersized
+        cache evicts entries that are still being actively used, forcing database round trips that a bigger
+        cache would have avoided entirely. Second, watch the <em>warm-up</em> gap: caches start empty on every
+        restart and only reach their steady-state hit ratio after real traffic refills them, so a capacity
+        plan based on post-warm-up measurements alone will under-provision for the minutes right after every
+        deploy or failover.</p>
+
+        <p>A newer, more fundamental trade-off is now fully supported rather than experimental: Keycloak
+        26.8.0 promoted an optional <code>stateless</code> feature (<code>--features=stateless</code>, off by
+        default) from preview to supported. Enabled, it moves volatile data — authentication sessions, action
+        tokens, brute-force failure counters — out of Infinispan and into the database instead, eliminating
+        the external-cluster complexity chapter 41 covers entirely. The documented cost is concrete, not
+        hand-waved: roughly 8-10ms of added latency per authentication interaction, and database CPU/IOPS load
+        roughly doubling, because state that used to be a memory lookup becomes a database round trip on every
+        request. For a single cluster, it mainly trades cache-rebalance disruption for steady extra database
+        load; for a multi-site deployment it also demands a synchronously replicated database with sub-10ms
+        inter-site latency, which rules it out across real geographic regions. It is a genuine option, not yet
+        the default, and sizing a database for roughly double its current load is the real price of choosing
+        it.</p>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: sizing Meridian Trust's cluster">
+        <h2>Case study: sizing <span class="org-chip meridian">Meridian Trust</span>'s cluster</h2>
+        <p>Meridian Trust's fraud-aware authentication design (step-up re-auth on high-value transfers, short
+        refresh-token lifetimes, and a fraud-scoring backend that calls Keycloak via client-credential grants
+        on every sensitive action) produces exactly the three traffic shapes Keycloak's own High Availability
+        guide sizes capacity around: password/refresh logins, client-credential grants, and refresh-token
+        requests. That guide gives per-vCPU throughput budgets, tested under load, for precisely this mix:</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 340" role="img" aria-labelledby="t43-4 d43-4">
+            <title id="t43-4">Per-vCPU throughput budgets from Keycloak's own High Availability guide, applied to a worked Meridian Trust sizing example</title>
+            <desc id="d43-4">Three boxes show documented per-vCPU throughput ranges for password logins, client-credential grants, and refresh token requests. Below them, an arrow leads to a database box noting the IOPS and vCPU budget per 100 requests per second. At the bottom, a worked example box applies these numbers to a target of 45 logins, 360 client-credential grants, and 360 refresh requests per second across three pods, concluding with a per-pod resource request and a database instance size.</desc>
+            <rect x="10" y="20" width="230" height="64" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="125" y="42" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Password logins</text>
+            <text x="125" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">15/s typical per vCPU</text>
+            <text x="125" y="72" text-anchor="middle" class="diagram-label-muted" font-size="10">(tested up to 300/s)</text>
+
+            <rect x="265" y="20" width="230" height="64" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="380" y="42" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Client-credential grants</text>
+            <text x="380" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">120/s typical per vCPU</text>
+            <text x="380" y="72" text-anchor="middle" class="diagram-label-muted" font-size="10">(tested up to 2000/s)</text>
+
+            <rect x="520" y="20" width="230" height="64" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="635" y="42" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">Refresh token grants</text>
+            <text x="635" y="58" text-anchor="middle" class="diagram-label-muted" font-size="10">120/s typical per vCPU</text>
+            <text x="635" y="72" text-anchor="middle" class="diagram-label-muted" font-size="10">(tested up to 435/s)</text>
+
+            <line x1="125" y1="84" x2="340" y2="130" class="diagram-stroke"></line>
+            <line x1="380" y1="84" x2="370" y2="130" class="diagram-stroke"></line>
+            <line x1="635" y1="84" x2="400" y2="130" class="diagram-stroke"></line>
+
+            <rect x="210" y="132" width="320" height="50" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="370" y="152" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Database budget</text>
+            <text x="370" y="168" text-anchor="middle" class="diagram-label-muted" font-size="10">~1,400 write IOPS + 0.35-0.7 vCPU per 100 req/s</text>
+
+            <line x1="370" y1="182" x2="370" y2="210" class="diagram-stroke"></line>
+
+            <rect x="60" y="212" width="620" height="112" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="370" y="234" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">Worked example — Meridian Trust's target traffic</text>
+            <text x="370" y="254" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">45 logins/s + 360 client-credential/s + 360 refresh/s, across 3 pods</text>
+            <text x="370" y="274" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Per pod: 3 vCPU request / 7.5 vCPU limit, 1250 MB mem request / 1360 MB limit</text>
+            <text x="370" y="294" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Database: a 2 vCPU instance (lighter peaks) or 4 vCPU instance (tighter response-time needs)</text>
+            <text x="370" y="312" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">(numbers per Keycloak's own High Availability sizing guide, applied to this traffic mix)</text>
+          </svg>
+          <figcaption>Figure 43.4 — Keycloak's own documented per-vCPU throughput budgets, applied to a
+          Meridian Trust-shaped traffic target.</figcaption>
+        </figure>
+
+        <p>Two things are worth noticing in that worked example. First, the CPU headroom is deliberately
+        generous — 7.5 vCPU limit against a 3 vCPU request, because the same guide found that "performance
+        dropped significantly when pods were throttled" under spikes, and a bank's morning login rush and a
+        fraud-related step-up-auth burst are exactly the spike shape that headroom exists for. Second, the
+        database sizing isn't an afterthought bolted onto the compute sizing — at this traffic level it is
+        explicitly budgeted in write IOPS, which ties directly back to the connection-pool and async-commit
+        tuning from earlier in this chapter: a pool sized for the load above, with PostgreSQL's async commits
+        enabled for session/event writes, is what actually lets the database hit that IOPS budget rather than
+        becoming the bottleneck underneath otherwise well-sized compute.</p>
+      </section>
+
+      <section class="slide" data-slide="pitfalls" data-title="Common mistakes">
+        <h2>Common mistakes and pitfalls</h2>
+        <ul>
+          <li><strong>If connections keep timing out under load</strong>, the cause is often not a too-small
+          pool but <code>http-pool-max-threads</code> set higher than the database can actually serve — check
+          and lower thread count before raising <code>db-pool-max-size</code>.</li>
+          <li><strong>If the pool is "sized" but still feels slow on a cold start</strong>, the cause is
+          usually <code>db-pool-initial-size</code>/<code>db-pool-min-size</code> left at their defaults (0)
+          while only <code>db-pool-max-size</code> was tuned — the pool is still opening connections on demand
+          during exactly the traffic it was supposed to absorb instantly.</li>
+          <li><strong>If MySQL/MariaDB throws "No operations allowed after connection closed" under sustained
+          traffic</strong>, the cause is almost always <code>db-pool-max-lifetime</code> left larger than (or
+          equal to) the database server's own <code>wait_timeout</code> — the server is closing connections
+          the pool still thinks are alive.</li>
+          <li><strong>If a fresh MySQL 8.0.30+ install fails migration with "Multiple primary key defined
+          (1068)"</strong>, the cause is <code>sql_generate_invisible_primary_key</code> still on at the
+          server level, colliding with Keycloak's own schema initialization — not a Keycloak defect.</li>
+          <li><strong>If GC pauses or memory pressure show up after a traffic increase</strong>, the cause is
+          rarely "needs a bigger number" without evidence — Keycloak's own guidance is to take a heap dump
+          first and resize based on what it shows, not to guess-and-check in production.</li>
+          <li><strong>If cache hit ratios look fine in steady state but the deployment struggles right after
+          every rolling restart</strong>, the cause is the cache warm-up gap — caches start empty and need
+          real traffic to refill, which a steady-state-only capacity plan doesn't account for.</li>
+          <li><strong>If someone proposes pointing Keycloak's reads at a database read replica to save
+          cost</strong>, the cause of the resulting bugs is ignoring why <code>targetServerType=primary</code>
+          is the default — Keycloak's reads and writes inside one login are too tightly coupled to tolerate
+          replica lag.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Load on a real Keycloak deployment isn't uniform — browser logins, client-credential grants,
+          bulk Admin REST automation, and event writes stress the cache and the database in very different
+          proportions, and "Keycloak is slow" is really four different possible problems.</li>
+          <li>Keycloak's officially supported database versions change every release — this chapter's own
+          tested-version table (PostgreSQL 18, MariaDB 11.8, MySQL 8.4, MSSQL 2022, Oracle 23.5, live-verified
+          2026-11-11 against 26.8.2) is exactly the kind of fact to re-verify, not memorize.</li>
+          <li>Schema changes belong entirely to Keycloak's own <code>migrationStrategy</code> mechanism
+          (<code>update</code>/<code>manual</code>/<code>validate</code>) — hand-tuning indexes or editing
+          Keycloak's own tables directly is not a sanctioned lever.</li>
+          <li>Keycloak's connection pool metric names (<code>agroal_active_count</code>,
+          <code>agroal_available_count</code>, <code>agroal_awaiting_count</code>) confirm the underlying
+          technology is <strong>Agroal</strong>, the pool built into Quarkus — not HikariCP.</li>
+          <li>Keycloak's own High Availability guide recommends setting
+          <code>db-pool-initial-size</code>/<code>min</code>/<code>max</code> all equal, to avoid both
+          connection-creation stampedes under load and the loss of server-side statement caching every time a
+          connection closes and reopens.</li>
+          <li>A bigger connection pool is not automatically a safer one — it can just move the bottleneck onto
+          the database; matching <code>http-pool-max-threads</code> to actual database capacity is often the
+          better first fix.</li>
+          <li>JVM heap sizing should start from a heap dump, not a guess, and vertical resizing (more
+          memory/CPU per node) is Keycloak's own stated preference over horizontal scaling when the problem is
+          genuinely memory pressure.</li>
+          <li>Chapter 41's local caches (realms/users/keys) are a read-through accelerator, not a second
+          source of truth — a miss always falls through to the database and refills the cache, and both cache
+          size and the post-restart warm-up gap are real, separate tuning levers.</li>
+          <li>Keycloak's <code>stateless</code> feature (now supported as of 26.8.0, off by default) trades
+          Infinispan's cross-node cache replication for a database that has to absorb roughly double the CPU
+          and IOPS load and ~8-10ms of added per-login latency — a real option, not a free upgrade.</li>
+          <li>Keycloak's own capacity guidance gives concrete per-vCPU throughput budgets for password logins,
+          client-credential grants, and refresh requests, plus a database IOPS budget per 100 req/s — numbers
+          this chapter applied directly to a Meridian Trust-shaped traffic target rather than treating
+          capacity planning as guesswork.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "Keycloak is slow" without any more detail. What four distinct traffic
+            shapes would you ask about first, and why does each one stress a different backend resource?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Browser
+            password/refresh logins (mostly session-cache traffic, light on the database once a session
+            exists), service-to-service client-credential grants (high raw request rate from automation, but
+            mostly stateless signing), bulk Admin REST API calls from provisioning/CI automation (writes that
+            hit the database directly and can't be served from a read cache), and event writes if event
+            persistence is enabled (an append-heavy database write per login, which scales with user volume
+            rather than admin activity). "Slow" means something different depending on which of these
+            dominates, so the diagnosis has to start by identifying which traffic shape is actually growing.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does Keycloak's own High Availability guide recommend setting the connection pool's
+            initial, minimum, and maximum size to the same value, instead of leaving initial/min low to save
+            resources when idle?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Two reasons.
+            Opening a new database connection is itself slow, so a pool that creates connections on demand
+            pays that cost during real traffic, and a sudden spike that needs many new connections at once
+            makes it worse (a connection-creation stampede). Second, keeping connections open preserves
+            server-side statement caching — PostgreSQL, for example, only promotes a repeated query to a
+            cached prepared statement after it runs several times on the same connection, so a pool that keeps
+            closing and reopening connections under light load throws that caching benefit away constantly.
+            The small resource cost of a few idle, pre-opened connections is worth avoiding both problems.</p>
+          </details></li>
+          <li><details>
+            <summary>Agroal's own metrics are named <code>agroal_active_count</code>, <code>agroal_available_count</code>,
+            and <code>agroal_awaiting_count</code>. If <code>agroal_awaiting_count</code> is climbing under
+            load, what are two different fixes to consider, and why isn't "just raise db-pool-max-size" always
+            the right one?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>One option
+            is raising <code>db-pool-max-size</code> so more connections are available. The other, which
+            Keycloak's own observability guide calls out explicitly, is lowering <code>http-pool-max-threads</code>
+            so the number of concurrent HTTP workers actually matches what the database can support. Simply
+            raising the pool size risks pushing the real bottleneck onto the database itself — more
+            connections competing for the database's finite capacity can make the database the slow part
+            instead of fixing anything, whereas matching the thread count to database capacity reduces
+            contention at the source.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, in your own words, why Keycloak defaults to connecting only to a PostgreSQL/Aurora
+            writer instance (<code>targetServerType=primary</code>) rather than letting read traffic go to a
+            cheaper reader replica.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A single
+            login or token operation reads and writes session/token state within the same tight transaction
+            boundary — for example, reading whether a session exists and then immediately updating it. A
+            reader replica can lag the writer by even a small amount, which is enough for a read immediately
+            following a write to see stale or missing data mid-login. Keycloak's reads and writes are too
+            tightly coupled for that lag to be safe, so it defaults to always hitting the writer, even though
+            that forgoes the cost savings a reader replica could otherwise offer for genuinely read-only
+            traffic elsewhere in an organization's systems.</p>
+          </details></li>
+          <li><details>
+            <summary>What does Keycloak's <code>stateless</code> feature actually trade away, and under what
+            condition would you NOT recommend enabling it even though it's now a supported (not preview)
+            feature as of 26.8.0?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It moves
+            volatile state (authentication sessions, action tokens, brute-force counters) out of Infinispan
+            and into the database, which eliminates the operational complexity of running and maintaining an
+            external Infinispan cluster (chapter 41's subject) — but at the documented cost of roughly double
+            the database's CPU and IOPS load, plus about 8-10ms of extra latency per authentication
+            interaction, because state that used to be a memory lookup becomes a database round trip. It would
+            be a poor fit for a deployment whose database is already close to its capacity ceiling, since
+            doubling its load could make the database the new bottleneck; it's also a hard requirement
+            mismatch for any genuinely multi-region deployment, since it needs a synchronously replicated
+            database with sub-10ms inter-site latency that real geographic regions can't provide.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/server/db">Keycloak Server Administration Guide — Configuring the database (tested versions, connection pool options, vendor-specific tuning)</a></li>
+          <li><a href="https://www.keycloak.org/high-availability/multi-cluster/concepts-database-connections">Keycloak High Availability Guide — Concepts for database connections (connection pool sizing recommendation)</a></li>
+          <li><a href="https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing">Keycloak High Availability Guide — Concepts for sizing CPU and memory resources (the per-vCPU throughput budgets used in this chapter's case study)</a></li>
+          <li><a href="https://www.keycloak.org/getting-started/getting-started-scaling-and-tuning">Keycloak Getting Started Guide — Scaling and tuning</a></li>
+          <li><a href="https://www.keycloak.org/observability/metrics-for-troubleshooting-database">Keycloak Observability Guide — Troubleshooting using database metrics (the Agroal metric names)</a></li>
+          <li><a href="https://www.keycloak.org/keycloak-benchmark/kubernetes-guide/latest/running/jvm/jvm_options">Keycloak Benchmark project — JVM options reference</a></li>
+          <li><a href="https://www.keycloak.org/2026/07/multi-cluster-v2-and-stateless-mode">Keycloak project blog — "Multi-cluster v2 and stateless mode" (the stateless feature's original announcement, now promoted to supported in 26.8.0)</a></li>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/release_notes/">Keycloak 26.8.2 release notes (confirms the stateless feature's promotion from preview to supported in 26.8.0)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "performance-tuning", 15);
+    SlideDeck.init({ chapterSlug: "performance-tuning" });
+  });
+</script>
+</body>
+</html>

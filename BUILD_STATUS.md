@@ -57,11 +57,13 @@ secure a real backend/frontend/service account (Part VI) *and* configure fine-gr
 subagents per the drafted briefs, each with a real Java-SPI Docker lab (`ch39kc`/18139,
 `ch40kc`/18140), then centrally merged and independently re-verified — see the Done entry below for
 full detail. No gate sits immediately after Part VIII — **Part IX (production, scale & hardening,
-chapters 41-45) is now in progress.** Round 1 (ch41 HA/clustering, ch42 Keycloak-on-Kubernetes — the two
-lab-bearing chapters) is **complete** — both built, merged, and independently re-verified; see the Done
-entry below for full detail (a real two-node session-replication proof for ch41, a real `kind`+Operator
-deployment for ch42, both torn down clean, disk actually *improved* during the work). **Round 2
-(ch43-45, no-lab/research-heavy) is next.**
+chapters 41-45) is COMPLETE.** Round 1 (ch41 HA/clustering, ch42 Keycloak-on-Kubernetes) and Round 2
+(ch43 performance tuning, ch44 backup/DR/multi-region, ch45 security hardening/upgrades) are both built,
+merged, and independently re-verified — see the Done entries below for full detail. Part IX closes out
+real, named findings across the board: a deprecated Keycloak multi-cluster topology (v1), a feature
+promoted from preview to supported mid-course (`stateless` mode, 26.8.0), and five real CVEs in the
+26.8.x line, one explicitly incompatible with a rolling upgrade. **No gate sits after Part IX — Part X
+(case studies & capstone, chapters 46-48 + the capstone) is next per the Queue.**
 
 **Shell fixes (2026-11-11, user-requested, off-queue):** the site-wide sidebar nav (`.sidebar`/
 `#sidebar-nav` in `book.js`/`book.css`, used by `roadmap.html`/`glossary.html`/`quizzes.html`/
@@ -140,49 +142,8 @@ visuals/examples where it helps, not just re-chunk existing prose.
 ### Part VIII (extending Keycloak) — DONE
 14-15. ~~Chapters 39-40~~ — done 2026-11-11, see Done below.
 
-### Part IX (production, scale, hardening) — **current unit**
-16. Chapters 41-45. No gate sits after Part IX — the next one is the Final QA gate, after Part XI.
-    ~~Round 1 (ch41, ch42)~~ — done 2026-11-11, see Done below. **Round 2 (ch43-45) — briefs below.**
-
-**Chapter 43 — Performance Tuning & Database Considerations. Lab: no.**
-- "What concept is this?" recall: ties back to chapter 19's architecture (where the DB and caches sit)
-  and chapter 29's sessions (what actually drives load).
-- Live-verify: Keycloak 26.8.2's officially supported/tested database list and versions (don't assume an
-  older support matrix still holds), current official guidance on JVM heap/GC tuning for the Quarkus
-  distribution, and connection-pool (Agroal/HikariCP — confirm which one Keycloak's Quarkus distribution
-  actually uses) sizing guidance.
-- Content: where load actually concentrates (token issuance, event writes, admin REST calls under
-  automation), DB indexing/connection-pool tuning, cache-tuning trade-offs building on chapter 41.
-- Case-study tie-in: Meridian Trust (high-volume banking traffic) or Northwind Apps (multi-tenant SaaS
-  noisy-neighbor concerns) — pick whichever the live-verified tuning knobs illustrate most concretely.
-- Diagrams (3+); Glossary 10+ terms; Self-check (5+), takeaways (8+), quiz (15+, 50%+ scenario).
-
-**Chapter 44 — Backup, Disaster Recovery & Multi-Region Strategies. Lab: no.**
-- "What concept is this?" recall: chapter 10's governance/audit material and chapter 11's compliance
-  material both assume data survives — this is how.
-- Live-verify: Keycloak's current official export/import mechanics (`kc.sh export`/`import`, realm JSON
-  shape, any current caveats e.g. what isn't captured) and whatever current guidance exists on multi-
-  region Keycloak topologies (active-passive vs. active-active, and the real complication of replicating
-  Infinispan/session state across regions — chapter 41 is the natural callback).
-- Content: DB backup/restore as the real source of truth vs. realm export/import as a narrower config-
-  level tool; RTO/RPO framing; multi-region trade-offs, honestly scoped (don't overstate what's easy).
-- Case-study tie-in: Riverside Health (HIPAA's data-availability requirements) fits well.
-- Diagrams (3+); Glossary 10+ terms; Self-check (5+), takeaways (8+), quiz (15+, 50%+ scenario).
-
-**Chapter 45 — Security Hardening Checklist & Upgrade/Migration Strategy. Lab: no.**
-- "What concept is this?" recall: a capstone-adjacent synthesis chapter pulling together hardening advice
-  scattered across chapters 9, 18, 30, and others into one checklist, plus new upgrade-specific content.
-- Live-verify: Keycloak's own current official security hardening recommendations and current upgrade/
-  migration guide notes (what changed in recent majors, any documented breaking-change patterns) —
-  current as of 26.8.2, cite the actual source rather than general IAM hardening advice relabeled.
-- Content: a genuine checklist (not just a bullet restating prior chapters) tied to where each item was
-  actually covered; a safe-upgrade procedure (backup first per chapter 44, test in a non-prod realm,
-  read release notes for breaking changes, staged rollout).
-- Case-study tie-in: whichever org's compliance pressure (ch11) most naturally motivates a hardening
-  checklist — Meridian Trust (PCI-DSS) is a strong fit.
-- Diagrams (2+ — this is a checklist-style chapter, lower diagram pressure is fine, note it); Glossary
-  (lower count expected, mostly cross-references — note it rather than padding); Self-check (5+),
-  takeaways (8+), quiz (15+, 50%+ scenario).
+### Part IX (production, scale, hardening) — DONE
+16. ~~Chapters 41-45~~ — done 2026-11-11, see Done below. No gate sits after Part IX.
 
 ### Part X (case studies & capstone)
 17. `case-studies.html` index + `case-studies/cs01-cs03` (chapters 46-48's full write-ups).
@@ -513,6 +474,63 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Part IX Round 2: chapters 43-45, performance/backup-DR/hardening — Part IX COMPLETE (2026-11-11)
+- Built as three parallel subagents (all no-lab/research-heavy, safe to fully parallelize — no Docker/K8s
+  contention), then centrally merged (`glossary-data.js`, `quiz-data.js`, `nav-data.js`) and independently
+  re-verified (html.parser tag-balance on all three files, mount points + deck markup present, HTTP 200
+  served, zero duplicate glossary terms/quiz ids after merge, all 20 unique deep-dive links across the
+  three chapters live-curled to 200). One real syntax bug caught and fixed during merge: an edit to the
+  `Multi-site (multi-cluster) deployment` extension used literal unescaped double quotes inside a
+  double-quoted JS string, which `node --check` caught immediately — fixed before it ever reached a commit.
+- **Chapter 43 — Performance Tuning & Database Considerations** (`chapters/43-performance-tuning.html`,
+  15 slides, 4 diagrams, no lab per the curriculum table). Live-verified Keycloak 26.8.2's actual tested
+  DB versions (PostgreSQL 18, MariaDB 11.8, MySQL 8.4, MSSQL 2022, Oracle 23.5 — a real refresh over the
+  existing glossary entry's vague "as of 26.x" text, applied during merge) and — since Keycloak's own
+  docs never name the connection-pool library in prose — confirmed it's **Agroal**, not HikariCP, from the
+  `agroal_*`-prefixed metric names in Keycloak's own observability guide. Found and used a genuinely
+  current "bonus" fact as its central cache-tuning trade-off: Keycloak's `stateless` feature (moves
+  session/action-token state from Infinispan into the database) was **promoted from preview to supported
+  in 26.8.0**, with a documented, concrete cost (~8-10ms added auth latency, ~2x DB CPU/IOPS, single-region
+  only) — paired directly against chapter 41's Infinispan material rather than re-explaining it. Chose
+  Meridian Trust as its case study specifically because its traffic shapes map onto Keycloak's own HA
+  capacity-sizing guide, and reused that guide's own real throughput numbers rather than inventing figures.
+- **Chapter 44 — Backup, Disaster Recovery & Multi-Region** (`chapters/44-backup-and-disaster-recovery.html`,
+  13 slides, 4 diagrams, no lab). Live-verified `kc.sh export`/`import`'s real current flags and documented
+  gap (does not capture events, persisted sessions, workflow state, or revoked tokens — and the Admin
+  Console's partial-export path is explicitly documented as **not suitable for backups**). Confirmed
+  Keycloak's own docs name multi-cluster v1 as **deprecated and scheduled for removal**, in favor of
+  multi-cluster v2 — and that neither "active-active" nor "active-passive" terminology appears anywhere in
+  Keycloak's own multi-site docs, which the chapter says plainly rather than forcing that framing onto it.
+  Honestly flagged a real documentation gap: no published RTO/RPO numbers, no failover runbook, and an
+  explicit statement that without load-balancer health probing "site failures are not detected
+  automatically... until manual intervention." HIPAA tie-in verified directly from 45 CFR §164.308(a)(7)'s
+  actual regulatory text (Cornell LII), correctly distinguishing its three Required specs from its two
+  Addressable ones.
+- **Chapter 45 — Security Hardening & Upgrade Strategy** (`chapters/45-security-hardening-and-upgrades.html`,
+  14 slides, 2 diagrams — intentionally lower per the curriculum's own allowance for a checklist-style
+  chapter — no lab). A genuine synthesis chapter: every checklist row cites back to where it was actually
+  covered (chapters 9/18/21/30) rather than re-deriving it. Live-verified two real, current, named CVEs
+  (CVE-2025-10939 — admin-path exposure via reverse-proxy path normalization; CVE-2024-11736 — an
+  env-var-leak via URL placeholder expressions, fixed in 26.0.8) plus five more in the 26.8.x line from the
+  real upgrading guide, one of which (CVE-2026-109081's client-registration-policy fix) is **explicitly
+  flagged as unsafe for a rolling upgrade** — a concrete, current reason to read a target version's own
+  release notes rather than assume any upgrade can simply roll node-by-node. Honestly reported one research
+  limitation: couldn't fetch the full admin-guide body text verbatim for every checklist subsection (a
+  ~690K-char merged doc page), and said so rather than fabricating quotes for the gaps.
+- Glossary: merged 32 new terms (14 from ch43, 13 from ch44, 5 from ch45 — ch45's low count was deliberate,
+  per its own brief, since it's mostly a cross-reference chapter) plus extensions to 12 existing terms,
+  three of which (`Infinispan`, `Single-cluster HA vs. multi-site HA`, `Split-brain (cluster partition)`)
+  were extended a second time on top of Part IX Round 1's own additions, correctly layering rather than
+  overwriting. One enhancement applied during merge beyond a plain chapters-array append: `Database backend
+  (Keycloak)`'s stale "as of Keycloak 26.x" text was refreshed with ch43's live-verified, dated tested-
+  version numbers. Glossary grew 637 → 669 terms, zero duplicates.
+- Quiz: merged 3 new pools (`performance-tuning`: 18 questions; `backup-and-disaster-recovery`: 18;
+  `security-hardening-and-upgrades`: 18), all independently confirmed at or above 50% scenario-framed with
+  no coordinator retyping needed this round. Quiz pools grew 43 → 46, questions 726 → 780, zero duplicate
+  ids.
+- `nav-data.js`: `built` flipped `true` for chapters 43, 44, and 45. **Part IX (chapters 41-45) is now
+  fully complete.**
 
 ### Part IX Round 1: chapters 41-42, HA/clustering and Keycloak on Kubernetes (2026-11-11)
 - Dev-machine tooling confirmed before dispatch: Docker 29.6.2, `kind` 0.24.0, `kubectl` v1.31.3, `helm`

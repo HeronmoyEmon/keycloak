@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backup, Disaster Recovery &amp; Multi-Region — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "backup-and-disaster-recovery";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part IX — Production, Scale &amp; Hardening</span>
+          <span class="badge minutes">~35 min</span>
+        </div>
+        <h1>44. Backup, Disaster Recovery &amp; Multi-Region</h1>
+        <p class="lede">Chapter 41 made Keycloak survive one node dying. This chapter asks the harder
+        question: what happens when the <em>data</em> is gone — a bad migration, a deleted realm, a
+        destroyed database volume, or an entire data center going dark? Clustering keeps a healthy
+        Keycloak available. Backup and disaster recovery is what gets you back when it stops being
+        healthy at all, and multi-region is what happens when "one data center" itself is the single
+        point of failure left to remove.</p>
+
+        <h2>Why this matters</h2>
+        <p>Every governance control from chapter 10 and every compliance framework from chapter 11
+        quietly assumes the data they govern still exists. An access review is meaningless if the
+        identity store it reviews was never backed up. HIPAA's auditors don't just ask whether access is
+        controlled — they ask what happens the day a server room floods. An IAM specialist who can
+        configure roles and policies but has never tested a restore has only solved half of
+        "available," and availability is one-third of the CIA triad this whole field quietly assumes.</p>
+
+        <p>Sources for this chapter: Keycloak's own <a href="https://www.keycloak.org/server/importExport">Importing
+        and exporting realms</a> guide and <a href="https://www.keycloak.org/high-availability/introduction">High
+        Availability Guide</a>, including its <a
+        href="https://www.keycloak.org/high-availability/multi-cluster-v2/introduction">multi-cluster
+        (v2)</a> and <a href="https://www.keycloak.org/high-availability/multi-cluster/introduction">multi-cluster
+        (v1, deprecated)</a> sub-guides — all fetched live and checked against the 26.8.2 release selector
+        for this chapter — and 45 CFR §164.308(a)(7), the HIPAA Security Rule's Contingency Plan standard,
+        read directly from Cornell LII's text of the regulation.</p>
+      </section>
+
+      <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Chapter 10 defined identity governance as the discipline of keeping access <em>correct</em>
+          for as long as an identity exists — but "correct" only means anything if the records governance
+          relies on (who has what role, who approved it, who's in which group) are still there to review.
+          Chapter 11 then walked through compliance frameworks — GDPR, SOC 2, HIPAA, PCI-DSS — that all, in
+          different words, demand proof that data and access controls survive an incident, not just that
+          they exist today. This chapter is the "data survives" half those two chapters assumed and didn't
+          explain. It's also the chapter chapter 41 named directly: its own lab deliberately proved
+          cross-node session replication within <em>one</em> cluster and explicitly scoped out "anything
+          about a real multi-region deployment," calling that out as "chapter 44's subject." This is that
+          chapter — and its glossary already has a term, <strong>Single-cluster HA vs. multi-site HA</strong>,
+          written specifically to hand off to it.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="backup-vs-export" data-title="Two different tools, two different jobs">
+        <h2>Database backup vs. realm export: not the same tool</h2>
+        <p>It's tempting to treat Keycloak's built-in realm export feature as "the backup," because it's
+        the thing with an obvious button and a JSON file to show for it. It isn't — and Keycloak's own
+        documentation says so plainly. <strong>The database is Keycloak's actual source of truth.</strong>
+        Every realm, client, user, credential, role, group, session row, and admin event Keycloak has ever
+        written lives in its relational database (PostgreSQL in this course's labs). A real backup strategy
+        backs up <em>that</em> — with your database vendor's own backup tooling (<code>pg_dump</code>,
+        continuous WAL archiving, a managed database's automated snapshot feature) — not Keycloak itself.</p>
+
+        <p><strong>Realm export/import</strong> (<code>kc.sh export</code> / <code>kc.sh import</code>) is a
+        narrower, different-purpose tool: a way to move realm <em>configuration</em> — and, if asked,
+        users — between environments, independent of any particular database. It's what you'd use to
+        promote a realm definition from a staging Keycloak to production, or to snapshot "how this realm
+        is configured" for version control. It was never designed to be a disaster-recovery mechanism, and
+        Keycloak's docs are explicit about several things it does not carry: user and admin <strong>events</strong>,
+        <strong>persisted sessions</strong>, in-flight <strong>workflow state</strong>, and <strong>revoked
+        token</strong> records. Restore a realm from an export after a real incident and you get the realm
+        back — minus its audit history, its active sessions, and anything mid-flight when the export was
+        taken.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 740 320" role="img" aria-labelledby="t44-1 d44-1">
+            <title id="t44-1">Database backup as the full source of truth, with realm export as a narrower subset</title>
+            <desc id="d44-1">A large left-hand panel labeled Database backup and restore lists everything it captures: realms and clients, users and credentials, roles and groups, sessions persisted to the database, admin and user events, and keys. Nested inside it as a smaller highlighted panel is Realm export / import, which captures only realm and client configuration and, optionally, users -- with an explicit list below it of what it does not capture: events, persisted sessions, workflow state, and revoked tokens. An arrow from the smaller panel to the list is labeled "does NOT cover."</desc>
+            <rect x="30" y="40" width="680" height="250" rx="12" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="370" y="68" text-anchor="middle" class="diagram-label" font-weight="700" font-size="14">Database backup &amp; restore — the real source of truth</text>
+
+            <g>
+              <rect x="55" y="88" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="130" y="108" text-anchor="middle" class="diagram-label" font-size="11">Realms &amp; clients</text>
+              <text x="130" y="122" text-anchor="middle" class="diagram-label-muted" font-size="9">config</text>
+
+              <rect x="215" y="88" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="290" y="108" text-anchor="middle" class="diagram-label" font-size="11">Users &amp; credentials</text>
+              <text x="290" y="122" text-anchor="middle" class="diagram-label-muted" font-size="9">password hashes, OTP</text>
+
+              <rect x="375" y="88" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="450" y="108" text-anchor="middle" class="diagram-label" font-size="11">Roles &amp; groups</text>
+              <text x="450" y="122" text-anchor="middle" class="diagram-label-muted" font-size="9">assignments</text>
+
+              <rect x="535" y="88" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="610" y="108" text-anchor="middle" class="diagram-label" font-size="11">Keys</text>
+              <text x="610" y="122" text-anchor="middle" class="diagram-label-muted" font-size="9">realm signing keys</text>
+            </g>
+
+            <g>
+              <rect x="55" y="138" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="130" y="158" text-anchor="middle" class="diagram-label" font-size="11">Admin &amp; user events</text>
+              <text x="130" y="172" text-anchor="middle" class="diagram-label-muted" font-size="9">chapter 28's subject</text>
+
+              <rect x="215" y="138" width="150" height="40" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+              <text x="290" y="158" text-anchor="middle" class="diagram-label" font-size="11">Persisted sessions</text>
+              <text x="290" y="172" text-anchor="middle" class="diagram-label-muted" font-size="9">offline, long-lived</text>
+            </g>
+
+            <rect x="55" y="198" width="320" height="76" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="215" y="220" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Realm export / import</text>
+            <text x="215" y="238" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">kc.sh export / import</text>
+            <text x="215" y="254" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">realm + client config, users (optional)</text>
+            <text x="215" y="268" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">a subset, not a replacement</text>
+
+            <rect x="405" y="198" width="280" height="76" rx="8" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="545" y="218" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Export/import does NOT cover:</text>
+            <text x="545" y="236" text-anchor="middle" class="diagram-label" font-size="10">events · persisted sessions</text>
+            <text x="545" y="252" text-anchor="middle" class="diagram-label" font-size="10">workflow state · revoked tokens</text>
+            <text x="545" y="266" text-anchor="middle" class="diagram-label-muted" font-size="9">per Keycloak's own docs</text>
+
+            <line x1="375" y1="230" x2="403" y2="230" class="diagram-stroke" marker-end="url(#arrow44a)"></line>
+            <defs>
+              <marker id="arrow44a" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 44.1 — Database backup covers everything Keycloak persists; realm export/import
+          is a narrower, differently-purposed subset of that, not a disaster-recovery substitute.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a team's only disaster-recovery artifact is a folder of realm export JSON files, they have
+          a configuration snapshot, not a backup. A real incident response plan needs both: database backups
+          (and tested restores) as the actual recovery mechanism, with realm export reserved for what it's
+          genuinely good at — environment promotion and configuration review.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="export-import-mechanics" data-title="Export/import, live-verified">
+        <h2>Realm export and import: the actual current commands</h2>
+        <p>Live-verified against Keycloak's current <code>server/importExport</code> guide (26.8.2 selected
+        on the release picker). The command is still <code>kc.sh</code> (or <code>kc.bat</code> on Windows),
+        with two subcommands:</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Keycloak realm export/import — current CLI, confirmed live</caption>
+            <thead><tr><th>Command</th><th>Key flags</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>bin/kc.sh export</code></td><td><code>--dir &lt;path&gt;</code> or <code>--file &lt;path&gt;</code>; <code>--realm &lt;name&gt;</code> to scope to one realm (default: all); <code>--users different_files|skip|realm_file|same_file</code> (default <code>different_files</code>); <code>--users-per-file &lt;n&gt;</code> (default 50)</td><td>Server must <strong>not</strong> be running. Stopping every node is recommended — the docs say consistency isn't guaranteed otherwise.</td></tr>
+              <tr><td><code>bin/kc.sh import</code></td><td><code>--dir &lt;path&gt;</code> or <code>--file &lt;path&gt;</code>; <code>--override</code> (default <code>true</code>; set <code>false</code> to skip realms that already exist)</td><td>With <code>--override</code>, every node must be stopped — the command doesn't attach to the cache cluster, so it can leave caches inconsistent with the database otherwise.</td></tr>
+              <tr><td><code>bin/kc.sh start --import-realm</code></td><td>reads <code>.json</code> files from <code>data/import</code> (<code>/opt/keycloak/data/import</code> in the container image)</td><td>Startup-time convenience import; existing realms are skipped, never overridden.</td></tr>
+              <tr><td>Admin Console — <em>Realm settings → Action → Partial export/import</em></td><td>browser-driven, no file-system access needed</td><td>Works with the cluster online, but the docs explicitly say this path is <strong>not suitable for backups or server-to-server transfers</strong> — it masks passwords/secrets as <code>*</code> and can't include users.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 640 230" role="img" aria-labelledby="t44-2 d44-2">
+            <title id="t44-2">Directory layout produced by a CLI realm export, with required file-naming convention</title>
+            <desc id="d44-2">A folder icon labeled export output directory contains three files: riverside-realm.json holding realm and client settings, riverside-users-0.json holding up to fifty local users, and riverside-federated-users-0.json holding federated users -- with a note that these exact file names are required for a later import to recognize them.</desc>
+            <rect x="40" y="30" width="560" height="40" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="320" y="55" text-anchor="middle" class="diagram-label" font-weight="700">--dir ./riverside-export/</text>
+
+            <rect x="70" y="95" width="220" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="180" y="117" text-anchor="middle" class="diagram-label" font-size="11">riverside-realm.json</text>
+            <text x="180" y="131" text-anchor="middle" class="diagram-label-muted" font-size="9">realm + client settings</text>
+
+            <rect x="310" y="95" width="220" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="420" y="117" text-anchor="middle" class="diagram-label" font-size="11">riverside-users-0.json</text>
+            <text x="420" y="131" text-anchor="middle" class="diagram-label-muted" font-size="9">up to 50 local users</text>
+
+            <rect x="190" y="150" width="260" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="320" y="172" text-anchor="middle" class="diagram-label" font-size="11">riverside-federated-users-0.json</text>
+            <text x="320" y="186" text-anchor="middle" class="diagram-label-muted" font-size="9">LDAP-federated users</text>
+
+            <line x1="180" y1="70" x2="180" y2="93" class="diagram-stroke"></line>
+            <line x1="420" y1="70" x2="420" y2="93" class="diagram-stroke"></line>
+            <line x1="320" y1="137" x2="320" y2="148" class="diagram-stroke"></line>
+
+            <text x="320" y="215" text-anchor="middle" class="diagram-label-muted" font-size="10">These exact names are required for import to recognize the files</text>
+          </svg>
+          <figcaption>Figure 44.2 — A directory-mode realm export produces separate, specifically-named
+          files; import depends on that naming.</figcaption>
+        </figure>
+
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Without touching a running Keycloak, read through the export/import table above and decide: if
+          Riverside Health's compliance team asked "show me the backup plan for the IAM system," would
+          handing them a <code>kc.sh export</code> cron job satisfy that request? Hold your answer —
+          the case-study slide later in this chapter works through it directly.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="rto-rpo" data-title="RTO and RPO">
+        <h2>RTO and RPO: naming the trade-off precisely</h2>
+        <p>Two terms from the broader disaster-recovery discipline (not Keycloak-specific, but essential for
+        talking about any backup strategy precisely) frame every decision in this chapter:</p>
+        <ul>
+          <li><strong>Recovery Point Objective (RPO)</strong> — how much data you can afford to lose,
+          measured as time: the gap between your last good backup and the moment of failure. Nightly
+          backups mean an RPO of up to 24 hours; continuous WAL streaming to a standby can shrink that to
+          seconds.</li>
+          <li><strong>Recovery Time Objective (RTO)</strong> — how long you can afford to be down: the gap
+          between failure and service being usable again. A manual restore-from-snapshot process might take
+          hours; a warm standby that a load balancer can fail over to might take minutes.</li>
+        </ul>
+        <p>These are organizational decisions, not technical defaults — Keycloak's own high-availability
+        guides are explicit that <em>you</em> have to decide and validate your own RTO/RPO targets; the
+        product gives you building blocks, not a number. Tightening either one almost always costs more:
+        more frequent backups, a standby database, a second region, more engineering and operational effort
+        to keep it all tested and current.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 700 220" role="img" aria-labelledby="t44-3 d44-3">
+            <title id="t44-3">A timeline showing RPO as the data-loss window before a failure and RTO as the downtime window after it</title>
+            <desc id="d44-3">A horizontal timeline with three marked points in order: last good backup, failure, and service restored. The span between last good backup and failure is labeled RPO, the recovery point objective, representing data that would be lost. The span between failure and service restored is labeled RTO, the recovery time objective, representing downtime.</desc>
+            <line x1="60" y1="110" x2="640" y2="110" class="diagram-stroke"></line>
+            <circle cx="120" cy="110" r="7" class="diagram-fill-success diagram-stroke"></circle>
+            <circle cx="380" cy="110" r="7" class="diagram-fill-danger diagram-stroke"></circle>
+            <circle cx="580" cy="110" r="7" class="diagram-fill-accent-strong diagram-stroke"></circle>
+
+            <text x="120" y="90" text-anchor="middle" class="diagram-label" font-size="11">Last good backup</text>
+            <text x="380" y="90" text-anchor="middle" class="diagram-label" font-size="11" font-weight="700">Failure</text>
+            <text x="580" y="90" text-anchor="middle" class="diagram-label" font-size="11">Service restored</text>
+
+            <rect x="120" y="130" width="260" height="28" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="250" y="150" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">RPO — data lost</text>
+
+            <rect x="380" y="130" width="200" height="28" rx="6" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="480" y="150" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">RTO — downtime</text>
+
+            <text x="250" y="185" text-anchor="middle" class="diagram-label-muted" font-size="10">shrinks with backup frequency</text>
+            <text x="480" y="185" text-anchor="middle" class="diagram-label-muted" font-size="10">shrinks with restore speed/standby</text>
+          </svg>
+          <figcaption>Figure 44.3 — RPO measures backward from failure (data lost); RTO measures forward
+          from failure (time down) — two separate dials, each costing more to tighten.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>A retail bank's core banking IAM (chapter 11's PCI-DSS territory) typically needs a tight RTO —
+          every minute the authentication layer is down, tellers, ATMs, and the mobile app can't verify
+          anyone. Its RPO tolerance for credential/role data is usually tighter still — losing even a few
+          minutes of "who was granted fraud-review access" is itself an audit finding, independent of any
+          actual fraud. That combination is exactly what pushes an organization like Meridian toward the
+          costlier end of this chapter's options: frequent backups, a tested restore runbook, and — once
+          clustering alone isn't enough — a second site.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="multi-region" data-title="Multi-region topologies">
+        <h2>Multi-region: the options Keycloak's own docs currently describe</h2>
+        <p>Chapter 41 clustered two nodes <em>within</em> one site and explicitly deferred "a real
+        multi-region deployment" to this chapter. Live-verified against Keycloak's current High
+        Availability Guide, there are three documented shapes — and the guidance here is honestly thinner
+        than chapter 41's single-cluster material: no failover runbooks, no latency thresholds, and an
+        explicit statement that you must validate your own RTO/RPO rather than rely on a published number.</p>
+
+        <div class="table-wrap">
+          <table class="table-compare table-compare--pro-con">
+            <caption>Keycloak's documented multi-site topologies, live-verified against the current High Availability Guide</caption>
+            <thead><tr><th>Topology</th><th>Trade-off</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Single-cluster, multi-AZ/DC stretch</strong> — one Kubernetes/cluster deployment whose nodes happen to span availability zones or data centers with low enough latency; sessions live in the database, auth sessions in memory</td><td>Simplest to operate, but the cluster's own control plane is still one logical unit — a control-plane failure can affect every node at once</td></tr>
+              <tr><td><strong>Multi-cluster v2</strong> (current, recommended) — two or more fully independent Keycloak clusters, no shared Infinispan cluster, coordinated only through a synchronously-replicated database and an external load balancer</td><td>Tolerates a whole-cluster or AZ failure and needs no special networking between sites, but roughly doubles database CPU/write IOPS and needs sub-10ms cross-site commit latency</td></tr>
+              <tr><td><strong>Multi-cluster v1</strong> (deprecated, scheduled for removal) — two clusters, each with its own Infinispan cluster, bridged across sites</td><td>Can satisfy regulatory demands for physically distinct deployments, but needs two full Kubernetes control planes, doesn't support three-plus AZs, and Keycloak's docs say to migrate off it</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 740 300" role="img" aria-labelledby="t44-4 d44-4">
+            <title id="t44-4">Multi-cluster v2 topology: two independent Keycloak clusters behind a load balancer, coordinated through a synchronously replicated database</title>
+            <desc id="d44-4">Two independent boxes labeled Site A cluster and Site B cluster, each containing its own Keycloak nodes with no direct cluster link between them. An external load balancer sits above both, distributing and health-probing requests to each site. Below both sites, a database layer is labeled synchronously replicated database, shared logically across both sites, with a caveat noting that sub-ten-millisecond commit latency is required between sites and that without active health probing, a failed site can keep receiving traffic.</desc>
+            <rect x="260" y="15" width="220" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="370" y="40" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700">External load balancer</text>
+
+            <rect x="60" y="90" width="260" height="90" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="190" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Site A cluster</text>
+            <rect x="80" y="125" width="100" height="36" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="130" y="147" text-anchor="middle" class="diagram-label" font-size="10">Keycloak node(s)</text>
+            <rect x="200" y="125" width="100" height="36" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="250" y="147" text-anchor="middle" class="diagram-label" font-size="10">own Infinispan</text>
+
+            <rect x="420" y="90" width="260" height="90" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="550" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Site B cluster</text>
+            <rect x="440" y="125" width="100" height="36" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="490" y="147" text-anchor="middle" class="diagram-label" font-size="10">Keycloak node(s)</text>
+            <rect x="560" y="125" width="100" height="36" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="610" y="147" text-anchor="middle" class="diagram-label" font-size="10">own Infinispan</text>
+
+            <line x1="300" y1="55" x2="190" y2="88" class="diagram-stroke"></line>
+            <line x1="440" y1="55" x2="550" y2="88" class="diagram-stroke"></line>
+
+            <rect x="150" y="225" width="440" height="48" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="370" y="245" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Synchronously replicated database</text>
+            <text x="370" y="261" text-anchor="middle" class="diagram-label-muted" font-size="10">sub-10ms commit latency required between sites</text>
+
+            <line x1="190" y1="180" x2="280" y2="223" class="diagram-stroke"></line>
+            <line x1="550" y1="180" x2="460" y2="223" class="diagram-stroke"></line>
+
+            <text x="370" y="292" text-anchor="middle" class="diagram-label-muted" font-size="10">No direct cluster link between sites — no shared Infinispan cluster, unlike v1</text>
+          </svg>
+          <figcaption>Figure 44.4 — Multi-cluster v2: independent clusters per site, coordinated only
+          through the database and an external load balancer — the opposite shape from chapter 41's
+          single-site embedded-Infinispan cluster.</figcaption>
+        </figure>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If you see multi-region Keycloak described as "just add a second cluster and point a load
+          balancer at both," the cause is skipping the database. Every documented multi-site option
+          requires a <em>synchronously</em> replicated database across sites — asynchronous replication
+          risks stale reads and, per Keycloak's own docs, "data loss or an inconsistent state, including
+          user sessions" on database failover. The load balancer is the easy part; the database topology is
+          where the real engineering cost lives.</p>
+        </div>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Don't assume a failed site gets automatically removed from rotation. Keycloak's multi-cluster
+          v2 guide says plainly that without active health probing, "site failures are not detected
+          automatically, and traffic continues to be routed to a failed site or split-brain partitions
+          until manual intervention." The load balancer's health-check configuration is not an optional
+          nice-to-have here — without it, "multi-region" doesn't actually buy you automatic failover.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="case-study" data-title="Case study: Riverside Health">
+        <h2>Case study: Riverside Health and HIPAA's Contingency Plan standard</h2>
+        <p>Chapter 11 covered the HIPAA Security Rule's <em>technical</em> safeguards — access control,
+        audit controls, authentication. It didn't cover the Security Rule's <strong>administrative</strong>
+        safeguards, and one of those, the <strong>Contingency Plan standard</strong> (45 CFR
+        §164.308(a)(7)), is this chapter's direct territory. Confirmed from the regulation's own text, it
+        requires covered entities to establish, as <strong>Required</strong> implementation
+        specifications (not merely "addressable" — i.e., not optional with a documented justification to
+        skip them):</p>
+        <ul>
+          <li>a <strong>data backup plan</strong> — procedures to create and maintain retrievable exact
+          copies of electronic PHI;</li>
+          <li>a <strong>disaster recovery plan</strong> — procedures to restore any loss of data; and</li>
+          <li>an <strong>emergency mode operation plan</strong> — procedures to enable continuation of
+          critical business processes while operating in emergency mode.</li>
+        </ul>
+        <p>(Testing/revision procedures and an applications-and-data criticality analysis round out the
+        standard as <em>addressable</em> specifications — still expected, but with more room for a
+        documented, justified alternative.)</p>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Here's the part that's easy to miss: Riverside's patient portal's Keycloak realm is not just
+          "an app that touches PHI" — it <em>is</em> one of the "critical business processes" the emergency
+          mode operation plan has to keep running. If Keycloak is down during a regional outage, clinicians
+          can't authenticate to reach patient records at the exact moment an emergency mode plan is supposed
+          to be kicking in. That reframes this chapter's content as a direct HIPAA control, not a generic
+          ops best practice: Riverside's data backup plan has to cover the identity layer's own database
+          (not just clinical records), its disaster recovery plan has to include a tested Keycloak restore
+          procedure, and if Riverside's facilities span more than one data center, its emergency mode plan
+          is exactly the business justification that turns "maybe someday" multi-region Keycloak into a
+          compliance-driven requirement. A realm-export cron job, on its own, satisfies none of the three —
+          it has no restore-tested disaster-recovery story and nothing to say about emergency-mode
+          continuity.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="pitfalls" data-title="Common mistakes">
+        <h2>Common mistakes / pitfalls</h2>
+        <ul>
+          <li>If a team calls <code>kc.sh export</code> their "backup," the cause is conflating a
+          configuration-portability tool with a disaster-recovery mechanism — it skips events, persisted
+          sessions, workflow state, and revoked tokens entirely.</li>
+          <li>If a restore "succeeds" but logins start failing with signature errors afterward, the cause is
+          often realm signing keys not being part of what was restored or regenerated consistently — verify
+          what your specific backup/restore path actually captures for keys rather than assuming.</li>
+          <li>If an import with <code>--override</code> corrupts session behavior afterward, the cause is
+          almost always skipping the "stop every node first" step — the command doesn't coordinate with a
+          running cache cluster, so the database and in-memory caches can disagree.</li>
+          <li>If someone claims "we're multi-region" because they deployed Keycloak in two data centers with
+          an asynchronously-replicated database, the cause is skipping the one hard requirement every
+          documented topology shares: synchronous cross-site replication. Async replication is a different
+          (weaker) guarantee, not a shortcut to the same result.</li>
+          <li>If a "failover" never actually happens during a real site outage, the cause is usually missing
+          or misconfigured load-balancer health probing — Keycloak's own docs warn that without it, traffic
+          keeps hitting a dead or partitioned site until someone intervenes by hand.</li>
+          <li>If a compliance audit flags "no tested restore," the cause is almost always that a backup
+          existed but nobody ever actually ran a restore from it end to end — a backup you haven't restored
+          from is an untested assumption, not a control.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>The relational database is Keycloak's actual source of truth; back that up with your database
+          vendor's own tooling, not Keycloak's export feature.</li>
+          <li>Realm export/import (<code>kc.sh export</code>/<code>import</code>) is for moving realm
+          configuration between environments — a narrower job than disaster recovery, and Keycloak's own
+          docs say so.</li>
+          <li>Keycloak's docs explicitly list what realm export/import does not capture: user/admin events,
+          persisted sessions, workflow state, and revoked tokens.</li>
+          <li>Export and import both require the server to be stopped; importing with <code>--override</code>
+          requires every node stopped, because the command doesn't coordinate with a live cache cluster.</li>
+          <li>The Admin Console's partial export/import is explicitly documented as unsuitable for backups
+          or server-to-server transfers — it masks secrets and can't include users.</li>
+          <li>RPO measures data lost (backward from failure to last good backup); RTO measures downtime
+          (forward from failure to restored service) — tightening either costs more engineering effort.</li>
+          <li>Keycloak documents three multi-site shapes: a single stretched cluster, multi-cluster v2
+          (current, database-coordinated), and multi-cluster v1 (deprecated, Infinispan-bridged) — all three
+          require synchronous cross-site database replication.</li>
+          <li>Multi-region Keycloak guidance is honestly thinner than single-site HA guidance: no published
+          failover runbook, no universal latency threshold, and an explicit instruction to validate your own
+          RTO/RPO rather than trust a stated number.</li>
+          <li>Without active load-balancer health probing, a failed site is not automatically removed from
+          rotation — Keycloak's docs name this directly as a split-brain-adjacent risk.</li>
+          <li>HIPAA's Contingency Plan standard (45 CFR §164.308(a)(7)) requires a data backup plan, a
+          disaster recovery plan, and an emergency mode operation plan as Required specifications — and the
+          identity layer itself is one of the "critical business processes" that standard protects, not just
+          the clinical data behind it.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague says "we don't need database backups, we already export every realm nightly." What's wrong with that plan, specifically?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Realm export is a configuration-portability tool, not a backup mechanism — Keycloak's own docs confirm it skips user/admin events, persisted sessions, workflow state, and revoked tokens. A restore from that export would bring back realm and (optionally) user configuration, but with no audit history, no active sessions, and no record of anything mid-flight when it was taken. It also requires the server to be stopped to run reliably, which a "nightly automated export" plan may not even be accounting for against a live cluster.</p>
+          </details></li>
+          <li><details>
+            <summary>Distinguish RPO from RTO using a single concrete incident as the example.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Say a database volume is corrupted at 2:00pm and the last good backup was taken at 2:00am. RPO is the 12-hour gap between that backup and the failure — the data (any role changes, new users, or sessions created between 2am and 2pm) that is permanently lost. RTO is the separate clock that starts at the moment of failure and ends when the service is usable again — if the restore-and-verify process takes until 4:00pm, RTO is two hours. They measure different things (data loss vs. downtime) and can be improved independently — more frequent backups shrink RPO; a faster/automated restore process shrinks RTO.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does Keycloak's multi-cluster v2 topology require synchronous database replication between sites, rather than the simpler-to-operate asynchronous replication?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because every Keycloak node at every site reads and writes the same logical database for critical state (sessions, realm data), and asynchronous replication means a write acknowledged at one site might not yet exist at the other if a failover happens immediately after. Keycloak's own docs warn that a database failover or stale read under this architecture "can result in data loss or an inconsistent state, including user sessions." Synchronous replication accepts a latency cost (the docs cite needing sub-10ms commit latency) in exchange for both sites always agreeing on the current state.</p>
+          </details></li>
+          <li><details>
+            <summary>A reader concludes "multi-cluster v2 gives Keycloak automatic, zero-downtime failover between regions." Is that an accurate reading of the live-verified documentation?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>No. The documentation itself says there may be "downtime of several minutes" depending on database, load balancer, and Keycloak configuration, that node failure is typically detected within about a minute (not instantly), and — critically — that without active health probing, a failed site keeps receiving traffic or risks a split-brain partition "until manual intervention." It explicitly does not claim zero-downtime or fully automatic failover; it describes a topology that can tolerate a site failure, provided the operator has built and tested the health-probing and failover procedure around it.</p>
+          </details></li>
+          <li><details>
+            <summary>How does HIPAA's Contingency Plan standard change what "backing up Keycloak" means for Riverside Health, compared to a non-regulated organization running the same software?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>For a non-regulated org, backup/DR planning is a good-engineering-practice decision made at the team's own discretion. For Riverside, 45 CFR §164.308(a)(7) makes a data backup plan, a disaster recovery plan, and an emergency mode operation plan Required implementation specifications under the HIPAA Security Rule — not optional, and auditable. It also reframes scope: because Keycloak is the authentication layer clinicians depend on to reach PHI, Keycloak's own availability during an emergency becomes part of what the emergency mode operation plan has to account for, not just the clinical database itself. A backup strategy that only covers patient records and ignores the identity system in front of them would leave that standard only partially satisfied.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/server/importExport">Keycloak Server Administration Guide — "Importing and exporting realms"</a> (live-verified against 26.8.2 for this chapter's export/import mechanics)</li>
+          <li><a href="https://www.keycloak.org/high-availability/introduction">Keycloak High Availability Guide — introduction</a> (the overview naming all three multi-site topologies)</li>
+          <li><a href="https://www.keycloak.org/high-availability/multi-cluster-v2/introduction">Keycloak High Availability Guide — Multi-cluster (v2)</a> (the current, recommended multi-site topology)</li>
+          <li><a href="https://www.keycloak.org/high-availability/multi-cluster/introduction">Keycloak High Availability Guide — Multi-cluster (v1, deprecated)</a> (kept for context; the docs themselves say to migrate off it)</li>
+          <li><a href="https://www.law.cornell.edu/cfr/text/45/164.308">45 CFR §164.308 — HIPAA Security Rule, Administrative Safeguards, including the Contingency Plan standard at (a)(7) (Cornell LII)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "backup-and-disaster-recovery", 15);
+    SlideDeck.init({ chapterSlug: "backup-and-disaster-recovery" });
+  });
+</script>
+</body>
+</html>
