@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Northwind Apps — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "case-study-northwind";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part X — Case Studies &amp; Capstone</span>
+          <span class="badge minutes">~60 min</span>
+        </div>
+        <h1>46. Case Study: Northwind Apps</h1>
+        <p class="lede">Every earlier chapter introduced <span class="org-chip northwind">Northwind Apps</span>
+        one concept at a time: a realm here, a role model there, a brokered enterprise customer in another.
+        This chapter does the job an IAM specialist actually gets hired to do — pull all of that into one
+        coherent design, defend the decisions, and name the trade-offs out loud. It's a synthesis chapter, not
+        a new-concept chapter: nothing here is new material, but assembling it end to end is itself the skill.</p>
+
+        <h2>Why this matters</h2>
+        <p>"Design IAM for a multi-tenant B2B SaaS company" is a real assignment, not a classroom exercise —
+        it shows up as a design doc, an architecture review, or an interview whiteboard question. The person
+        who can recite "use RBAC" or "use Keycloak" in isolation fails that assignment; the person who can
+        explain <em>why</em> Northwind rejected realm-per-tenant, <em>why</em> its token lifetimes moved in
+        two different directions in the same change, and <em>what</em> specifically failed when one of its
+        customers got breached, passes it. This chapter is that explanation, built entirely from decisions
+        this course already made and lived with across chapters 2-45.</p>
+      </section>
+
+      <section class="slide" data-slide="recap" data-title="Northwind Apps, recapped">
+        <h2>Who Northwind Apps is, in one place</h2>
+        <p><span class="org-chip northwind">Northwind Apps</span> is a B2B SaaS company selling a
+        multi-tenant dashboard product to other businesses (chapter 2). It is squarely a <strong>CIAM</strong>
+        buyer (chapter 12): thousands of end-customer logins spread across many tenant companies, a bursty,
+        consumer-scale traffic pattern, and a growing demand from its larger customers for enterprise SSO into
+        its own product. Northwind also runs its own internal Active Directory for its employees — kept
+        deliberately separate from the customer-facing identity store (chapter 4), because "who can log into
+        Northwind's own dashboard product" and "who works at Northwind" are different populations answering
+        different questions. Architecturally, Northwind's CIAM traffic pattern is exactly why it fits a
+        containerized-to-Kubernetes deployment target (chapters 19, 42) rather than a fixed footprint.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Every decision in this chapter is one of three things from earlier in the course applied to a
+          real design: an <strong>authorization model</strong> choice (chapter 6), a <strong>federation or
+          brokering</strong> choice (chapter 7), or a <strong>Keycloak-specific implementation</strong> of one
+          of those choices (Parts IV-VIII). The job of this chapter is naming which is which, every time.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="tenancy-model" data-title="The tenancy model decision">
+        <h2>Decision 1: one shared realm, not a realm per tenant</h2>
+        <p>Keycloak's realm is a fully isolated namespace (chapter 21) — a tempting unit to map one-to-one
+        onto "one tenant." Northwind considered this directly and rejected it. A realm per tenant would give
+        each customer company its own completely walled-off namespace of users, clients, and flows — strong
+        isolation, on paper. But Northwind has thousands of tenants, not three: thousands of realms means
+        thousands of separate admin-console contexts to manage, role definitions duplicated identically in
+        every one of them, and no way to change a password policy or an authentication flow for "all tenants"
+        without scripting the same change thousands of times over the Admin REST API (chapter 27) — the
+        operational cost grows linearly with tenant count, forever.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 340" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Realm-per-tenant versus a shared realm with a tenant_id claim</title>
+            <desc id="d1">Left: a column of several small boxes, each labeled as a separate tenant realm (Acme Corp realm, Contoso realm, and a note indicating thousands more), illustrating that this approach requires one fully separate Keycloak realm per customer. Right: one large box labeled the northwind-apps realm, containing three rows representing Acme Corp, Contoso, and a note indicating thousands more tenants, each tagged with its own tenant_id attribute inside that single shared realm, feeding down into one box labeled Authorization Server, one Keycloak realm.</desc>
+            <text x="150" y="26" text-anchor="middle" class="diagram-label" font-weight="700">Realm-per-tenant</text>
+            <text x="150" y="42" text-anchor="middle" class="diagram-label-muted" font-size="10">(considered, rejected)</text>
+            <text x="575" y="26" text-anchor="middle" class="diagram-label" font-weight="700">Shared realm + tenant_id</text>
+            <text x="575" y="42" text-anchor="middle" class="diagram-label-muted" font-size="10">(chosen)</text>
+
+            <rect x="40" y="55" width="220" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="79" text-anchor="middle" class="diagram-label" font-size="11">Acme Corp realm</text>
+
+            <rect x="40" y="105" width="220" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="129" text-anchor="middle" class="diagram-label" font-size="11">Contoso realm</text>
+
+            <rect x="40" y="155" width="220" height="40" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="179" text-anchor="middle" class="diagram-label-muted" font-size="11">... thousands more realms</text>
+
+            <text x="150" y="225" text-anchor="middle" class="diagram-label-muted" font-size="10">Each realm: its own admin</text>
+            <text x="150" y="240" text-anchor="middle" class="diagram-label-muted" font-size="10">context, its own duplicated</text>
+            <text x="150" y="255" text-anchor="middle" class="diagram-label-muted" font-size="10">roles, its own flows to keep</text>
+            <text x="150" y="270" text-anchor="middle" class="diagram-label-muted" font-size="10">in sync, one by one</text>
+
+            <rect x="430" y="55" width="290" height="225" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="575" y="75" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">northwind-apps realm</text>
+
+            <rect x="450" y="90" width="250" height="35" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="575" y="112" text-anchor="middle" class="diagram-label" font-size="10">Acme Corp — tenant_id: acme-corp</text>
+
+            <rect x="450" y="135" width="250" height="35" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="575" y="157" text-anchor="middle" class="diagram-label" font-size="10">Contoso — tenant_id: contoso</text>
+
+            <rect x="450" y="180" width="250" height="35" rx="5" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="575" y="202" text-anchor="middle" class="diagram-label-muted" font-size="9">... thousands more tenants, same realm</text>
+
+            <line x1="575" y1="280" x2="575" y2="300" class="diagram-stroke"></line>
+            <rect x="430" y="300" width="290" height="30" rx="5" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="575" y="320" text-anchor="middle" class="diagram-label-on-accent" font-size="10">Authorization Server (one Keycloak realm)</text>
+          </svg>
+          <figcaption>Figure 46.1 — Northwind rejected realm-per-tenant's clean isolation because it does not
+          scale operationally past a handful of tenants; a shared realm with a tenant_id claim (chapter 15's
+          custom-claim mechanism) scales to thousands without multiplying admin overhead.</figcaption>
+        </figure>
+
+        <p>Instead, Northwind runs <strong>one</strong> realm, <code>northwind-apps</code> — the same realm
+        every Keycloak lab chapter in this course has built against — and tags every customer-company user
+        with a <code>tenant_id</code> custom claim, injected via the Protocol Mapper SPI implementation built
+        in chapter 39. Tenant isolation becomes an authorization-time guarantee ("does this role assignment's
+        scope match the request's tenant_id?") rather than a Keycloak-realm-boundary guarantee — a deliberate
+        trade: slightly weaker platform-level isolation, in exchange for one realm that scales to Northwind's
+        actual tenant count without linear admin overhead.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>The mistake this trades away from is treating "one role name is assigned" as sufficient — chapter
+          6's resource-scope lesson applies directly. A <code>tenant-admin</code> role check that doesn't also
+          verify <em>which</em> tenant the role was granted for is a cross-tenant privilege-escalation bug
+          waiting to happen, not a theoretical one.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="enterprise-sso" data-title="Enterprise SSO via brokering">
+        <h2>Decision 2: enterprise customers get brokered SSO, not shared passwords</h2>
+        <p>Northwind's larger prospects routinely ask: "can our employees log in with their own corporate
+        identity instead of a Northwind password?" (chapter 5). Chapter 7 named the two possible answers —
+        federation (reuse an external directory directly) or brokering (delegate a single login event to an
+        external IdP) — and chapter 31 built the real one: <strong>Northwind is the SP/RP</strong>, trusting
+        <code>northwind-corporate-idp</code> as a stand-in for an enterprise customer's own identity provider.
+        Northwind's Keycloak realm never touches that customer's directory; it only trusts an assertion.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 300" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Three identity sources trusted by the northwind-apps realm</title>
+            <desc id="d2">Three source boxes on the left — Acme Corp's identity provider for brokered enterprise SSO, Google for brokered self-service CIAM login, and Northwind-local accounts for small self-serve customers — each connects with its own line into a central box labeled the northwind-apps realm, trusting three identity sources, which in turn connects onward to a box on the right labeled user reaches Northwind product.</desc>
+            <rect x="40" y="30" width="220" height="50" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="50" text-anchor="middle" class="diagram-label" font-size="11">Acme Corp's IdP</text>
+            <text x="150" y="65" text-anchor="middle" class="diagram-label-muted" font-size="10">(enterprise SSO, brokered)</text>
+
+            <rect x="40" y="125" width="220" height="50" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="145" text-anchor="middle" class="diagram-label" font-size="11">Google</text>
+            <text x="150" y="160" text-anchor="middle" class="diagram-label-muted" font-size="10">(self-service CIAM, brokered)</text>
+
+            <rect x="40" y="220" width="220" height="50" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="150" y="240" text-anchor="middle" class="diagram-label" font-size="11">Northwind-local accounts</text>
+            <text x="150" y="255" text-anchor="middle" class="diagram-label-muted" font-size="10">(small self-serve customers)</text>
+
+            <line x1="260" y1="55" x2="290" y2="120" class="diagram-stroke"></line>
+            <line x1="260" y1="150" x2="290" y2="150" class="diagram-stroke"></line>
+            <line x1="260" y1="245" x2="290" y2="180" class="diagram-stroke"></line>
+
+            <rect x="290" y="120" width="220" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="400" y="145" text-anchor="middle" class="diagram-label-on-accent" font-weight="700" font-size="12">northwind-apps realm</text>
+            <text x="400" y="162" text-anchor="middle" class="diagram-label-on-accent" font-size="10">(trusts 3 identity sources)</text>
+
+            <line x1="510" y1="150" x2="560" y2="150" class="diagram-stroke"></line>
+            <rect x="560" y="125" width="160" height="50" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="640" y="145" text-anchor="middle" class="diagram-label" font-size="10">User reaches</text>
+            <text x="640" y="160" text-anchor="middle" class="diagram-label" font-size="10">Northwind product</text>
+          </svg>
+          <figcaption>Figure 46.2 — One realm, three independently trusted identity sources: an enterprise IdP
+          (brokering), a social IdP (brokering), and locally managed accounts for customers too small to run
+          their own IdP integration.</figcaption>
+        </figure>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Northwind Apps</div>
+          <p>Before chapter 31's fix, onboarding an enterprise customer like <strong>Acme Corp</strong> meant
+          Northwind's ops team manually created a <code>tenant-admin</code> account (<code>acme-admin</code>)
+          and repeated that by hand for every new Acme hire and every departure. After brokering Acme's own
+          IdP, a brand-new Acme engineer (<code>ben.carter</code>) got a working <code>northwind-apps</code>
+          identity automatically on first login — JIT-provisioned (chapter 2's "federated/brokered creation"
+          lifecycle entry point) — with zero manual steps on Northwind's side, and Acme's own IT department
+          stays the single source of truth for who currently counts as an Acme employee.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="authz-model" data-title="Authorization: roles, scoped by tenant, plus delegation">
+        <h2>Decision 3: per-tenant RBAC, with UMA delegation layered on for shared resources</h2>
+        <p>Chapter 6 named per-tenant RBAC as Northwind's primary model, specifically because "what job does
+        this user have within their own tenant" is a stable, role-shaped question as long as every role
+        assignment carries its tenant scope with it (the resource-scope discipline from the previous slide).
+        But a pure role check can't answer every question a SaaS product needs answered — chapter 37's lab
+        built the case directly: a tenant's own users sometimes need to share one specific document with one
+        specific other user, a decision the document's owner makes at runtime, not something an admin encodes
+        as a role ahead of time.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 300" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Authorization decision flow for a request inside a tenant</title>
+            <desc id="d3">Four boxes stacked vertically, connected by straight downward arrows: a request by user U to act on resource R inside tenant T, then a per-tenant RBAC check asking whether U holds a role scoped to tenant T, then a UMA permission check asking whether the resource owner granted a permission ticket for this specific document, then a final decision box recording an allow or deny outcome that is always logged as an event.</desc>
+            <rect x="150" y="20" width="460" height="50" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="380" y="50" text-anchor="middle" class="diagram-label" font-size="10">Request: user U attempts an action on resource R inside tenant T</text>
+
+            <line x1="380" y1="70" x2="380" y2="90" class="diagram-stroke"></line>
+            <rect x="150" y="90" width="460" height="50" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="380" y="115" text-anchor="middle" class="diagram-label" font-size="10">Per-tenant RBAC check (ch6, ch23):</text>
+            <text x="380" y="130" text-anchor="middle" class="diagram-label" font-size="10">does U hold a role scoped to tenant T?</text>
+
+            <line x1="380" y1="140" x2="380" y2="160" class="diagram-stroke"></line>
+            <rect x="150" y="160" width="460" height="50" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="380" y="180" text-anchor="middle" class="diagram-label" font-size="10">UMA permission check (ch37, resource owner delegation):</text>
+            <text x="380" y="196" text-anchor="middle" class="diagram-label" font-size="10">did the owner grant a permission ticket for this document?</text>
+
+            <line x1="380" y1="210" x2="380" y2="230" class="diagram-stroke"></line>
+            <rect x="150" y="230" width="460" height="45" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="380" y="257" text-anchor="middle" class="diagram-label-on-accent" font-size="10">Decision: allow or deny — always logged as an event (ch28)</text>
+          </svg>
+          <figcaption>Figure 46.3 — Roles answer "what's this user's job," UMA answers "did someone with the
+          right to share this specific thing choose to"; Northwind needs both, not one instead of the other.</figcaption>
+        </figure>
+
+        <p>Chapter 38's broader comparison is the right frame for explaining this to a skeptical reviewer:
+        Northwind's per-tenant RBAC is a role-shaped answer; UMA's resource-owner delegation is closer to
+        ReBAC in spirit — "did the person who controls this resource grant <em>this</em> relationship" — even
+        though Keycloak implements it via UMA 2.0's permission tickets rather than a Zanzibar-style relationship
+        graph. Naming which model is actually answering which question, out loud, is the skill chapter 6 and
+        chapter 38 exist to build.</p>
+      </section>
+
+      <section class="slide" data-slide="client-design" data-title="Client and scope design">
+        <h2>Decision 4: a client per integration shape, not one client for everything</h2>
+        <p>Chapter 24's lesson — register the client that matches the actual integration, don't force one
+        client type to do several jobs — shows up concretely across Northwind's realm. Each client exists
+        because of a distinct real need, confirmed live in this course's own labs:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Client</th><th>Grant / type</th><th>Why this shape</th></tr></thead>
+            <tbody>
+              <tr><td><code>dashboard</code></td><td>Authorization code + PKCE</td><td>The staff-facing internal dashboard — a real human, a real browser (chapters 13, 35).</td></tr>
+              <tr><td>Enterprise customer-integration client</td><td>Authorization code, confidential</td><td>A customer's own app letting its employees log in with their own Northwind accounts; exact-match redirect_uri registration is what stops a stolen code being redirected elsewhere (chapter 13).</td></tr>
+              <tr><td><code>billing-service-account</code></td><td>Client credentials</td><td>A nightly reconciliation job — no human, no browser, pure machine-to-machine (chapters 34, 36).</td></tr>
+              <tr><td><code>billing-direct-grant</code> users (<code>amara.reader</code>, <code>devon.admin</code>)</td><td>Direct access grant, role-scoped</td><td><code>billing-reader</code> vs. <code>billing-admin</code> — read-only versus read/write, two different jobs, two different roles (chapter 34).</td></tr>
+              <tr><td><code>northwind-cli</code></td><td>Device authorization grant</td><td>A CLI with no embedded browser and no safe place to hold a long-lived static key (chapter 14).</td></tr>
+              <tr><td>UMA resource-server client (ch37)</td><td>UMA 2.0 protection API</td><td>Document-sharing feature needing resource-owner-driven permissions, not just roles.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Every client also gets the <code>tenant_id</code> custom claim (chapter 15/39) attached via a
+        shared client scope, so a claim change — adding a new tenant attribute, say — propagates to every
+        client at once instead of being hand-edited per integration.</p>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>All of this lives under one realm's Clients list in the Admin Console, each client's Capability
+          config toggling exactly the grant types it actually needs (chapter 24) — turning on a grant a client
+          doesn't use is a real, avoidable attack-surface increase, not a convenience.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="hardening" data-title="Security hardening and the Acme XSS incident">
+        <h2>Decision 5: assume a customer's integration will have a bug</h2>
+        <p>Chapter 9's case study is Northwind's own cautionary tale: an enterprise customer's own
+        browser-based integration had an XSS flaw Northwind never wrote and couldn't control. The attacker who
+        exploited it could read that customer's bearer token — but the blast radius was bounded entirely by
+        choices <em>Northwind</em> made ahead of time: how long that token lived, and how narrow its scope
+        was. A SaaS provider inherits real risk from customer-side code; the controls below are what keep that
+        risk from being unbounded.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 280" role="img" aria-labelledby="t4 d4">
+            <title id="t4">Defense-in-depth layers bounding Northwind's blast radius</title>
+            <desc id="d4">Four stacked horizontal bars of decreasing width forming a funnel, from top to bottom: exact-match redirect_uri validation, short-lived narrowly-scoped access tokens, admin REST API audience check plus client policies, and event logging for incident response — each layer narrower than the one above it, representing successive controls rather than a single point of failure.</desc>
+            <rect x="80" y="10" width="600" height="45" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="380" y="37" text-anchor="middle" class="diagram-label" font-size="11">Exact-match redirect_uri validation (ch13)</text>
+
+            <rect x="130" y="70" width="500" height="45" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="380" y="97" text-anchor="middle" class="diagram-label" font-size="11">Short-lived, narrowly-scoped access tokens (ch8, ch21)</text>
+
+            <rect x="180" y="130" width="400" height="45" rx="6" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="380" y="157" text-anchor="middle" class="diagram-label" font-size="10">Admin REST API audience check + client policies (ch45)</text>
+
+            <rect x="230" y="190" width="300" height="45" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="380" y="217" text-anchor="middle" class="diagram-label-on-accent" font-size="10">Event logging for incident response (ch28)</text>
+          </svg>
+          <figcaption>Figure 46.4 — None of these controls would have prevented the customer's XSS bug; all
+          four are what determined how much damage that bug was allowed to do once it fired.</figcaption>
+        </figure>
+
+        <p>Chapter 21's own Northwind case study already shows this trade-off being made deliberately, in two
+        directions at once: SSO Session Idle was <em>lengthened</em> (a B2B dashboard's users work in long,
+        low-stakes stretches, and constant re-auth trains them to distrust the product) while SSO Session Max
+        was <em>shortened</em> (an absolute ceiling on how long any one session, idle or not, can possibly
+        stay valid) — tightening the control that bounds worst-case exposure while loosening the one that was
+        only ever about day-to-day friction.</p>
+      </section>
+
+      <section class="slide" data-slide="writeup" data-title="The full write-up">
+        <h2>Where the rest of the detail lives</h2>
+        <p>This chapter is the recall-and-synthesize pass. Per this Part's own lab format (a full write-up
+        rather than a fresh Docker lab — Northwind's realm is simply the accumulated result of every Keycloak
+        lab chapter this course already ran), the complete architecture document — full realm/client
+        configuration tables, the tenancy-model decision log with every alternative considered and explicitly
+        rejected, the enterprise-SSO design end to end, and a closing "lessons for a specialist" section — is
+        its own page:</p>
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Read the full write-up: <a href="../case-studies/cs01-northwind.html">Case Studies — Northwind
+          Apps: Multi-Tenant SaaS IAM Design</a>. Treat it the way you'd treat a real design document handed
+          to you before a review meeting — read it start to finish, then come back to this chapter's
+          self-check and quiz.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a design doc says "we use RBAC for multi-tenancy" with no mention of resource scope, the cause
+          is almost always an unexamined assumption that a role name alone is enough — it never is once two
+          tenants share one realm. Ask explicitly: "scoped to what?"</p>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If someone proposes realm-per-tenant "for better isolation" without being asked how many tenants
+          exist today and in three years, the cause is evaluating isolation in isolation (so to speak) — every
+          isolation decision has an operational cost that has to be weighed against the actual tenant count,
+          not treated as free.</p>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a postmortem for a customer-side breach blames "the customer's bug" and stops there, the cause
+          is skipping the harder question: what did <em>our own</em> token lifetime and scope choices do to
+          the blast radius? Chapter 9's whole point is that the attacker's bug and the provider's blast-radius
+          choices are two separate, independently assessable things.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Northwind Apps is a CIAM buyer: thousands of tenant-company end-customers, bursty signup/login
+          traffic, and growing enterprise-SSO demand from its larger customers.</li>
+          <li>Northwind rejected realm-per-tenant: strong isolation on paper, but operational cost that grows
+          linearly with tenant count, which doesn't scale to thousands of tenants.</li>
+          <li>Its chosen design is one shared <code>northwind-apps</code> realm with a <code>tenant_id</code>
+          custom claim, moving tenant isolation from a platform boundary to an authorization-time check.</li>
+          <li>A role check that doesn't verify its own resource scope (which tenant) is a cross-tenant
+          privilege-escalation bug waiting to happen, not a hypothetical one.</li>
+          <li>Enterprise customers get brokered SSO (Northwind as SP/RP trusting the customer's own IdP), not
+          federation and not shared passwords — chapter 7's brokering/federation distinction, applied.</li>
+          <li>Per-tenant RBAC answers "what's this user's job"; UMA resource-owner delegation (chapter 37)
+          answers a different question, "did the owner of this specific thing choose to share it" — Northwind
+          needs both, not one instead of the other.</li>
+          <li>Every client in the realm exists because of one distinct, real integration shape (human browser,
+          machine-to-machine job, CLI with no browser) — not because one client type was reused for everything.</li>
+          <li>Blast radius from a customer-side bug Northwind never wrote (the XSS incident) was bounded by
+          choices Northwind made in advance: token lifetime, token scope, and exact redirect_uri matching.</li>
+          <li>Session-lifetime decisions can tighten one control while loosening another in the same change,
+          deliberately — lengthening idle timeout for UX while shortening the absolute session ceiling for risk.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague proposes giving every Northwind tenant its own Keycloak realm "for clean
+            isolation." What's the strongest argument against that, given Northwind's actual scale?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Isolation
+            quality isn't the deciding factor here — operational cost at scale is. With thousands of tenants,
+            a realm-per-tenant model means thousands of admin contexts, duplicated role definitions, and any
+            realm-wide policy change (a password policy, an authentication flow tweak) has to be scripted and
+            applied thousands of times instead of once. The shared-realm-plus-tenant_id design accepts a
+            weaker platform-level isolation guarantee specifically to avoid that linear operational cost.</p>
+          </details></li>
+          <li><details>
+            <summary>Why is "Northwind is the SP/RP trusting Acme's IdP" the correct description of the Acme
+            relationship, rather than "Northwind federates with Acme's directory"?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Federation
+            means directly querying or binding against an existing external directory (the way Riverside
+            Health's clinicians are federated against the hospital's AD). Northwind never touches Acme's
+            directory at all — it configures a trust relationship with Acme's IdP and lets that IdP perform
+            the actual authentication, then accepts the resulting assertion. That's brokering, chapter 7's
+            distinction, not federation.</p>
+          </details></li>
+          <li><details>
+            <summary>Northwind's billing API has both a client-credentials client and a direct-grant client
+            with two different user roles. Why not just use one client and one role for everything?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They
+            represent genuinely different callers: the client-credentials client is a nightly job with no
+            human and no resource owner at all, while the direct-grant users are real people who should be
+            limited to exactly what their job needs — read-only (billing-reader) versus read/write
+            (billing-admin). Collapsing them into one client and one role would either over-privilege the
+            reconciliation job or under-privilege a real admin, and would make an audit log unable to
+            distinguish "a human did this" from "the nightly job did this."</p>
+          </details></li>
+          <li><details>
+            <summary>In the Acme XSS incident, was Northwind's own application code at fault? What does that
+            distinction change about the right response?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>No —
+            the XSS flaw was in code Acme's integration team wrote, not Northwind's. That distinction matters
+            because it reframes the right response: Northwind can't fix a bug in someone else's code, so the
+            only levers actually available to Northwind are the ones that bound the damage a stolen token can
+            do — its lifetime and its scope — which is exactly why those are the controls this chapter frames
+            as Northwind's responsibility, independent of whose bug caused the theft.</p>
+          </details></li>
+          <li><details>
+            <summary>Per-tenant RBAC and UMA's resource-owner delegation both get used inside the same
+            request path in Northwind's design. Why isn't one of them redundant?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>They answer
+            different questions. Per-tenant RBAC answers "does this user generally hold a role that permits
+            this kind of action within this tenant" — a static, job-shaped question. UMA's permission-ticket
+            check answers a dynamic, per-resource question that no role assignment could encode ahead of time:
+            "did the specific owner of this specific document choose, at some point, to share it with this
+            specific other user." A request can pass the first and still need to pass the second if it targets
+            a resource someone else owns and hasn't shared.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#_realms">Keycloak Server Administration Guide — Realms</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/authorization_services/">Keycloak Authorization Services Guide (UMA 2.0 resources, scopes, policies, permissions)</a></li>
+          <li><a href="https://csrc.nist.gov/pubs/sp/800/162/final">NIST SP 800-162 — Guide to Attribute Based Access Control (ABAC) Definition and Considerations</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "case-study-northwind", 15);
+    SlideDeck.init({ chapterSlug: "case-study-northwind" });
+  });
+</script>
+</body>
+</html>

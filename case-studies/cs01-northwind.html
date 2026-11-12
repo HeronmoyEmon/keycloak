@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Northwind Apps — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <p><a href="../case-studies.html">&larr; Case studies</a> &middot; <a href="../chapters/46-case-study-northwind.html">Chapter 46</a></p>
+    <h1>Case Study: Northwind Apps — Multi-Tenant SaaS IAM Design</h1>
+    <p class="lede">A full architecture write-up for <span class="org-chip northwind">Northwind Apps</span>,
+      one of this course's three running case-study organizations (chapter 2). This page assembles, in one
+      place, every identity decision Northwind's realm already embodies across chapters 2-45 — the
+      business context, the realm/client architecture, the tenancy-model decision log (including what was
+      considered and rejected), the enterprise-SSO design, the authorization model, a security hardening
+      checklist, and what an IAM specialist should take away from it. Read this the way you'd read a real
+      design document handed to you before a review meeting.</p>
+
+    <h2>1. Business and compliance context</h2>
+    <p>Northwind Apps sells a multi-tenant B2B SaaS dashboard product to other businesses. Its customers
+      range from small companies with a handful of users on Northwind-local accounts to large enterprise
+      customers (like Acme Corp) with their own corporate identity provider and hundreds of employees who
+      need access. Northwind's own internal workforce (engineers, support staff, platform engineers) is a
+      second, entirely separate identity population, managed in its own internal Active Directory (chapter
+      4) and never mixed with the customer-facing identity store. Because Northwind sells into the EU, GDPR
+      obligations apply to every one of those customer identities (chapter 11) — a constraint that shaped
+      the data residency and processor-agreement questions this write-up doesn't re-derive, but assumes.</p>
+    <p>In market terms (chapter 12), Northwind is squarely a <strong>CIAM</strong> buyer: thousands of
+      end-customer logins across many tenant companies, a bursty, consumer-scale traffic pattern, and
+      growing demand from its larger customers for enterprise SSO into its own product.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Every concrete configuration below is the real, cumulative state of the <code>northwind-apps</code>
+        Keycloak realm this course has built against, lab by lab, since chapter 20 — not a hypothetical
+        redesign. This write-up's job is naming the decisions that state represents and defending them.</p>
+    </div>
+
+    <h2>2. Realm and client architecture</h2>
+    <p>One realm, <code>northwind-apps</code>, hosts the entire design (see §3 for why it is one realm
+      rather than one per tenant). Its accumulated configuration, as built across Parts IV-VIII:</p>
+
+    <h3>Realm roles</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Role</th><th>Meaning</th><th>Built in</th></tr></thead>
+        <tbody>
+          <tr><td><code>tenant-admin</code></td><td>Full administrative access within one customer tenant</td><td>Chapter 23</td></tr>
+          <tr><td><code>support-agent</code></td><td>Support tooling and tenant-facing queues</td><td>Chapter 23</td></tr>
+          <tr><td><code>platform-engineer</code></td><td>Platform engineering tooling and infrastructure</td><td>Chapter 23</td></tr>
+          <tr><td><code>billing-reader</code></td><td>Read-only access to billing/invoicing data</td><td>Chapter 34</td></tr>
+          <tr><td><code>billing-admin</code></td><td>Read/write access to billing/invoicing data</td><td>Chapter 34</td></tr>
+          <tr><td><code>default-roles-northwind-apps</code></td><td>Realm-default composite (auto-managed by Keycloak)</td><td>Realm creation</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>These three core roles (<code>tenant-admin</code>/<code>support-agent</code>/<code>platform-engineer</code>)
+      were deliberately created as independent, non-composite roles rather than a nested hierarchy — chapter
+      23's mover scenario (Priya moving from Support to platform engineering) depends on that: removing
+      <code>support-agent</code> and granting <code>platform-engineer</code> is a clean swap precisely
+      because neither role is nested inside the other.</p>
+
+    <h3>Groups</h3>
+    <p><code>Engineering</code> and <code>Support</code> (chapter 23) — organizational groupings used for
+      bulk role assignment and directory structure, distinct from the realm roles themselves.</p>
+
+    <h3>Users (representative, not exhaustive)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>User</th><th>Role(s)</th><th>Origin</th></tr></thead>
+        <tbody>
+          <tr><td><code>jane.doe</code></td><td>Engineering</td><td>Local, created chapter 22</td></tr>
+          <tr><td><code>priya.sales</code></td><td><code>support-agent</code> &rarr; <code>platform-engineer</code> (mover)</td><td>Local, chapter 23</td></tr>
+          <tr><td><code>amara.reader</code></td><td><code>billing-reader</code></td><td>Local, chapter 34</td></tr>
+          <tr><td><code>devon.admin</code></td><td><code>billing-admin</code></td><td>Local, chapter 34</td></tr>
+          <tr><td><code>acme-admin</code></td><td><code>tenant-admin</code> (scoped to Acme's tenant_id)</td><td>Local, manually provisioned before brokering (chapter 27)</td></tr>
+          <tr><td><code>ben.carter</code></td><td>Acme employee, standard access</td><td>JIT-provisioned via brokered <code>northwind-corporate-idp</code> (chapter 31)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Clients</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Client</th><th>Grant type</th><th>Real caller</th></tr></thead>
+        <tbody>
+          <tr><td><code>dashboard</code></td><td>Authorization code + PKCE</td><td>Northwind's own staff-facing internal dashboard (chapter 24)</td></tr>
+          <tr><td>Enterprise customer-integration client</td><td>Authorization code, confidential, exact-match redirect_uri</td><td>A customer's own app letting its employees log in with Northwind accounts (chapter 13)</td></tr>
+          <tr><td><code>billing-service-account</code></td><td>Client credentials</td><td>Nightly billing reconciliation job — no human (chapters 34, 36)</td></tr>
+          <tr><td><code>billing-direct-grant</code></td><td>Direct access grant</td><td>Internal tooling exercising <code>amara.reader</code>/<code>devon.admin</code> (chapter 34)</td></tr>
+          <tr><td><code>northwind-cli</code></td><td>Device authorization grant</td><td>A terminal CLI with no embedded browser (chapter 14)</td></tr>
+          <tr><td>UMA resource-server client</td><td>UMA 2.0 protection API</td><td>Document-sharing feature, resource-owner-driven permissions (chapter 37)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Every client shares one client scope carrying the <code>tenant_id</code> custom claim, injected by a
+      custom Protocol Mapper SPI implementation (chapter 39) into the access token, ID token, and UserInfo
+      response alike — a single, auditable place to change how tenant identity is carried, rather than a
+      per-client reimplementation.</p>
+
+    <h2>3. The tenancy model decision</h2>
+    <p>This is the design's central, defensible decision, and the one most likely to come up in an
+      interview: should each customer tenant get its own Keycloak realm, or should all tenants share one
+      realm distinguished by a claim?</p>
+
+    <table class="table-compare table-compare--pro-con">
+      <thead><tr><th>Shared realm + <code>tenant_id</code> claim (chosen)</th><th>Realm-per-tenant (considered, rejected)</th></tr></thead>
+      <tbody>
+        <tr><td>One admin context to manage, regardless of tenant count</td><td>One admin context per tenant — thousands at Northwind's scale</td></tr>
+        <tr><td>A realm-wide policy change (password policy, auth flow) applies once</td><td>The same change has to be scripted and re-applied per realm</td></tr>
+        <tr><td>Tenant isolation enforced at authorization time (resource-scope checks)</td><td>Tenant isolation enforced structurally by the platform itself</td></tr>
+        <tr><td>Scales linearly in storage/complexity with user count, not realm count</td><td>Scales linearly in <em>operational</em> cost with tenant count</td></tr>
+        <tr><td>A missed resource-scope check is a real cross-tenant bug class to guard against</td><td>A realm boundary can't be crossed by a role-check bug the way a shared realm's can</td></tr>
+      </tbody>
+    </table>
+
+    <p>The deciding factor was scale, not isolation quality in the abstract: realm-per-tenant gives a
+      <em>cleaner</em> isolation boundary, but Northwind has thousands of tenants today and growing, and an
+      isolation model whose management cost grows linearly with tenant count stops being affordable long
+      before the tenant count gets large. The trade Northwind accepted explicitly: tenant isolation becomes
+      a discipline enforced in application and authorization code (every role check, every data query, must
+      carry and verify <code>tenant_id</code>) rather than a guarantee the platform enforces for free. This
+      is the same resource-scope lesson chapter 6 teaches generally, applied as a load-bearing design
+      decision rather than a side note.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>A role check that verifies "does this user hold <code>tenant-admin</code>" without also verifying
+        "...scoped to <em>this</em> tenant_id" is the single most consequential bug class this design has to
+        defend against. Every engineer touching an authorization check in this system needs to internalize
+        that the role name alone is never sufficient.</p>
+    </div>
+
+    <h2>4. Enterprise SSO: brokering, not federation, not shared passwords</h2>
+    <p>Enterprise customers like Acme Corp want their employees logging into Northwind with their own
+      corporate identity. Northwind evaluated three options:</p>
+    <ul>
+      <li><strong>Shared/synced passwords</strong> — rejected outright: it means Northwind storing or
+        touching a credential that properly belongs to Acme's own IT department, with no way for Acme to
+        revoke access to Northwind specifically without touching their whole directory.</li>
+      <li><strong>Federation</strong> — rejected: federation means Northwind directly querying or binding
+        against Acme's directory (the shape Riverside Health uses for its own clinician workforce against
+        its hospital's AD, chapter 32). Northwind has no operational reason to run that kind of direct
+        directory integration for every enterprise customer it signs.</li>
+      <li><strong>Identity brokering</strong> — chosen: Northwind configures a trust relationship with
+        Acme's own IdP (<code>northwind-corporate-idp</code> in this course's labs) and lets that IdP perform
+        the actual login. Northwind never sees or stores Ben Carter's real Acme password; it only ever sees
+        an assertion it has agreed to trust.</li>
+    </ul>
+    <p>Before this was built (chapter 27's manual bulk-onboarding era), each new Acme hire meant Northwind's
+      ops team manually creating an account by hand — a real, necessary stopgap, but one that doesn't scale
+      past a customer's first handful of users and has to be repeated on every hire or departure. After
+      brokering, a brand-new Acme employee gets a working <code>northwind-apps</code> identity automatically
+      on first login (JIT provisioning), and Acme's own IT department remains the single source of truth for
+      who currently counts as an Acme employee — deprovisioning on Acme's side is what actually removes
+      their Northwind access, with zero Northwind-side manual step required.</p>
+    <p>Northwind's smaller, self-serve customers get a second brokered source — "Login with Google" — and
+      its smallest customers, with no IdP of their own and no interest in one, keep ordinary
+      Northwind-local accounts. All three identity sources land in the same realm, each tagged with the same
+      <code>tenant_id</code> discipline.</p>
+
+    <h2>5. Authorization model: roles plus resource-owner delegation</h2>
+    <p>Per-tenant RBAC (chapter 6) is the primary model: "what's this user's job within their tenant" is a
+      stable, role-shaped question, as long as every assignment carries its tenant scope. But Northwind's
+      document-sharing feature needed an answer RBAC structurally can't give — "did the owner of this one
+      specific document choose, at some point, to share it with this one other specific user" — a decision
+      made at runtime by the resource's owner, not encodable as a role an admin assigns ahead of time.
+      Chapter 37's lab built this with Keycloak's Authorization Services (UMA 2.0): a resource server
+      registers protected resources and scopes, the resource owner grants permission tickets, and every
+      access request is checked against both the role model <em>and</em> the permission-ticket model before
+      it's allowed through.</p>
+    <p>Framed against chapter 38's broader comparison: Northwind's RBAC layer is a textbook role model, and
+      its UMA delegation layer behaves closer to ReBAC in spirit ("does a specific relationship — ownership
+      plus an explicit share — exist between this user and this resource") even though it's implemented via
+      UMA's permission-ticket mechanism rather than a Zanzibar-style relationship graph. Keycloak doesn't
+      force a single authorization paradigm; Northwind uses the two paradigms that actually answer its two
+      different questions.</p>
+
+    <h2>6. Security hardening checklist</h2>
+    <p>Chapter 9's Acme-customer XSS incident is the organizing case for this section: an attacker exploited
+      a bug in <em>Acme's own</em> browser-based integration code, not anything Northwind wrote, and used it
+      to read a stolen Northwind-issued bearer token. Northwind's own code was never at fault — but
+      Northwind's blast radius was entirely a function of choices made in advance. The checklist below is
+      those choices, made explicit:</p>
+    <ul>
+      <li><strong>Exact-match <code>redirect_uri</code> registration</strong> (chapter 13) — no wildcard or
+        domain-level match for any registered client, closing off a whole class of authorization-code
+        redirection attack regardless of what else lives on a customer's domain.</li>
+      <li><strong>Short, deliberately bounded access-token lifetimes and scopes</strong> (chapters 8, 21) —
+        a stolen token is dangerous only for as long as it's valid and only for what it's scoped to; both are
+        choices Northwind controls directly, independent of any customer-side bug.</li>
+      <li><strong>An absolute SSO Session Max ceiling, even while SSO Session Idle was lengthened</strong>
+        (chapter 21) — two timers moving in different directions on purpose: idle timeout loosened for a
+        B2B dashboard's genuinely long, low-stakes work sessions; the absolute ceiling tightened because it's
+        the one number that bounds worst-case exposure no matter how "idle" looks from the session's
+        perspective.</li>
+      <li><strong>Admin REST API audience/scope check plus client policies</strong> (chapter 45) — defense
+        for the realm's own administrative surface, independent of the customer-facing incident above but
+        part of the same "assume something will go wrong, bound the damage" posture.</li>
+      <li><strong>Event logging for every authentication and authorization decision</strong> (chapter 28) —
+        without it, a postmortem for an incident like Acme's has no way to reconstruct what the stolen token
+        was actually used for, or when access should have been (and was) cut off.</li>
+    </ul>
+
+    <h2>7. Lessons for an IAM specialist</h2>
+    <ol>
+      <li>"Use RBAC" and "use Keycloak" are not designs — the design is the specific resource-scope
+        discipline, tenancy model, and set of rejected alternatives that make a role model actually hold up
+        at real scale.</li>
+      <li>An isolation decision (realm-per-tenant vs. shared realm) is an operational-cost decision as much
+        as a security decision; evaluate it against the actual number of tenants, now and at expected scale,
+        not against isolation quality in the abstract.</li>
+      <li>Brokering and federation are not interchangeable, and picking the wrong one for a given
+        relationship (who owns the directory, who performs the actual authentication) produces an
+        architecture that doesn't match how responsibility is actually distributed between the two
+        organizations.</li>
+      <li>A security incident caused by a partner's or customer's own code is not a reason to skip asking
+        what your own system's configuration did to the blast radius — token lifetime and scope are usually
+        the two most consequential answers.</li>
+      <li>Two authorization models can coexist deliberately in one system because they answer two genuinely
+        different questions; the specialist's job is naming, for any given access decision, which question
+        is actually being asked.</li>
+    </ol>
+
+    <p><a href="../case-studies.html">&larr; Back to case studies</a> &middot;
+      <a href="../chapters/46-case-study-northwind.html">Back to chapter 46</a></p>
+
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/book.js"></script>
+</body>
+</html>

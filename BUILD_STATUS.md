@@ -1,6 +1,6 @@
 # Build status
 
-Last updated: 2026-11-11 | Docker: 29.6.2 | Java: openjdk 21.0.13.0.3 | Maven: 3.8.7 | Node: v18.20.4 |
+Last updated: 2026-11-12 | Docker: 29.6.2 | Java: openjdk 21.0.13.0.3 | Maven: 3.8.7 | Node: v18.20.4 |
 npm: 10.8.2 | Python: 3.12.3 |
 Git: yes, pushed to a GitHub remote (branch `main`). Deploy target: Vercel (not yet connected — do that
 once `index.html` exists, see Open questions). Commits happen per unit; pushes only when the user
@@ -76,6 +76,59 @@ a reader's choice on return visits — removed that media query from `book.css` 
 the reader clicks the theme toggle. Committed `3364b2b`, pushed. **Chapter 00 then converted to the
 slide-deck template** (it was the last chapter still on the old book-shell layout — see Done below).
 
+**Part X case studies — chapters 46-48 + `case-studies.html` + `case-studies/cs01-cs03` — COMPLETE
+(2026-11-12).** Built as 3 parallel fork agents, one per org, each grepping the repo first for every
+existing mention of its org (34/29/34 chapters already referenced Northwind/Riverside/Meridian by name
+before this unit) to stay consistent with established facts rather than inventing new canon, then
+writing `chapters/4X-case-study-<org>.html` (full slide-deck template; the "hands-on" slot points at
+the full write-up instead of a Docker lab, per CLAUDE.md §5's Part X table) and
+`case-studies/cs0N-<org>.html` (new directory — long-form write-up on the shell/book-page template,
+`labs.html`'s layout, not the slide deck one). Each agent returned proposed glossary/quiz additions in
+its report rather than editing shared files directly; central merge done by the coordinator.
+
+**Per-chapter results:** ch46 Northwind (4 diagrams, 9 takeaways, 5 self-check, 15 quiz, 2 new glossary
+terms — "Tenant isolation", "Realm-per-tenant model" — plus `case-study-northwind` added to 2 existing
+terms' `chapters` arrays), ch47 Riverside (3 diagrams, 9 takeaways, 6 self-check, 15 quiz, 0 new
+glossary terms — a deliberate judgment call for a synthesis chapter, same one chapter 0 made — 6
+existing terms extended), ch48 Meridian (3 diagrams, 9 takeaways, 5 self-check, 15 quiz, 0 new glossary
+terms, 3 existing terms extended). 10 diagrams total across the unit, all inline SVG using only the
+shared `diagram-*` classes, spot-checked by the coordinator against both named bug classes (no
+connector crosses a box it doesn't connect to; no text estimate exceeds its box).
+
+**One real design gap each agent closed rather than ignored:** ch47's agent resolved an open self-check
+question from chapter 32 (whether Riverside's clinician federation uses READ_ONLY or WRITABLE edit
+mode) by committing to READ_ONLY, consistent with that self-check's own model answer — chapter 32's
+primary LDAP lab is actually Meridian Trust's staff directory, not Riverside's, so this was a genuine
+gap in established canon, not a contradiction to resolve.
+
+**Independent verification done by the coordinator, not just trusting the subagent reports:**
+- All 8 touched/new HTML files (`chapters/46-48`, `case-studies/cs01-03`, `case-studies.html`,
+  `index.html`) parsed with a proper tag-stack checker (not substring counting) — zero mismatches.
+- All required mount points/script order confirmed present and in the same order as chapter 1's
+  reference template in all three new chapters (`#mark-all-btn`, `#deck-progress-mini`,
+  `#slide-outline`, `#quiz-mount`, `#chapter-glossary-mount`, the 6-script include order, matching
+  `QuizEngine.renderQuiz`/`SlideDeck.init` calls, correct `CURRENT_CHAPTER`/`SITE_ROOT` values).
+- Every internal link across the 8 files resolves to a real file (checked programmatically, not by
+  eye) — including each chapter's forward link to its own case-studies write-up and each write-up's
+  link back to `../case-studies.html`, which didn't exist yet when the agents wrote those links.
+- All 13 deep-dive links across the three chapters (Keycloak docs, NIST SP 800-66r2/800-63B/800-162,
+  Cornell LII 45 CFR §164.312/§164.502, PCI SSC, OpenFGA docs, the original Zanzibar paper) re-curled
+  live by the coordinator: 13/13 returned `200`.
+- Merged `glossary-data.js`/`quiz-data.js` checked in Node with a `window` shim: 671 glossary terms,
+  zero duplicate term names; the 3 new quiz pools (`case-study-northwind/riverside/meridian`, 15
+  questions each, 45 total) all have exactly 4 options and an in-bounds `answerIndex`, zero duplicate
+  question ids anywhere in the merged file; 51 nav entries, zero duplicate slugs, and chapters 46-48
+  now `built: true`.
+- `node --check` clean on `nav-data.js`, `glossary-data.js`, `quiz-data.js` after every edit.
+
+**What's NOT yet verified (same standing limitation as every prior gate):** no browser tool exists in
+this environment, so nobody has visually rendered the three new chapters, the three write-ups, or the
+new `case-studies.html` index. All verification above is structural/programmatic. Recommend opening
+`case-studies.html` and at least one chapter+write-up pair locally before considering this unit fully
+closed from a visual-design standpoint — same recommendation every prior unit has carried.
+
+**Capstone (queue item 18) is next per the Queue.**
+
 ## Queue
 
 Ordered; one item at a time. Each chapter's full brief gets drafted into this file (replacing its queue
@@ -146,7 +199,9 @@ visuals/examples where it helps, not just re-chunk existing prose.
 16. ~~Chapters 41-45~~ — done 2026-11-11, see Done below. No gate sits after Part IX.
 
 ### Part X (case studies & capstone)
-17. `case-studies.html` index + `case-studies/cs01-cs03` (chapters 46-48's full write-ups).
+17. ~~Chapters 46-48 + `case-studies.html` index + `case-studies/cs01-cs03` (full write-ups)~~ — done
+    2026-11-12, see Current unit above / Done below for full detail. No gate sits here per CLAUDE.md
+    §8 — the capstone is the next and last item before Part XI.
 18. Capstone project spec and build.
 
 ### Part XI (career & reference)
@@ -474,6 +529,58 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Part X case studies: chapters 46-48 + case-studies.html + cs01-cs03 (2026-11-12)
+- Built as 3 parallel fork agents, one per running org (Northwind Apps → ch46/cs01, Riverside Health →
+  ch47/cs02, Meridian Trust → ch48/cs03), each grepping the repo first for every existing mention of its
+  org (34/29/34 chapters already referenced it by name) to stay consistent with established canon
+  (realms, roles, users, clients, prior incidents) rather than inventing new facts. Each agent wrote a
+  full slide-deck chapter (same template as every other chapter; the "hands-on" slot points at the full
+  write-up instead of a Docker lab, per CLAUDE.md §5's Part X table) plus a new long-form write-up page
+  in a new `case-studies/` directory, built on the shell/book-page template (`labs.html`'s layout, not
+  the slide-deck one, since it's a reference document meant to be read start-to-finish or skimmed, not
+  a lesson). Agents proposed glossary/quiz additions in their reports rather than editing shared files
+  directly, per the standing anti-collision pattern; the coordinator merged centrally.
+- **Chapter 46 — Case Study: Northwind Apps** (`chapters/46-case-study-northwind.html` +
+  `case-studies/cs01-northwind.html`): 4 diagrams, 9 takeaways, 5 self-check, 15 quiz questions, 2 new
+  glossary terms ("Tenant isolation", "Realm-per-tenant model") plus `case-study-northwind` added to 2
+  existing terms' `chapters` arrays (`Northwind Apps role model...`, `JIT (just-in-time) provisioning`).
+  Synthesizes the shared-realm-plus-`tenant_id` tenancy decision, enterprise SSO brokering (Acme Corp),
+  RBAC+UMA layered authorization, and the chapter-9 token-blast-radius incident into one design
+  narrative.
+- **Chapter 47 — Case Study: Riverside Health** (`chapters/47-case-study-riverside.html` +
+  `case-studies/cs02-riverside.html`): 3 diagrams, 9 takeaways, 6 self-check, 15 quiz questions, 0 new
+  glossary terms (deliberate judgment call for a synthesis chapter, same one chapter 0 made — noted
+  rather than padded), 6 existing terms extended (`Step-up authentication`, `Care team relationship`,
+  `Break-glass access`, `Minimum necessary standard`, `READ_ONLY edit mode`, `Decision strategy`).
+  Resolved a genuine open gap in established canon: chapter 32's self-check asked a hypothetical about
+  Riverside using WRITABLE vs. READ_ONLY LDAP edit mode (chapter 32's own primary lab is actually
+  Meridian's staff directory, not Riverside's) — this chapter commits Riverside to READ_ONLY,
+  consistent with that self-check's own model answer, closing the gap rather than leaving it open or
+  contradicting it.
+- **Chapter 48 — Case Study: Meridian Trust** (`chapters/48-case-study-meridian.html` +
+  `case-studies/cs03-meridian.html`): 3 diagrams, 9 takeaways, 5 self-check, 15 quiz questions, 0 new
+  glossary terms, 3 existing terms extended (`Cardholder Data Environment (CDE)`, `Zanzibar model
+  (relationship-tuple authorization)`, `Relationship-Based Access Control (ReBAC)`). Synthesizes the
+  single-realm/split-by-client-and-role design, the transfer-creator/transfer-approver SoD conflict
+  from chapter 10/23, risk-based step-up tied to the chapter-9 credential-stuffing incident, and the
+  RBAC→ABAC→ReBAC layering from chapter 38 into one design narrative.
+- **`case-studies.html`**: new index page (coordinator-built, no agent needed — static, predictable
+  content), shell/book-page template, one `.part-card` per org with an `org-chip` badge and links to
+  both that org's chapter and its write-up. Added a "Case studies" entry to `index.html`'s top
+  quick-links nav (previously only Study pace/Glossary/Quizzes/Labs).
+- **Independent verification done by the coordinator:** all 8 touched/new HTML files parsed with a
+  proper tag-stack checker (zero mismatches); every required mount point and the 6-script include
+  order confirmed present and in the same order as chapter 1's reference template in all three new
+  chapters; every internal link across all 8 files resolves to a real file (checked programmatically);
+  all 13 deep-dive links across the three chapters re-curled live by the coordinator (13/13 → `200`);
+  merged `glossary-data.js`/`quiz-data.js` checked in Node with a `window` shim (671 glossary terms,
+  zero duplicate term names; 3 new 15-question quiz pools, zero duplicate ids anywhere in the merged
+  file, every option count/answerIndex in bounds; 51 nav entries, zero duplicate slugs, chapters 46-48
+  now `built: true`); `node --check` clean on all three edited data files.
+- **What's NOT yet verified:** no browser tool in this environment — nobody has visually rendered the
+  three new chapters, the three write-ups, or the new index page. Same standing
+  limitation as every prior gate; recommend a visual pass before considering this unit fully closed.
 
 ### Part IX Round 2: chapters 43-45, performance/backup-DR/hardening — Part IX COMPLETE (2026-11-11)
 - Built as three parallel subagents (all no-lab/research-heavy, safe to fully parallelize — no Docker/K8s

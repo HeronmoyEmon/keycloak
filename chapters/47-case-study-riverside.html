@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Riverside Health — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "case-study-riverside";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part X — Case Studies &amp; Capstone</span>
+          <span class="badge minutes">~60 min</span>
+          <span class="badge lab">Full write-up</span>
+        </div>
+        <h1>47. Case Study: Riverside Health</h1>
+        <p class="lede">Riverside Health has been this course's running example for one specific hard problem
+        since chapter 2: a single organization that has to run a strict, regulated workforce identity program
+        and a patient-facing consumer identity program at the same time, under HIPAA, without letting either
+        one compromise the other. This chapter doesn't teach a new concept — it's where every earlier chapter
+        that touched Riverside gets pulled together into one coherent design, the way a real IAM specialist
+        would actually be asked to present it: as an architecture, with trade-offs named and alternatives
+        considered.</p>
+
+        <h2>Why this matters</h2>
+        <p>Nobody hires an IAM specialist to recite the OAuth spec. They hire one to take a messy brief —
+        "secure the clinician portal and the patient portal, satisfy our HIPAA auditor, and don't make nurses
+        hate their shift start" — and turn it into a realm design, a set of policies, and a written
+        justification for each choice. This chapter is that exercise, worked end to end for Riverside, and the
+        full write-up this chapter points to (<code>case-studies/cs02-riverside.html</code>) is written in the
+        voice you'd use in an actual design doc or an interview answer.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Nothing here is new. This chapter recalls: the identity lifecycle and the two-population split
+          (chapter 2), directory federation (chapters 4, 7, 32), authentication factors and risk-based/step-up
+          auth (chapter 5), ABAC/ReBAC authorization (chapters 6, 38), HIPAA's Security and Privacy Rules
+          (chapter 11), realm design (chapter 21), required actions (chapter 22), and admin-event auditing
+          (chapter 28) — all applied to one organization instead of treated as separate topics.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="context" data-title="Riverside's brief">
+        <h2>The brief: two populations, one regulator</h2>
+        <p>Riverside Health is a regional hospital network (chapter 2). Its identity population splits into
+        clinician workforce identities — doctors, nurses, and administrative staff who need fast, reliable
+        access to clinical systems, often from shared workstations — and patient identities, who use a
+        patient portal to view records, message their care team, and pay bills. Every one of those identities
+        sits inside the HIPAA Security Rule's scope (chapter 11), which means strong authentication, tight
+        audit trails, and access that maps to a legitimate clinical need aren't nice-to-haves; they're the
+        actual deliverable.</p>
+        <p>Two requirements drive almost every design decision in this chapter:</p>
+        <ul>
+          <li><strong>45 CFR §164.312 (Technical Safeguards)</strong> — access control, audit controls,
+          integrity, and transmission security, mapped directly onto authentication strength, authorization
+          granularity, and event logging.</li>
+          <li><strong>45 CFR §164.502(b) (Minimum Necessary)</strong> — a clinician's access must be scoped to
+          what their role and current relationship to a patient actually requires, not to "everything the
+          hospital has," even though broad access would be operationally simpler to configure.</li>
+        </ul>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Chapter 11 put it plainly: minimum necessary is a compliance <em>requirement</em>; a
+          relationship-based access model that grants a clinician access only while an active care-team
+          relationship exists is one concrete <em>implementation</em> of it — the one this chapter builds
+          toward. Riverside is the epicenter of HIPAA across this course's three orgs precisely because its
+          entire workforce and patient population sit inside this rule's scope.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="realm-separation" data-title="Realm design">
+        <h2>Design decision: two realms, not one</h2>
+        <p>Chapter 21 established that a realm is a fully isolated management namespace — its own users,
+        its own authentication flows, its own session policy. Riverside's design uses two realms:
+        <code>riverside-clinicians</code> for the workforce (clinicians and administrative staff) and
+        <code>riverside-patients</code> for the patient portal population. They are not the same realm with a
+        role split, and that's a deliberate trade-off, not a default.</p>
+        <figure class="diagram">
+          <svg viewBox="0 0 760 290" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Two separate Keycloak realms for Riverside's two identity populations</title>
+            <desc id="d1">Two large boxes side by side, each representing one isolated Keycloak realm. The left box, riverside-clinicians, contains a federated-users icon linked to the hospital Active Directory, a badge-based MFA authentication flow, and a short session-timeout setting. The right box, riverside-patients, contains a self-registration flow, an email-verification required action, and a longer session-timeout setting. A dashed boundary line between the two boxes is labeled no shared session, no shared password policy, each realm's settings apply only within it.</desc>
+            <rect x="30" y="40" width="320" height="220" rx="10" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="190" y="65" text-anchor="middle" class="diagram-label" font-weight="700">riverside-clinicians</text>
+            <rect x="50" y="85" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="190" y="106" text-anchor="middle" class="diagram-label" font-size="11">Federated from hospital AD (ch. 32)</text>
+            <rect x="50" y="137" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="190" y="158" text-anchor="middle" class="diagram-label" font-size="11">Badge-tap + PIN MFA (ch. 5)</text>
+            <rect x="50" y="189" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="190" y="210" text-anchor="middle" class="diagram-label" font-size="11">Short SSO session timeout</text>
+
+            <rect x="410" y="40" width="320" height="220" rx="10" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="570" y="65" text-anchor="middle" class="diagram-label" font-weight="700">riverside-patients</text>
+            <rect x="430" y="85" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="570" y="106" text-anchor="middle" class="diagram-label" font-size="11">Self-registration enabled</text>
+            <rect x="430" y="137" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="570" y="158" text-anchor="middle" class="diagram-label" font-size="11">Verify Email required action (ch. 22)</text>
+            <rect x="430" y="189" width="280" height="42" rx="6" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="570" y="210" text-anchor="middle" class="diagram-label" font-size="11">Longer, portal-appropriate timeout</text>
+
+            <line x1="370" y1="40" x2="370" y2="260" class="diagram-stroke" stroke-dasharray="5 5"></line>
+            <text x="370" y="278" text-anchor="middle" class="diagram-label-muted" font-size="10">No shared session or password policy across the boundary</text>
+          </svg>
+          <figcaption>Figure 47.1 — Riverside's two realms isolate two populations whose authentication
+          strength, session policy, and self-service needs have nothing in common.</figcaption>
+        </figure>
+        <p><strong>Alternative considered and rejected:</strong> one realm, two groups ("Clinicians" and
+        "Patients"), each with its own role mappings. Rejected because a realm's authentication flow, password
+        policy, and session timeouts are realm-wide settings, not group-scoped — a shared realm would force
+        clinician-grade session timeouts onto patients (hostile to a portal meant for occasional, unhurried
+        use) or patient-grade timeouts onto clinicians (unacceptable on a shared clinical workstation). Chapter
+        19's realm-isolation guarantee exists for exactly this situation: two populations with genuinely
+        different security postures belong in different realms, not different groups within one.</p>
+      </section>
+
+      <section class="slide" data-slide="clinician-federation" data-title="Clinician federation">
+        <h2>Clinician workforce: federate, don't migrate</h2>
+        <p>Chapter 4 modeled Riverside's hospital directory as an LDAP tree rooted at
+        <code>dc=riversidehealth,dc=org</code>, with clinicians like <code>cn=Dr. Amara Chen</code> and
+        <code>cn=Dr. Liam Osei</code> under <code>ou=Clinicians</code> and administrative staff like
+        <code>cn=Priya Nair</code> under <code>ou=Staff</code>. Chapter 7 and chapter 32 turned that into a
+        concrete decision: <code>riverside-clinicians</code> federates against this Active Directory rather
+        than importing roughly ten thousand clinician accounts into Keycloak's own store.</p>
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Riverside Health</div>
+          <p>Chapter 4's self-check answer already made the business case directly: Riverside's AD already
+          holds shift schedules, department assignments, and badge-linked accounts built up over years.
+          Migrating all of that is slow, risky, and creates two copies of the truth that drift apart.
+          Federating instead lets nurses keep the credentials they already have and lets HR keep managing
+          joiners and leavers in the one place it already does — Keycloak authenticates against what's
+          authoritative instead of replacing it.</p>
+        </div>
+        <p><strong>Edit mode decision:</strong> chapter 32 left this open as a self-check question —
+        Riverside's federation provider stays in <strong>READ_ONLY</strong> mode, not WRITABLE. A clinician's
+        AD account is owned by hospital IT and HR systems upstream of Keycloak; letting Keycloak write back
+        (e.g. a self-service password reset flowing into AD) would make Keycloak a second place credential
+        changes can originate from, undermining the "one authoritative source" property federation exists to
+        protect. Password resets for clinicians go through the hospital's existing AD self-service tooling,
+        not through Keycloak.</p>
+      </section>
+
+      <section class="slide" data-slide="step-up-auth" data-title="Step-up authentication">
+        <h2>Authentication strength: fast by default, stronger on demand</h2>
+        <p>Chapter 5 established Riverside's baseline for shared clinical workstations: a possession-factor
+        badge tap, often paired with a short PIN — a deliberately weaker guarantee than a full second factor,
+        chosen because authentication friction on a shared terminal costs clinical seconds. That trade-off is
+        only acceptable because of what chapter 5's self-check named as its compensating controls: short
+        session timeouts, workstation-level restrictions, and — critically for this chapter — audit logging
+        that makes misuse detectable even though the authentication step alone doesn't prevent it.</p>
+        <p>The badge-tap baseline is not Riverside's ceiling. A required action (chapter 22's mechanism) steps
+        a clinician up to a full MFA challenge before specific high-sensitivity operations: opening the chart
+        of a patient outside their current care team (rare, and logged regardless of outcome — see the
+        pitfall below), or amending a finalized clinical note. The authentication strength scales with the
+        sensitivity of what's being requested, not with a single realm-wide policy.</p>
+        <figure class="diagram">
+          <svg viewBox="0 0 700 220" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Step-up authentication triggered by action sensitivity, not by a fixed schedule</title>
+            <desc id="d2">A clinician badge-taps into a shared workstation at the left, reaching baseline access to routine chart review. An arrow labeled routine chart review within care team leads straight to a permit box. A second arrow labeled open a chart outside my care team, or amend a finalized note leads instead to a step-up MFA challenge box, which only then leads to a permit box, with a parallel arrow into an always-fires audit log box regardless of whether the step-up succeeds.</desc>
+            <circle cx="60" cy="110" r="22" class="diagram-fill-accent diagram-stroke"></circle>
+            <text x="60" y="150" text-anchor="middle" class="diagram-label-muted" font-size="10">Clinician, badge-tap</text>
+            <line x1="82" y1="100" x2="180" y2="60" class="diagram-stroke"></line>
+            <text x="135" y="48" text-anchor="middle" class="diagram-label-muted" font-size="10">routine, in care team</text>
+            <rect x="180" y="35" width="200" height="45" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="280" y="62" text-anchor="middle" class="diagram-label" font-size="11">Permit — baseline access</text>
+
+            <line x1="82" y1="120" x2="180" y2="160" class="diagram-stroke"></line>
+            <text x="135" y="175" text-anchor="middle" class="diagram-label-muted" font-size="10">outside care team / amend note</text>
+            <rect x="180" y="135" width="200" height="45" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="280" y="155" text-anchor="middle" class="diagram-label" font-size="10">Step-up: full MFA</text>
+            <text x="280" y="170" text-anchor="middle" class="diagram-label" font-size="10">required action</text>
+            <line x1="380" y1="157" x2="460" y2="100" class="diagram-stroke"></line>
+            <rect x="460" y="75" width="200" height="45" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="560" y="102" text-anchor="middle" class="diagram-label" font-size="11">Permit — after step-up</text>
+
+            <line x1="280" y1="180" x2="280" y2="200" class="diagram-stroke" stroke-dasharray="4 4"></line>
+            <line x1="280" y1="200" x2="560" y2="200" class="diagram-stroke" stroke-dasharray="4 4"></line>
+            <line x1="560" y1="200" x2="560" y2="125" class="diagram-stroke" stroke-dasharray="4 4"></line>
+            <text x="420" y="214" text-anchor="middle" class="diagram-label-muted" font-size="10">Logged either way, success or step-up failure (ch. 28)</text>
+          </svg>
+          <figcaption>Figure 47.2 — Step-up is triggered by what's being requested, not by a timer; the audit
+          trail fires regardless of the outcome.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="care-team-abac" data-title="Minimum necessary, enforced">
+        <h2>Authorization: minimum necessary as an enforced rule, not a policy document</h2>
+        <p>Chapter 38 worked this out concretely for Riverside already: <em>a clinician may view a patient
+        record only if their department attribute matches the patient's assigned department, and only during
+        their scheduled shift hours.</em> Both conditions are attributes evaluated at request time, which puts
+        this squarely inside Keycloak Authorization Services' native ABAC/PBAC ceiling (chapter 37) — two
+        policies (a department-attribute policy, a shift-time policy) combined under a <strong>unanimous</strong>
+        decision strategy, so the record only releases when both agree.</p>
+        <p>Chapter 6 framed the ceiling above that: a true "currently on this patient's care team" relationship
+        — which changes as a patient is transferred between departments or a clinician is added to a case — is
+        a ReBAC edge, not an attribute. Keycloak's native authorization model has no relationship-tuple concept
+        (chapter 38's finding), so Riverside's design uses the department+shift ABAC rule as the practical,
+        natively-supported approximation of "currently responsible for this patient," accepting that it's an
+        approximation (a clinician in the right department during the right shift who isn't actually on this
+        specific patient's care team today would still pass) rather than reaching for an external ReBAC engine
+        for a first version of this system.</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a Riverside clinician reports they can see a record they shouldn't be able to at 2 a.m., check
+          the permission's decision strategy before the individual policies. Each policy can be written
+          correctly in isolation and still produce the wrong combined result under an affirmative strategy
+          instead of unanimous — a composition bug, not a policy-authoring bug, and invisible if you only
+          re-read each policy's logic on its own (chapter 38).</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="break-glass" data-title="Break-glass access">
+        <h2>The exception path: break-glass, deliberately audited</h2>
+        <p>Minimum necessary cannot be absolute in a hospital: an attending physician covering an emergency
+        may need to open a patient's record with zero advance notice, before any care-team relationship or
+        department assignment has been set up. Riverside's design adds one deliberate escape hatch —
+        <strong>break-glass access</strong> — rather than loosening the standing ABAC rule to cover emergencies,
+        which would weaken minimum necessary for every ordinary request to accommodate a rare one.</p>
+        <p>Mechanically: a clinician who fails the standing department+shift permission is offered a
+        self-attested "emergency access" required action instead of a flat denial. Accepting it grants
+        time-boxed access (typically one shift) and — unlike the ordinary access path — fires a dedicated,
+        high-visibility admin event on every single use, flagged for same-week compliance review rather than
+        sitting in the general event stream. The trade-off is explicit: Riverside accepts that break-glass can
+        be used when it technically wasn't medically necessary, in exchange for never blocking a clinician from
+        reaching a patient during a real emergency. The control that makes this acceptable is the audit, not
+        the gate.</p>
+        <figure class="diagram">
+          <svg viewBox="0 0 700 180" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Break-glass as an audited exception path alongside the standing ABAC rule</title>
+            <desc id="d3">A clinician request first hits the standing department-and-shift ABAC check. A pass leads directly to a permit box. A fail leads to a break-glass offer box, which if accepted leads to a time-boxed permit box, which in turn always triggers a high-visibility audit event box flagged for same-week review.</desc>
+            <rect x="20" y="65" width="150" height="50" rx="6" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="95" y="86" text-anchor="middle" class="diagram-label" font-size="11">Standing ABAC</text>
+            <text x="95" y="102" text-anchor="middle" class="diagram-label" font-size="11">dept + shift check</text>
+            <line x1="170" y1="80" x2="260" y2="50" class="diagram-stroke"></line>
+            <text x="215" y="40" text-anchor="middle" class="diagram-label-muted" font-size="10">pass</text>
+            <rect x="260" y="25" width="150" height="45" rx="6" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="335" y="52" text-anchor="middle" class="diagram-label" font-size="11">Permit, logged normally</text>
+
+            <line x1="170" y1="100" x2="260" y2="130" class="diagram-stroke"></line>
+            <text x="215" y="148" text-anchor="middle" class="diagram-label-muted" font-size="10">fail</text>
+            <rect x="260" y="108" width="150" height="45" rx="6" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="335" y="128" text-anchor="middle" class="diagram-label" font-size="10">Break-glass offer</text>
+            <text x="335" y="143" text-anchor="middle" class="diagram-label" font-size="10">self-attest emergency</text>
+
+            <line x1="410" y1="130" x2="490" y2="130" class="diagram-stroke"></line>
+            <rect x="490" y="108" width="190" height="45" rx="6" class="diagram-fill-danger diagram-stroke"></rect>
+            <text x="585" y="128" text-anchor="middle" class="diagram-label" font-size="10">Time-boxed permit +</text>
+            <text x="585" y="143" text-anchor="middle" class="diagram-label" font-size="10">high-visibility audit event</text>
+          </svg>
+          <figcaption>Figure 47.3 — Break-glass trades a hard denial for a time-boxed permit, paid for with
+          mandatory, flagged auditing.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="audit-logging" data-title="Audit controls">
+        <h2>Audit controls: 45 CFR §164.312(b), made concrete</h2>
+        <p>Chapter 28 already named the exact citation this chapter's audit mechanism answers: <strong>Audit
+        controls (45 CFR §164.312(b))</strong> — "hardware, software, and procedural mechanisms that record and
+        examine ePHI system activity." With admin events and <code>adminEventsDetailsEnabled=true</code>
+        switched on, that's not abstract: it's the timestamped <code>CREATE</code>/<code>DELETE</code> pair
+        chapter 28's lab produced for a role-mapping change, attributable to a specific admin user id, that
+        lets Riverside's compliance team answer "who had full chart access, when, and who approved it" for any
+        shift-based elevation.</p>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Chapter 28 flagged this exactly: <code>adminEventsDetailsEnabled</code>'s full
+          <code>representation</code> field can capture more of a changed record's contents than a HIPAA
+          minimum-necessary review wants sitting in a database indefinitely. If you see Riverside's compliance
+          team asking why the audit log itself contains more PHI than expected, the cause is this field, not a
+          separate leak — review retention and field-level redaction on the event store, don't just disable
+          the setting and lose the audit trail the Security Rule requires in the first place.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="writeup-pointer" data-title="Full write-up">
+        <h2>The full design, written up</h2>
+        <p>This chapter walked the design decisions in the order they came up across the course. The full
+        write-up at <a href="../case-studies/cs02-riverside.html">case-studies/cs02-riverside.html</a> presents
+        the same design the way you'd actually hand it to a hiring panel or a compliance auditor: the complete
+        realm/client/role configuration table, every alternative considered and why it was rejected, the
+        HIPAA-control-to-mechanism mapping in full, and a closing "lessons for a specialist" section. Read the
+        chapter first for the reasoning; read the write-up for the reference-grade detail.</p>
+        <div class="callout callout--try-it">
+          <div class="callout-label">Try it</div>
+          <p>Before reading the write-up, try sketching Riverside's two-realm diagram and the break-glass
+          decision path from memory, using only this chapter's slides. Then compare against the full write-up's
+          architecture section — the gaps you find are exactly the details worth re-reading chapters 21, 32,
+          37, and 38 for.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="pitfalls" data-title="Common mistakes">
+        <h2>Common mistakes</h2>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">If you see this, the cause is usually that</div>
+          <ul>
+            <li><strong>A clinician is logged out mid-procedure.</strong> The realm's session timeout was
+            copied from a generic Keycloak example instead of being set deliberately short for a shared
+            clinical workstation, or copied from the patient-portal realm by mistake — a strong argument for
+            keeping the two realms separate rather than tuning one shared timeout for two incompatible use
+            cases.</li>
+            <li><strong>A patient can't view a clearly-theirs lab result.</strong> Email verification (chapter
+            22's required action) is still pending, or the patient's account was created by staff instead of
+            self-registered and never triggered the verification flow at all.</li>
+            <li><strong>The compliance team finds the audit log itself contains PHI it shouldn't retain this
+            long.</strong> <code>adminEventsDetailsEnabled</code>'s <code>representation</code> field, not a
+            separate data leak — see the audit-controls slide above.</li>
+            <li><strong>A clinician who changed departments last month can still see their old department's
+            patients.</strong> The department attribute lives in AD (federated, read-only from Keycloak's
+            side) and wasn't updated promptly upstream — the ABAC policy is working correctly; the source
+            attribute is stale.</li>
+            <li><strong>Break-glass access is being used routinely instead of rarely.</strong> This is a
+            process signal, not a configuration bug: the standing ABAC rule's department or shift data is
+            probably wrong or stale for a specific team, making the "exception" path the only one that works
+            for them day to day. Fix the underlying attribute data, don't normalize the exception.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Riverside's two realms exist because its clinician and patient populations need genuinely
+          different authentication strength, session policy, and self-service — not because of an arbitrary
+          preference for separation.</li>
+          <li>Federating the clinician workforce against the hospital's existing AD (read-only) keeps HR's
+          joiner/mover/leaver process authoritative instead of creating a second, drifting copy of the truth.</li>
+          <li>Badge-tap MFA is an acceptable trade-off on shared clinical workstations only because it's paired
+          with short sessions, workstation controls, and auditing — speed alone wouldn't justify it.</li>
+          <li>Step-up authentication scales authentication strength with the sensitivity of the specific action
+          requested, not with a single realm-wide policy.</li>
+          <li>HIPAA's minimum-necessary standard is implemented here as a department-plus-shift ABAC rule under
+          a unanimous decision strategy — a practical approximation of a true care-team relationship, which
+          Keycloak's native model can't express directly.</li>
+          <li>Break-glass access is a deliberate, audited exception path, not a loophole — it trades a hard
+          denial for mandatory, flagged logging, and should stay rare in practice.</li>
+          <li>Admin-event auditing with full details turns HIPAA's audit-controls requirement into a concrete,
+          queryable record — but the same detail field can itself become a retention liability for PHI-adjacent
+          changes.</li>
+          <li>Every one of these decisions is a trade-off with a named alternative that was considered and
+          rejected for a stated reason — that written justification is what separates a design from a guess.</li>
+          <li>None of Riverside's mechanisms are HIPAA-specific Keycloak features; they're general IAM
+          concepts (federation, ABAC, step-up auth, audit trails) pointed at a specific regulatory
+          requirement.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Why does Riverside use two separate realms instead of one realm with a "Clinicians" and
+            a "Patients" group?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Authentication
+            flow, password policy, and session timeout are realm-wide settings in Keycloak, not settings you
+            can scope to a group. A shared realm would force one of the two populations to live with the
+            other's security posture — either clinician-grade short timeouts on a leisurely patient portal, or
+            patient-grade long timeouts on a shared clinical workstation. Two realms let each population's
+            settings reflect its own actual risk and usage pattern.</p>
+          </details></li>
+          <li><details>
+            <summary>Riverside's clinician federation provider is READ_ONLY, not WRITABLE. What would change,
+            concretely, if it were switched to WRITABLE, and why did Riverside reject that?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>WRITABLE mode
+            would let actions inside Keycloak — most plausibly a self-service password reset — write back into
+            the hospital's Active Directory. That makes Keycloak a second place a clinician's credential can
+            originate a change from, which undermines the entire point of federating against AD as the single
+            authoritative source. Riverside keeps password resets inside the hospital's existing AD tooling and
+            keeps Keycloak strictly a reader of that directory.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, without using the word "ReBAC," why the department+shift ABAC rule is only an
+            approximation of "this clinician is currently on this patient's care team."</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The ABAC rule
+            checks two attributes true at request time — does the clinician's department match the patient's
+            department, and is it currently their shift — neither of which actually records whether this
+            specific clinician has been assigned to this specific patient's case. A clinician in the right
+            department during the right shift who has never been assigned to this patient would still pass the
+            rule. It's a reasonable stand-in given Keycloak's native authorization model has no way to
+            represent a direct, assignable link between one clinician and one patient's case.</p>
+          </details></li>
+          <li><details>
+            <summary>A clinician's break-glass access was used three times last week by the same person for
+            the same patient. Is this evidence of abuse, and what should an IAM specialist check first?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not
+            automatically abuse — check first whether the standing ABAC rule's underlying attribute data (the
+            clinician's department assignment, or the patient's assigned department) is stale or simply wrong
+            for this case, which would make break-glass the only path that works even for entirely legitimate,
+            repeated, routine access. Repeated break-glass use is a signal to fix the standing rule's data, not
+            automatically a disciplinary matter — though it should still be reviewed, since the audit trail
+            exists precisely so it can be.</p>
+          </details></li>
+          <li><details>
+            <summary>Why is enabling adminEventsDetailsEnabled both the right HIPAA-compliance move and a
+            potential new compliance risk at the same time?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It directly
+            implements the Security Rule's audit-controls requirement (45 CFR §164.312(b)) by producing a
+            concrete, attributable record of who changed what and when — exactly what an auditor asks for. But
+            its full representation field can capture more of a changed record's actual contents than a
+            minimum-necessary review wants retained indefinitely in a separate event store, so the fix is
+            retention/redaction policy on that store, not disabling the setting and losing the audit trail
+            HIPAA requires in the first place.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague suggests simplifying Riverside's design by loosening the standing ABAC rule to
+            also cover emergencies, instead of maintaining a separate break-glass path. What's wrong with that
+            simplification?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Loosening the
+            standing rule to cover the rare emergency case would weaken minimum-necessary enforcement for every
+            ordinary request, all the time, to accommodate a case that should stay rare and visible instead.
+            Keeping break-glass as a separate, explicitly audited exception path preserves the strict rule for
+            the common case while still allowing the rare case — at the cost of a flagged, reviewed audit
+            event every time it's used, which is the correct trade: convenience in the rare case, paid for with
+            visibility.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.law.cornell.edu/cfr/text/45/164.312">45 CFR §164.312 — HIPAA Security Rule Technical Safeguards, including audit controls (Cornell LII)</a></li>
+          <li><a href="https://www.law.cornell.edu/cfr/text/45/164.502">45 CFR §164.502 — HIPAA Privacy Rule, including the minimum necessary standard (Cornell LII)</a></li>
+          <li><a href="https://csrc.nist.gov/pubs/sp/800/66/r2/final">NIST SP 800-66 Rev. 2 — Implementing the HIPAA Security Rule: A Cybersecurity Resource Guide</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/#admin-events">Keycloak Server Administration Guide — Admin events</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "case-study-riverside", 15);
+    SlideDeck.init({ chapterSlug: "case-study-riverside" });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Riverside Health — Full Write-Up — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <h1>Case Study: Riverside Health</h1>
+    <p class="lede">A reference-grade write-up of the IAM design chapter 47 built up piece by piece across
+      this course. Read this as you would a design document handed to a hiring panel, a compliance auditor,
+      or a new teammate joining the identity team — full configuration detail, every alternative considered
+      and why it was rejected, and the HIPAA-control-to-mechanism mapping in full. For the reasoning walked
+      through in the order it was taught, read
+      <a href="../chapters/47-case-study-riverside.html">chapter 47</a> first.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Riverside Health is a regional hospital network running two identity populations under one
+        regulator: a clinician workforce that needs fast, low-friction access from shared clinical
+        workstations, and a patient portal population that needs ordinary consumer-grade self-service. Both
+        sit inside the HIPAA Security and Privacy Rules. The entire design below answers one question for
+        each population: what is the minimum authentication and authorization strength that still satisfies
+        45 CFR §164.312 and §164.502(b), without making either population's daily experience worse than it
+        has to be?</p>
+    </div>
+
+    <h2>1. Business and regulatory context</h2>
+    <p>Riverside's identity population splits into two groups with almost nothing in common operationally:</p>
+    <ul>
+      <li><strong>Clinician workforce</strong> — doctors, nurses, and administrative staff, authenticating
+        mostly from shared clinical workstations, where every second of login friction has a real clinical
+        cost.</li>
+      <li><strong>Patients</strong> — self-registering portal users who view lab results, message their care
+        team, and pay bills, on their own devices, at their own pace.</li>
+    </ul>
+    <p>Two HIPAA provisions drive nearly every decision that follows:</p>
+    <table>
+      <thead><tr><th>Citation</th><th>Requirement</th><th>What it demands of IAM</th></tr></thead>
+      <tbody>
+        <tr><td>45 CFR §164.312(b) — Security Rule, Technical Safeguards</td><td>Audit controls</td>
+          <td>Hardware/software/procedural mechanisms that record and examine activity on systems holding
+          ePHI — concretely, admin-event logging with enough detail to answer "who, what, when."</td></tr>
+        <tr><td>45 CFR §164.312(a) — Security Rule, Technical Safeguards</td><td>Access control</td>
+          <td>Unique user identification, and access limited to what a role/relationship actually requires —
+          concretely, per-realm authentication strength plus attribute-based authorization.</td></tr>
+        <tr><td>45 CFR §164.502(b), §164.514(d) — Privacy Rule</td><td>Minimum necessary</td>
+          <td>Limit PHI access requests to the minimum needed for the purpose at hand — concretely, the
+          department-plus-shift ABAC rule and the care-team concept it approximates.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>2. Realm and identity architecture</h2>
+    <p>Two realms, deliberately not one realm with two groups — Keycloak's authentication flow, password
+      policy, and session-timeout settings are realm-wide, and these two populations need genuinely
+      different values for all three.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Realm</th><th>Population</th><th>Identity source</th><th>Primary auth</th><th>Session timeout</th></tr></thead>
+        <tbody>
+          <tr><td><code>riverside-clinicians</code></td><td>Doctors, nurses, admin staff (~10,000)</td>
+            <td>Federated LDAP, <code>dc=riversidehealth,dc=org</code> (hospital AD), READ_ONLY edit mode</td>
+            <td>Badge tap + short PIN (possession factor)</td><td>Short (shared-workstation profile)</td></tr>
+          <tr><td><code>riverside-patients</code></td><td>Self-registered patients</td>
+            <td>Native Keycloak user store, self-registration enabled</td>
+            <td>Password + Verify Email required action on first login</td><td>Longer, consumer-portal profile</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2.1 Client and scope configuration (illustrative)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Realm</th><th>Client ID</th><th>Type</th><th>Key scopes</th></tr></thead>
+        <tbody>
+          <tr><td><code>riverside-clinicians</code></td><td><code>clinical-portal</code></td><td>Confidential, authorization-code+PKCE</td><td><code>profile</code>, <code>department</code> (custom protocol mapper exposing the clinician's department attribute as a claim), <code>care-team</code></td></tr>
+          <tr><td><code>riverside-clinicians</code></td><td><code>order-entry-service</code></td><td>Confidential, client-credentials (service account)</td><td><code>api:orders</code></td></tr>
+          <tr><td><code>riverside-patients</code></td><td><code>patient-portal</code></td><td>Public, authorization-code+PKCE</td><td><code>profile</code>, <code>email</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The <code>department</code> claim matters more than it looks: it's the exact attribute the
+      authorization-policy layer (section 4) evaluates on every record-access decision, sourced directly from
+      the federated AD attribute rather than duplicated into a Keycloak-managed field — one fewer place for
+      that value to drift out of sync with HR's system of record.</p>
+
+    <h2>3. Clinician federation: a decision log</h2>
+    <table>
+      <thead><tr><th>Option considered</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>Migrate ~10,000 clinician accounts into Keycloak's native user store</td>
+          <td>Rejected. Creates a second copy of identity data that drifts from AD's shift schedules and
+            department assignments; HR would need to manage joiners/leavers in two places.</td></tr>
+        <tr><td>Federate against AD in READ_ONLY edit mode</td>
+          <td>Chosen. Keycloak authenticates against the authoritative source without ever becoming a second
+            place a credential can originate a change from.</td></tr>
+        <tr><td>Federate against AD in WRITABLE edit mode, enabling Keycloak-driven self-service password reset</td>
+          <td>Rejected. Convenient for the clinician, but hands Keycloak's bind credential real write
+            authority over a system the hospital's directory-operations team separately change-controls and
+            audits. Password resets instead route through the hospital's existing AD self-service tooling.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>4. Authorization model: minimum necessary as policy, not just principle</h2>
+    <p>The governing requirement — a clinician may view a patient record only if their department matches the
+      patient's assigned department, <em>and</em> only during their scheduled shift — decomposes into two
+      Keycloak Authorization Services policies combined with the <strong>Unanimous</strong> decision strategy
+      (both must agree; see the pitfall below for the composition bug this guards against):</p>
+    <ul>
+      <li><strong>Department policy</strong> — a group/attribute-based policy: <code>clinician.department ==
+        record.department</code>.</li>
+      <li><strong>Shift-time policy</strong> — a time-based policy: current time falls inside the clinician's
+        configured shift window.</li>
+    </ul>
+    <p>This is the practical, natively-supported approximation of a true "currently on this patient's care
+      team" relationship, which would be a ReBAC relationship edge rather than an attribute — Keycloak's
+      Authorization Services has no relationship-tuple concept, so a department+shift rule is the ceiling of
+      what's natively expressible without reaching for an external ReBAC engine (not needed for this version
+      of the system).</p>
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — decision strategy, not policy logic</div>
+      <p>If a clinician can see a record outside their department or outside their shift, check the
+        <em>permission's</em> decision strategy first. Each individual policy can be written correctly and
+        still produce the wrong combined result if the permission uses Affirmative (either policy passing is
+        enough) instead of Unanimous — a composition bug invisible from reading either policy in isolation.</p>
+    </div>
+
+    <h2>5. Authentication strength: baseline and step-up</h2>
+    <table>
+      <thead><tr><th>Context</th><th>Mechanism</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Routine chart access, in-department, in-shift</td><td>Badge tap + short PIN</td>
+          <td>A possession factor is a deliberately weaker guarantee, acceptable only because it's paired with
+          short sessions, workstation-level restriction, and logging — speed matters on a shared clinical
+          workstation.</td></tr>
+        <tr><td>Opening a chart outside the clinician's current care relationship, or amending a finalized
+          note</td><td>Required-action step-up: full MFA challenge</td>
+          <td>Authentication strength scales with the sensitivity of the specific action, not a fixed
+          schedule.</td></tr>
+        <tr><td>Patient portal first login</td><td>Password + Verify Email required action</td>
+          <td>Self-registered accounts must prove control of the email address before any clinical data is
+          reachable through it.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>6. Break-glass access: the deliberate exception</h2>
+    <p>Minimum necessary cannot be absolute in an emergency: an attending physician covering an unplanned case
+      may need a record before any care-team relationship or department assignment is in place. Rather than
+      loosen the standing ABAC rule — which would weaken minimum necessary for every ordinary request to
+      accommodate a rare one — Riverside's design adds a separate, explicit exception path.</p>
+    <p>A clinician who fails the standing policy is offered a self-attested "emergency access" required
+      action. Accepting it grants time-boxed access (one shift) and triggers a dedicated, high-visibility
+      admin event on every use — flagged for same-week compliance review, distinct from the ordinary event
+      stream. The trade accepted here is explicit: break-glass can occasionally be used when strictly
+      unnecessary, in exchange for never blocking access during a genuine emergency. The audit, not the gate,
+      is what makes this acceptable — and repeated break-glass use by the same person for the same
+      department is itself a signal to review that department's underlying attribute data, not a
+      disciplinary trigger on its own.</p>
+
+    <h2>7. Audit controls: implementing 45 CFR §164.312(b)</h2>
+    <p>Admin events with <code>adminEventsDetailsEnabled=true</code> produce a timestamped
+      <code>CREATE</code>/<code>DELETE</code> pair for any role-mapping elevation (such as a shift-based
+      access grant and its later revocation), each attributable to a specific admin user id via
+      <code>authDetails.userId</code>, with <code>operationType</code>/<code>resourceType</code>/
+      <code>resourcePath</code> naming what changed and <code>representation</code> showing the exact
+      before/after value. That satisfies "who had access, when, and who approved it" directly.</p>
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall — the audit trail can itself over-retain PHI</div>
+      <p><code>representation</code>'s full before/after value can capture more of a changed record's
+        contents than a minimum-necessary review wants sitting in a separate event store indefinitely. The
+        fix is retention and field-level redaction policy on the event store — not disabling
+        <code>adminEventsDetailsEnabled</code>, which would remove the audit trail the Security Rule requires
+        in the first place.</p>
+    </div>
+
+    <h2>8. Security hardening checklist</h2>
+    <ul>
+      <li>Clinician federation stays READ_ONLY; no Keycloak-originated writes ever reach the hospital AD.</li>
+      <li>Session timeouts differ by realm and are reviewed against actual shared-workstation turnover
+        patterns, not copied from a generic default.</li>
+      <li>Every authorization permission touching patient records uses the Unanimous decision strategy where
+        more than one policy is involved; this is spot-checked after any policy change, not just at initial
+        setup.</li>
+      <li>Admin events are enabled on both realms; the patient realm's event retention and the clinician
+        realm's event retention are reviewed separately, since their respective minimum-necessary exposure
+        differs.</li>
+      <li>Break-glass usage is reviewed weekly, specifically looking for repeated use against the same
+        department (a data-quality signal) rather than only looking for individually suspicious single
+        events.</li>
+      <li>Step-up required actions are tested after every realm upgrade — a regression here silently
+        downgrades a sensitive action back to baseline authentication strength.</li>
+    </ul>
+
+    <h2>9. Lessons for an IAM specialist</h2>
+    <ul>
+      <li>A regulatory requirement like "minimum necessary" rarely maps to one Keycloak feature — it's
+        usually a composition of several (ABAC policies, a decision strategy, a required action, an audit
+        setting), and the job is choosing the right combination and writing down why.</li>
+      <li>Realm separation is a legitimate answer to "these two populations need different security
+        postures," not an over-engineered one — the cost of maintenance is real but smaller than the cost of
+        one group silently inheriting the wrong policy.</li>
+      <li>Every hard rule in a clinical or safety-critical system needs a deliberate, audited exception path;
+        refusing to design one just pushes the exception into an unofficial workaround nobody logs.</li>
+      <li>The audit mechanism that satisfies a compliance requirement can itself become a new compliance
+        surface (PHI retained in an event log) — auditing the auditor's own output is part of the job.</li>
+      <li>Federation edit mode (READ_ONLY vs. WRITABLE) is a security decision, not a convenience setting —
+        it decides how many systems can originate a credential change for the same identity.</li>
+    </ul>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Try it</div>
+      <p>Compare this write-up's realm/client table against <a href="../chapters/47-case-study-riverside.html">chapter 47</a>'s
+        diagrams. Then try designing the equivalent table for a hypothetical fourth population Riverside
+        doesn't currently have — say, referring physicians at partner clinics who need limited, time-boxed
+        access to a specific patient's shared record. Which existing mechanism above would you reuse, and
+        which would need a genuinely new design?</p>
+    </div>
+
+    <p><a href="../case-studies.html">&larr; Back to all case studies</a> &middot; <a href="../chapters/47-case-study-riverside.html">Chapter 47: Case Study: Riverside Health</a></p>
+
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/book.js"></script>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Meridian Trust — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "case-study-meridian";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part X — Case Studies &amp; Capstone</span>
+          <span class="badge minutes">~60 min</span>
+        </div>
+        <h1>48. Case Study: Meridian Trust</h1>
+        <p class="lede">Meridian Trust is this course's retail-bank running example: PCI-DSS-regulated,
+        fraud-pressured, and carrying two very different identity populations — bank employees and retail
+        customers — on the same Keycloak realm. This chapter doesn't teach a new concept; it pulls together
+        everything Parts I-IX built, one decision at a time, into a single coherent IAM architecture a
+        specialist could actually defend to an auditor.</p>
+
+        <h2>Why this matters</h2>
+        <p>Nobody hires an IAM specialist to recite what RBAC or OIDC is in the abstract. They hire you to
+        look at a specific organization — its compliance obligations, its threat model, its awkward
+        edge cases — and make concrete, defensible decisions: which realm layout, which roles, which
+        policy engine, which lifetimes. This chapter is that exercise end to end for Meridian Trust, reusing
+        every decision this course's labs already made for it (chapters 20-45) rather than inventing a new
+        scenario. The full write-up, with complete configuration tables and a decision log, lives in
+        <a href="../case-studies/cs03-meridian.html">case-studies/cs03-meridian.html</a> — this chapter is
+        the guided walkthrough of it.</p>
+      </section>
+
+      <section class="slide" data-slide="business-context" data-title="Meridian Trust, recapped">
+        <h2>Meridian Trust: who they are, what's at stake</h2>
+        <p>Chapter 2 introduced <span class="org-chip meridian">Meridian Trust</span> as a retail bank with
+        two identity populations: <strong>bank employees</strong> — tellers, loan officers, back-office
+        staff, and wire-transfer approval staff, each with a different authorization need — and
+        <strong>retail customers</strong> who bank online and through a mobile app. Chapter 11 pinned down
+        why that distinction has legal teeth: Meridian's online banking platform touches payment card data,
+        which puts a defined <strong>Cardholder Data Environment (CDE)</strong> inside PCI-DSS's scope
+        (the current standard, PCI-DSS v4.0.1, per chapter 45). PCI-DSS is mandatory because Meridian
+        processes card payments; chapter 11 also flagged that Meridian almost certainly carries a SOC 2
+        obligation on top of it (enterprise banking partners won't sign without one) and possibly GDPR
+        exposure if it has EU retail customers or staff — real organizations rarely map to exactly one
+        framework.</p>
+
+        <div class="callout callout--concept-recall">
+          <div class="callout-label">What concept is this?</div>
+          <p>Everything in this chapter is an instance of ideas Parts I-III built vendor-agnostically:
+          AAA (chapter 3), authorization models (chapter 6), SSO/federation (chapter 7), and the IAM threat
+          landscape (chapter 9) — applied here as concrete Keycloak configuration, not restated from
+          scratch.</p>
+        </div>
+
+        <p>Chapter 9 gave Meridian a real incident to design around: a spike in failed logins traced not to
+        a password-hashing weakness at Meridian, but to an unrelated retail-site breach whose leaked
+        passwords a fraction of Meridian's own customers had reused. Meridian's hashing and storage were
+        never in question — the exposure was <em>password reuse</em>, and the control that actually limited
+        the blast radius was the step-up authentication this chapter builds out in detail below, not a
+        stronger password policy alone.</p>
+      </section>
+
+      <section class="slide" data-slide="realm-architecture" data-title="One realm, two populations">
+        <h2>Realm &amp; client architecture: one realm, deliberately</h2>
+        <p>Chapter 20's lab created a single <code>meridian-trust</code> realm and every later Meridian lab
+        (chapters 23, 29, 30, 36, 45) built on that same realm rather than splitting employees and retail
+        customers into separate realms. That's a real architectural choice, not a default: a realm is
+        Keycloak's unit of complete isolation (separate users, roles, clients, themes, keys — chapter 21),
+        so the alternative — <code>meridian-employees</code> and <code>meridian-retail</code> as two
+        realms — was genuinely on the table.</p>
+        <p>One realm won for Meridian specifically because employees and retail customers never need to be
+        <em>authentication-isolated</em> from each other the way, say, two unrelated tenants would
+        (chapter 21's multi-tenancy discussion) — they need to be <em>authorization</em>-isolated, which
+        realm roles, groups, and client scopes already do well within one realm, at a fraction of the
+        operational cost of running two realms' worth of themes, brute-force policies, and key rotation in
+        lockstep. The separation that actually matters is enforced at the client and role layer instead.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 860 340" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Meridian Trust's single-realm architecture, split by client and role, not by realm</title>
+            <desc id="d1">One realm box, meridian-trust, containing two client groups side by side. Left: employee-facing clients — teller-console and wire-transfer-app — backed by employee groups tellers, loan-officers, and wire-transfer-approvers, and realm roles transfer-creator and transfer-approver. Right: customer-facing clients — online-banking and mobile-banking — backed by retail customer accounts with no employee roles. Below both, a shared service-accounts row holds the fraud-detection-service client, connected to both sides by a dashed line showing it reads data from across the whole realm but writes to neither.</desc>
+
+            <rect x="20" y="20" width="820" height="300" rx="10" class="diagram-fill-surface diagram-stroke"/>
+            <text x="430" y="45" text-anchor="middle" class="diagram-label" font-weight="700">Realm: meridian-trust</text>
+
+            <rect x="50" y="70" width="360" height="170" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="230" y="92" text-anchor="middle" class="diagram-label" font-weight="700">Employee side</text>
+            <rect x="70" y="105" width="150" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="145" y="126" text-anchor="middle" class="diagram-label" font-size="11">teller-console</text>
+            <rect x="240" y="105" width="150" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="315" y="126" text-anchor="middle" class="diagram-label" font-size="11">wire-transfer-app</text>
+            <text x="230" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">groups: tellers, loan-officers,</text>
+            <text x="230" y="172" text-anchor="middle" class="diagram-label-muted" font-size="10">wire-transfer-approvers</text>
+            <text x="230" y="195" text-anchor="middle" class="diagram-label-muted" font-size="10">roles: transfer-creator,</text>
+            <text x="230" y="209" text-anchor="middle" class="diagram-label-muted" font-size="10">transfer-approver (never both)</text>
+
+            <rect x="450" y="70" width="360" height="170" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="630" y="92" text-anchor="middle" class="diagram-label" font-weight="700">Retail customer side</text>
+            <rect x="470" y="105" width="150" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="545" y="126" text-anchor="middle" class="diagram-label" font-size="11">online-banking</text>
+            <rect x="640" y="105" width="150" height="34" rx="6" class="diagram-fill-surface diagram-stroke"/>
+            <text x="715" y="126" text-anchor="middle" class="diagram-label" font-size="11">mobile-banking</text>
+            <text x="630" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">retail customer accounts</text>
+            <text x="630" y="176" text-anchor="middle" class="diagram-label-muted" font-size="10">no employee roles granted</text>
+            <text x="630" y="200" text-anchor="middle" class="diagram-label-muted" font-size="10">step-up required for wire</text>
+            <text x="630" y="214" text-anchor="middle" class="diagram-label-muted" font-size="10">transfers only (next slide)</text>
+
+            <rect x="260" y="265" width="340" height="40" rx="6" class="diagram-fill-warning diagram-stroke"/>
+            <text x="430" y="289" text-anchor="middle" class="diagram-label" font-size="11">service account: fraud-detection-service (view-users only)</text>
+            <line x1="330" y1="265" x2="230" y2="240" class="diagram-stroke" stroke-dasharray="4,3"/>
+            <line x1="560" y1="265" x2="630" y2="240" class="diagram-stroke" stroke-dasharray="4,3"/>
+          </svg>
+          <figcaption>Figure 48.1 — One realm, isolated by client/role rather than by realm boundary; a
+          read-only service account spans both sides without write access to either.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>This is exactly the realm created in chapter 20's lab and extended in chapters 23/24: <strong>
+          Realm settings &gt; meridian-trust</strong>, with employee- and customer-facing applications
+          registered as separate <strong>Clients</strong>, employee access modeled via <strong>Groups</strong>
+          and <strong>Realm roles</strong>, and the fraud pipeline's client configured as a confidential
+          client with <strong>Service accounts roles</strong> enabled, holding only <code>view-users</code>
+          (chapter 36).</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="authz-model" data-title="RBAC baseline + SoD + ABAC ceiling">
+        <h2>Authorization: RBAC baseline, enforced by SoD, refined by ABAC</h2>
+        <p>Chapter 10 defined Meridian's clearest toxic combination: a single identity holding both
+        <code>transfer-creator</code> (can create a wire transfer) and <code>transfer-approver</code> (can
+        approve one) — each permission is routine alone, but together they let one person originate and be
+        the sole check on the same fraudulent transfer, which is exactly PCI-DSS Requirement 7's
+        need-to-know restriction made concrete (chapter 11). Chapter 23 operationalized the fix as a real
+        Keycloak lever: <code>transfer-creator</code> and <code>transfer-approver</code> are modeled as
+        mutually exclusive realm roles, assigned via separate groups, so no single provisioning action can
+        silently create the toxic pairing.</p>
+        <p>RBAC alone still can't express "how much" — chapter 6's worked example has Meridian layer ABAC on
+        top of roles: a teller's role says they <em>can</em> approve transfers at all, but the actual dollar
+        ceiling they can approve is computed from attributes (the teller's seniority tier and the account's
+        risk tier), not from the role itself. Two tellers with the identical <code>transfer-approver</code>
+        role can have very different approval ceilings, because the ceiling is an attribute computation, not
+        a role fact.</p>
+
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Treating a toxic combination as checked once at grant time and done is the mistake chapter 10
+          warns against by name: role assignments drift (a loan officer temporarily covers wire-transfer
+          duty during a staffing gap) and the combination can form silently later, with no single
+          provisioning action looking wrong in isolation. Meridian's access-review cadence (chapter 10's IGA
+          territory, layered on top of Keycloak since Keycloak itself has no SoD-conflict detection) is what
+          catches this — not Keycloak's authorization engine alone.</p>
+        </div>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>Put together: a wire transfer at Meridian passes a <strong>role</strong> check (is this person a
+          <code>transfer-creator</code> or <code>transfer-approver</code>, never both on the same transfer
+          chain), then an <strong>attribute</strong> check (is the amount within this specific approver's
+          computed ceiling for this account's risk tier). Two different authorization models, stacked, each
+          doing the job the other can't.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="rebac-gap" data-title="Where RBAC/ABAC run out">
+        <h2>Where it genuinely runs out: the manager-of relationship</h2>
+        <p>Chapter 38 pushed Meridian's authorization model one step further and found a real boundary:
+        <em>an employee may approve a transaction only if they are the manager of the specific branch that
+        owns the account.</em> This isn't an attribute (an employee's profile doesn't encode which branches
+        they manage), and it isn't a static role (a role says "this person is <em>a</em> manager," not
+        "manager <em>of this branch</em>"), and it changes as managers rotate between branches. It's a
+        genuine relationship edge between two specific entities — chapter 6's ReBAC definition, for real
+        this time, not a hypothetical.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 260" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Meridian's authorization model as three stacked layers, each covering what the one below can't</title>
+            <desc id="d2">Three horizontal bands stacked top to bottom. Top band, RBAC: can this person create or approve transfers at all, answered by role membership alone. Middle band, ABAC: what dollar ceiling applies to this specific approval, answered by attributes of the employee and account. Bottom band, ReBAC: is this specific employee the manager of the specific branch that owns this specific account, answered by a relationship graph a role or attribute cannot express. An arrow on the right labeled increasing specificity points from top to bottom.</desc>
+
+            <rect x="40" y="20" width="620" height="60" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="350" y="45" text-anchor="middle" class="diagram-label" font-weight="700">RBAC — can this person act at all?</text>
+            <text x="350" y="64" text-anchor="middle" class="diagram-label-muted" font-size="11">transfer-creator / transfer-approver, mutually exclusive</text>
+
+            <rect x="40" y="100" width="620" height="60" rx="8" class="diagram-fill-info diagram-stroke"/>
+            <text x="350" y="125" text-anchor="middle" class="diagram-label" font-weight="700">ABAC — within what limit?</text>
+            <text x="350" y="144" text-anchor="middle" class="diagram-label-muted" font-size="11">ceiling computed from employee seniority + account risk tier</text>
+
+            <rect x="40" y="180" width="620" height="60" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="350" y="205" text-anchor="middle" class="diagram-label" font-weight="700">ReBAC — on whose accounts, specifically?</text>
+            <text x="350" y="224" text-anchor="middle" class="diagram-label-muted" font-size="11">manager_of(branch) &amp;&amp; owns(branch, account) — a graph, not a field</text>
+
+            <line x1="700" y1="30" x2="700" y2="220" class="diagram-stroke" marker-end="url(#arrowRebac)"/>
+            <text x="760" y="125" text-anchor="middle" class="diagram-label-muted" font-size="11" transform="rotate(90 760 125)">more specific</text>
+            <defs>
+              <marker id="arrowRebac" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-surface diagram-stroke"/>
+              </marker>
+            </defs>
+          </svg>
+          <figcaption>Figure 48.2 — Three authorization models at Meridian, each answering a question the
+          layer above it structurally cannot.</figcaption>
+        </figure>
+
+        <p>Chapter 38 walked through the honest trade-offs of approximating this in Keycloak natively — a
+        group per branch, or a delimited attribute string — and concluded both degrade the same way as the
+        relationship gets more dynamic. Meridian's realistic end state, past a certain branch count, is a
+        relationship store (OpenFGA or an equivalent Zanzibar-derived engine) holding <code>manager_of</code>
+        and <code>owns</code> tuples, queried by a custom Keycloak Policy provider at approval time.
+        Keycloak keeps authenticating Alex and issuing the token that proves who Alex is — it simply stops
+        being the system of record for which branch Alex manages, because that was never really an
+        authentication-system fact.</p>
+      </section>
+
+      <section class="slide" data-slide="step-up" data-title="Risk-based step-up for wire transfers">
+        <h2>Step-up authentication: routine banking vs. a wire transfer</h2>
+        <p>Chapter 5 drew the line that shapes Meridian's whole authentication posture: logging in to check
+        a balance is low-stakes and gets Meridian's normal factor combination (password plus a registered
+        device signal); initiating a <strong>wire transfer</strong> is high-stakes and justifies step-up
+        authentication mid-session. Meridian's system evaluates contextual signals — is this a new payee? an
+        unusual amount? a device never seen on this account before? — and, only if that combination crosses
+        a threshold, interrupts the transfer flow to demand an additional factor (a push approval or OTP)
+        before funds move. A $20 transfer to a payee paid monthly for two years from the usual phone sees no
+        extra prompt; a first-time $20,000 transfer from an unrecognized browser does.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 820 260" role="img" aria-labelledby="t3 d3">
+            <title id="t3">Meridian's risk-based step-up decision for a wire transfer</title>
+            <desc id="d3">A flow with one entry point, a request to initiate a wire transfer, leading into a risk-evaluation box that checks three signals: is this a new payee, is the amount unusual for this account, and is the device unrecognized. Two exits from that box. If no signal or only a minor combination fires, the flow proceeds directly to a box labeled transfer proceeds, same factors as login. If signals cross the threshold, the flow instead goes to a box labeled step-up challenge, OTP or push approval, which itself leads into transfer proceeds only after that extra factor succeeds.</desc>
+
+            <rect x="30" y="100" width="170" height="60" rx="8" class="diagram-fill-surface diagram-stroke"/>
+            <text x="115" y="125" text-anchor="middle" class="diagram-label" font-size="12">Wire transfer</text>
+            <text x="115" y="143" text-anchor="middle" class="diagram-label" font-size="12">initiated</text>
+
+            <rect x="250" y="80" width="230" height="100" rx="8" class="diagram-fill-accent diagram-stroke"/>
+            <text x="365" y="102" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Risk evaluation</text>
+            <text x="365" y="122" text-anchor="middle" class="diagram-label-muted" font-size="10">new payee?</text>
+            <text x="365" y="138" text-anchor="middle" class="diagram-label-muted" font-size="10">unusual amount?</text>
+            <text x="365" y="154" text-anchor="middle" class="diagram-label-muted" font-size="10">unrecognized device?</text>
+
+            <rect x="560" y="20" width="230" height="55" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="675" y="42" text-anchor="middle" class="diagram-label" font-size="12">Below threshold:</text>
+            <text x="675" y="60" text-anchor="middle" class="diagram-label" font-size="12">transfer proceeds (normal factors)</text>
+
+            <rect x="560" y="105" width="230" height="55" rx="8" class="diagram-fill-warning diagram-stroke"/>
+            <text x="675" y="127" text-anchor="middle" class="diagram-label" font-size="12">Crosses threshold:</text>
+            <text x="675" y="145" text-anchor="middle" class="diagram-label" font-size="12">step-up challenge (OTP/push)</text>
+
+            <rect x="560" y="190" width="230" height="55" rx="8" class="diagram-fill-success diagram-stroke"/>
+            <text x="675" y="212" text-anchor="middle" class="diagram-label" font-size="12">Challenge passed:</text>
+            <text x="675" y="230" text-anchor="middle" class="diagram-label" font-size="12">transfer proceeds</text>
+
+            <line x1="200" y1="130" x2="248" y2="130" class="diagram-stroke"/>
+            <line x1="480" y1="110" x2="558" y2="47" class="diagram-stroke"/>
+            <line x1="480" y1="150" x2="558" y2="132" class="diagram-stroke"/>
+            <line x1="675" y1="160" x2="675" y2="188" class="diagram-stroke"/>
+          </svg>
+          <figcaption>Figure 48.3 — Risk signals decide whether a wire transfer proceeds on normal factors
+          or triggers a step-up challenge first; most transfers never see the extra prompt.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Mechanically, this is a <strong>conditional step in an authentication flow</strong> (chapter 25):
+          a Condition - User Role or Condition - User Attribute execution gates an OTP or WebAuthn execution,
+          evaluated only when the client application (here, the wire-transfer endpoint, not the balance-check
+          endpoint) requests step-up via <code>acr_values</code>/<code>claims</code>, or the resource server
+          itself calls back into Keycloak for a fresh, stronger token before authorizing the transfer. The
+          underlying second factor — password plus a one-time code — is the same AAA worked example chapter
+          30 used for Meridian's realm-wide MFA requirement; step-up reuses that mechanism, applied
+          conditionally rather than on every login.</p>
+        </div>
+
+        <p>Chapter 30 also fixed Meridian's realm-wide password and brute-force posture as compliance
+        evidence, not abstract hygiene: a password policy requiring length, mixed case, digits, and special
+        characters, plus <code>notContainsUsername</code> specifically (Meridian can't skip this one), and a
+        brute-force detection policy tuned stricter than Keycloak's own defaults on <code>failureFactor</code>
+        — but deliberately stopping short of permanent lockout, because a banking customer base is also a
+        realistic denial-of-service target: an attacker who can lock out legitimate customers by
+        deliberately failing their logins has found a different attack, not a safer system.</p>
+      </section>
+
+      <section class="slide" data-slide="sessions-and-tokens" data-title="Sessions: the stolen-laptop runbook">
+        <h2>Sessions and tokens: ending a stolen session, for real</h2>
+        <p>Chapter 29 gave Meridian a concrete incident to design session policy around: a teller's laptop is
+        reported stolen mid-shift, still logged into Meridian's internal banking console. The chapter's
+        point, reinforced by actually running the fix against a live Keycloak instance, is that a
+        <code>204</code> response from a logout or revocation call only means the server accepted the
+        request — proving the session is genuinely gone requires the second half of the runbook: enumerate
+        the user's active sessions, issue a targeted <code>DELETE /admin/realms/meridian-trust/sessions/
+        {sessionId}</code> (or <code>POST users/{id}/logout</code> for all of them), and then verify by
+        re-listing sessions that none remain for that device, rather than assuming the first call worked.</p>
+
+        <div class="callout callout--case-study">
+          <div class="callout-label">Case study — Meridian Trust</div>
+          <p>The teller in chapter 29's scenario had two active sessions (two devices) when the laptop theft
+          was reported. Revoking only the laptop's session, confirmed by re-listing, is the targeted fix;
+          revoking the teller's account wholesale would have logged them out of their own phone too, with no
+          security benefit — exactly the discipline an auditor checking PCI-DSS Requirement 10 (log and
+          monitor access) would expect Meridian to demonstrate on request.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="m2m" data-title="Service-to-service: the fraud pipeline">
+        <h2>Service-to-service: scoping the fraud-detection pipeline down</h2>
+        <p>Chapter 36 is Meridian's clearest example of least privilege applied to a non-human identity.
+        Meridian's nightly fraud-scoring pipeline — never a browser session, never a human operator, running
+        unattended on a schedule — pulls account and user metadata out of Keycloak to feed a risk model.
+        Before that chapter's fix, its client held <code>manage-users</code> "just in case a later feature
+        needed write access": textbook over-provisioning (chapter 9), and exactly the kind of finding a
+        PCI-DSS assessor reviewing least-privilege controls flags on sight. The fix, proven rather than
+        assumed in that chapter's lab: a <code>fraud-detection-service</code> confidential client whose
+        service account holds <code>view-users</code> alone — the pipeline still completes its actual job,
+        and a write attempt now fails loudly and immediately, long before an assessor has to ask.</p>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p><strong>Clients &gt; fraud-detection-service &gt; Service accounts roles</strong>, granting only
+          the <code>view-users</code> client role from the <code>realm-management</code> client — not
+          <code>manage-users</code> — authenticated via the <code>client_credentials</code> grant (chapter
+          13/36), with no interactive login step at all.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="hands-on" data-title="Hands-on: the full write-up">
+        <h2>Hands-on: the full architecture write-up</h2>
+        <p>This chapter's "lab" is the full write-up rather than a fresh Docker exercise — every decision
+        above was already built and verified, step by step, in its originating chapter's real Keycloak lab
+        (all against the same <code>labs/docker/docker-compose.yml</code> Keycloak 26.8.2 + PostgreSQL 17
+        stack). What's new here is pulling those decisions into one coherent architecture document:
+        <a href="../case-studies/cs03-meridian.html">case-studies/cs03-meridian.html</a> contains the full
+        realm/client/role configuration table, a decision log of alternatives considered and rejected at
+        each step, Meridian's PCI-DSS-mapped audit/hardening checklist, and a closing "lessons for a
+        specialist" section written for interview use.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Meridian Trust's concrete configuration, one row per decision this chapter covered</caption>
+            <thead><tr><th>Decision</th><th>Chosen</th><th>Chapter</th></tr></thead>
+            <tbody>
+              <tr><td>Realm layout</td><td>Single realm <code>meridian-trust</code>, isolation by client/role</td><td>20, 21</td></tr>
+              <tr><td>Toxic combination control</td><td>Mutually exclusive <code>transfer-creator</code>/<code>transfer-approver</code> roles</td><td>10, 23</td></tr>
+              <tr><td>Approval ceiling</td><td>ABAC layer on top of the role check</td><td>6</td></tr>
+              <tr><td>Manager-of-branch check</td><td>ReBAC gap, flagged for an external relationship store (OpenFGA)</td><td>38</td></tr>
+              <tr><td>Wire-transfer step-up</td><td>Conditional OTP/WebAuthn execution, risk-signal-triggered</td><td>5, 25</td></tr>
+              <tr><td>Password &amp; lockout policy</td><td>Stricter than defaults, no permanent lockout</td><td>30</td></tr>
+              <tr><td>Stolen-session response</td><td>Targeted per-session revocation, re-verified</td><td>29</td></tr>
+              <tr><td>Fraud pipeline access</td><td><code>view-users</code> service account, not <code>manage-users</code></td><td>36</td></tr>
+              <tr><td>Admin console exposure</td><td>Isolated from the customer-facing login path</td><td>45</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="pitfalls" data-title="Common mistakes">
+        <h2>Common mistakes and pitfalls</h2>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If you see a bank-style case study assign exactly one compliance framework ("Meridian = just
+          PCI-DSS"), the cause is treating compliance as a single label instead of mapping the actual
+          populations of data and people against every applicable framework — chapter 11's point, restated
+          here because it's an easy simplification to reach for under time pressure.</p>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If a design applies step-up authentication to every login rather than only to high-risk actions,
+          the cause is treating "more MFA" as inherently safer without weighing the frustration cost against
+          the actual risk — chapter 5's whole argument for risk-based auth over flat MFA rules.</p>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>If Keycloak's authorization engine is expected to detect a toxic combination or a stale access
+          grant on its own, the cause is a scope confusion between IAM (chapter 1) and IGA (chapter 10/12) —
+          Keycloak enforces whatever rules you configure; it has no governance layer watching for drift.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>Meridian Trust's whole IAM architecture is one realm, isolated by client and role rather than
+          by realm boundary — realm separation is for true isolation needs, not every population split.</li>
+          <li>A toxic combination (transfer-creator + transfer-approver) is fixed by making the roles
+          mutually exclusive at the provisioning layer, not by trusting reviewers to catch it later.</li>
+          <li>RBAC answers "can this person act at all"; ABAC answers "within what limit"; ReBAC answers "on
+          whose specific accounts" — Meridian needs all three, stacked, not one chosen model.</li>
+          <li>The manager-of-branch relationship is a genuine ReBAC requirement Keycloak's native primitives
+          can only approximate — the honest fix is a purpose-built relationship store, not a cleverer policy.</li>
+          <li>Step-up authentication is risk-based, not blanket: Meridian's normal login stays low-friction,
+          and only a wire transfer's contextual risk signals trigger an extra factor.</li>
+          <li>A credential-stuffing incident traced to password reuse elsewhere, not a Meridian-side
+          weakness, is exactly the scenario step-up auth is designed to contain the blast radius of.</li>
+          <li>Ending a stolen session safely means a targeted per-session revocation, re-verified by
+          re-listing sessions — a 204 response alone doesn't prove the session is gone.</li>
+          <li>Least privilege applies to non-human identities too: Meridian's fraud pipeline needed
+          view-users, never manage-users, and over-provisioning it was a real, assessor-visible finding.</li>
+          <li>Real organizations carry overlapping compliance obligations (PCI-DSS, likely SOC 2, possibly
+          GDPR) — treating Meridian as "just a PCI-DSS company" understates its actual compliance surface.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Why did Meridian Trust end up with one realm instead of separate realms for employees and retail customers, given that a realm is Keycloak's unit of complete isolation?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because employees and retail customers don't need authentication-level isolation from each other — they need authorization-level isolation, which realm roles, groups, and client separation already provide within one realm. Splitting into two realms would duplicate themes, brute-force policy, and key rotation for no corresponding security gain, since the actual separation that matters (who can create vs. approve a transfer, who can access banking vs. employee tooling) is enforced at the client/role layer, not the realm layer.</p>
+          </details></li>
+          <li><details>
+            <summary>A new hire is granted both transfer-creator and transfer-approver "temporarily" to cover a staffing gap. Using Meridian's own toxic-combination definition, explain exactly what's wrong and why a role-level fix alone isn't sufficient going forward.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The combination is toxic because transfer-approver exists specifically to be an independent check on transfer-creator — holding both lets this person originate a fraudulent transfer and be its own sole approver, erasing the check. Making the roles mutually exclusive at grant time stops it from being created going forward, but it doesn't catch drift (a role added later, outside the original provisioning flow) — that requires an ongoing access-review process, chapter 10's IGA point, layered on top of Keycloak rather than expected from it.</p>
+          </details></li>
+          <li><details>
+            <summary>Explain, in Meridian's own terms, why RBAC and ABAC together still can't express the manager-of-branch requirement, and name the specific property that makes it a ReBAC problem.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>RBAC can say "this person is a manager," but not of which specific branch. ABAC can encode an attribute like a department or tier, but an employee's profile doesn't naturally encode "manages branches X and Y" in a way that supports multi-hop traversal (manager of the branch that owns this account) or changes cheaply as managers rotate. The defining property is that it's a relationship between two specific entities (a person and a branch, then a branch and an account) that must be traversed, not a static fact attached to either entity alone — exactly what a relationship-tuple store is built to query and a role/attribute field is not.</p>
+          </details></li>
+          <li><details>
+            <summary>A colleague proposes requiring step-up MFA on every single login to Meridian's online banking, arguing "more security is always better." Using chapter 5's framing, what's the actual cost of that choice, and what does Meridian do instead?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Blanket MFA on every login frustrates the overwhelming majority of low-risk logins (checking a balance from a known device) for no corresponding security benefit, since there's no elevated risk signal to justify the extra friction. Meridian instead applies step-up conditionally, triggered only when contextual signals on a specific high-stakes action (a wire transfer: new payee, unusual amount, unfamiliar device) cross a risk threshold — preserving low friction for routine use while still raising the bar exactly when it matters.</p>
+          </details></li>
+          <li><details>
+            <summary>Why does the fraud-detection-service case matter even though the service "was never going to intentionally write data anyway"?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Intent isn't what least privilege defends against — a compromised credential, a bug, or a future code change could all turn an over-provisioned manage-users grant into real unauthorized writes, and a PCI-DSS assessor evaluating least-privilege controls judges the grant itself, not the operator's stated intent. Scoping the service account to view-users means a write attempt — accidental or malicious — fails immediately and loudly, rather than silently succeeding because the access happened to be there "just in case."</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.pcisecuritystandards.org/document_library/">PCI Security Standards Council — document library (PCI-DSS v4.0.1 and supporting guidance)</a></li>
+          <li><a href="https://csrc.nist.gov/pubs/sp/800/63/b/upd2/final">NIST SP 800-63B — Digital Identity Guidelines: Authentication and Authenticator Management (risk-based/step-up authentication context)</a></li>
+          <li><a href="https://openfga.dev/docs">OpenFGA documentation (the Zanzibar-derived relationship-based authorization engine referenced for Meridian's manager-of gap)</a></li>
+          <li><a href="https://research.google/pubs/zanzibar-googles-consistent-global-authorization-system/">Google Research — "Zanzibar: Google's Consistent, Global Authorization System" (2019)</a></li>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/server_admin/#_sessions-admin">Keycloak 26.8.2 Server Administration Guide — managing and revoking user sessions</a></li>
+          <li><a href="https://www.keycloak.org/docs/26.8.2/authorization_services/">Keycloak 26.8.2 Authorization Services Guide</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "case-study-meridian", 15);
+    SlideDeck.init({ chapterSlug: "case-study-meridian" });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Studies — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <nav class="top-quicklinks">
+    <a href="roadmap.html">Study pace</a>
+    <a href="glossary.html">Glossary</a>
+    <a href="quizzes.html">Quizzes</a>
+    <a href="labs.html">Labs</a>
+  </nav>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Case studies</h1>
+    <p class="lede">Three organizations run through every chapter of this course as the recurring,
+      concrete example behind every scenario, quiz question, and lab: <span class="org-chip northwind">Northwind
+      Apps</span>, a B2B SaaS company; <span class="org-chip riverside">Riverside Health</span>, a hospital
+      network; and <span class="org-chip meridian">Meridian Trust</span>, a retail bank. Chapter 2
+      introduces all three. Part X closes the course by returning to each one and designing its full IAM
+      architecture end to end — a synthesis of everything the preceding 45 chapters taught, worked through
+      as a real specialist would actually do the job.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Each case study has two parts: a slide-deck chapter (chapters 46-48, same format as every other
+        chapter — quiz, glossary, self-check included) that walks through the design narrative and recalls
+        which earlier chapters each decision draws on, and a full long-form write-up below, built as a
+        single reference page rather than a lesson — the kind of document you could actually hand to an
+        interviewer or a new teammate.</p>
+    </div>
+
+    <div class="part-card">
+      <h3><span class="org-chip northwind">Northwind Apps</span> — multi-tenant SaaS IAM design</h3>
+      <p>A B2B SaaS company serving thousands of customer tenants, from single-founder startups to Acme
+        Corp-scale enterprises with their own identity provider. The design question: how do you give every
+        tenant real isolation without paying realm-per-tenant's operational cost at scale, while still
+        supporting enterprise SSO, self-service CIAM, and resource-level sharing decisions users make for
+        themselves?</p>
+      <p>
+        <a href="chapters/46-case-study-northwind.html">Chapter 46 — Case Study: Northwind Apps</a>
+        &middot;
+        <a href="case-studies/cs01-northwind.html">Full write-up</a>
+      </p>
+    </div>
+
+    <div class="part-card">
+      <h3><span class="org-chip riverside">Riverside Health</span> — HIPAA patient portal with step-up auth</h3>
+      <p>A hospital network with two very different populations under one roof: patients who need a
+        self-service portal, and clinicians who need fast, auditable access to records on shared clinical
+        workstations. The design question: how do you satisfy HIPAA's minimum-necessary standard with a
+        relationship that Keycloak has no native way to express — "is this clinician currently on this
+        patient's care team" — while still leaving a deliberate, audited emergency path for the cases the
+        standing rule can't anticipate?</p>
+      <p>
+        <a href="chapters/47-case-study-riverside.html">Chapter 47 — Case Study: Riverside Health</a>
+        &middot;
+        <a href="case-studies/cs02-riverside.html">Full write-up</a>
+      </p>
+    </div>
+
+    <div class="part-card">
+      <h3><span class="org-chip meridian">Meridian Trust</span> — PCI-DSS banking app, fraud-aware auth</h3>
+      <p>A retail bank balancing two risk profiles under one PCI-DSS-scoped identity program: an internal
+        workforce whose transfer-creation and transfer-approval roles must stay mutually exclusive, and
+        retail customers whose authentication strength needs to scale with a transaction's actual fraud
+        risk rather than apply uniformly. The design question: where does RBAC stop being enough, and what
+        does each additional model — ABAC, then ReBAC — buy that the layer below it structurally can't?</p>
+      <p>
+        <a href="chapters/48-case-study-meridian.html">Chapter 48 — Case Study: Meridian Trust</a>
+        &middot;
+        <a href="case-studies/cs03-meridian.html">Full write-up</a>
+      </p>
+    </div>
+
+    <div class="callout callout--try-it">
+      <div class="callout-label">Try it</div>
+      <p>Read a chapter first if you want the recall-as-you-go version with a quiz at the end; read the
+        write-up first if you want the reference-document version to skim or search. They cover the same
+        design, so there's no wrong order — most readers get the most out of the chapter, then keep the
+        write-up open as a reference afterward.</p>
+    </div>
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/book.js"></script>
+</body>
+</html>

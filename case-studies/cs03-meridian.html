@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Study: Meridian Trust — Full Write-Up — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <p><a href="../case-studies.html">&larr; All case studies</a> &middot; <a href="../chapters/48-case-study-meridian.html">Chapter 48 (slide-deck version)</a></p>
+    <h1>Case Study: Meridian Trust</h1>
+    <p class="lede">A retail bank, PCI-DSS v4.0.1 regulated, running one Keycloak realm that serves two very
+      different identity populations — bank employees and retail customers — under heavy fraud pressure.
+      This is the full architecture write-up: every decision this course's labs made for Meridian
+      (chapters 2-45), pulled into one document with a decision log and an audit-ready checklist. It's
+      written to be read on its own, and to double as interview material for "design IAM for a regulated
+      bank" questions.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Nothing here is invented for this write-up. Every realm, client, role, and policy decision below
+        was built and verified against a real Keycloak 26.8.2 + PostgreSQL 17 instance in its originating
+        chapter's lab (see the "Chapter" column throughout) — this document organizes those decisions into
+        one coherent system rather than introducing new ones.</p>
+    </div>
+
+    <h2>1. Business and compliance context</h2>
+    <p>Meridian Trust is a retail bank with two identity populations: <strong>bank employees</strong> —
+      tellers, loan officers, back-office staff, and wire-transfer approval staff, each needing a different
+      authorization profile — and <strong>retail customers</strong> who bank online and through a mobile
+      app (chapter 2). Because Meridian's online banking platform touches payment card data, it carries a
+      defined <strong>Cardholder Data Environment (CDE)</strong>: the systems, people, and processes that
+      store, process, or transmit cardholder data, plus anything connected to them (chapter 11). That puts
+      Meridian squarely inside <strong>PCI-DSS v4.0.1</strong>'s scope, with three requirements mapping
+      directly onto this course's IAM vocabulary:</p>
+
+    <div class="table-wrap">
+      <table class="table-compare table-compare--problem-solution">
+        <caption>PCI-DSS requirements relevant to IAM, mapped to this course's concepts</caption>
+        <thead><tr><th>Without the control</th><th>PCI-DSS requirement, satisfied</th></tr></thead>
+        <tbody>
+          <tr><td>Any employee can reach any customer or transaction data</td><td>Requirement 7 — restrict access by need-to-know (least privilege, chapter 6)</td></tr>
+          <tr><td>Weak or shared credentials into the CDE</td><td>Requirement 8 — unique IDs and MFA into the CDE (authentication, chapters 3, 5)</td></tr>
+          <tr><td>No record of who accessed what, when</td><td>Requirement 10 — log and monitor all access to the CDE (accounting/audit, chapter 3, 28)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>PCI-DSS is mandatory because Meridian processes card payments — but it is not Meridian's only
+      obligation. As a bank, Meridian almost certainly needs a SOC 2 report too (enterprise banking partners
+      and fintech integrators won't sign a contract without one), and if it has any EU retail customers or
+      EU-based staff, GDPR applies as well (chapter 11). Treating Meridian as "just a PCI-DSS company" would
+      miss two more compliance programs that the exact same IAM controls — access reviews, MFA, logging —
+      are simultaneously satisfying. This write-up treats PCI-DSS as the primary driver because it's the
+      most IAM-prescriptive of the three, but the controls below are written to hold up under all three.</p>
+
+    <h2>2. Realm and client architecture</h2>
+    <p>Meridian runs <strong>one realm</strong>, <code>meridian-trust</code>, created in chapter 20's lab
+      and extended through chapters 23, 29, 30, 36, and 45. The alternative — a separate
+      <code>meridian-employees</code> realm and <code>meridian-retail</code> realm — was a real option: a
+      realm is Keycloak's unit of complete isolation (distinct users, roles, clients, themes, and signing
+      keys, chapter 21). It lost to the single-realm design for a specific reason: employees and retail
+      customers at Meridian never need <em>authentication</em>-level isolation from each other the way two
+      unrelated multi-tenant customers would — they need <em>authorization</em>-level isolation, which realm
+      roles, groups, and per-client scopes already provide inside one realm, without duplicating themes,
+      brute-force policy, and key-rotation operations across two realms that would otherwise need to stay in
+      lockstep.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Meridian Trust's realm configuration, as built across chapters 20-45</caption>
+        <thead><tr><th>Item</th><th>Value / design</th><th>Chapter</th></tr></thead>
+        <tbody>
+          <tr><td>Realm</td><td><code>meridian-trust</code></td><td>20</td></tr>
+          <tr><td>Employee clients</td><td><code>teller-console</code>, <code>wire-transfer-app</code> (confidential, employee-facing)</td><td>24</td></tr>
+          <tr><td>Customer clients</td><td><code>online-banking</code>, <code>mobile-banking</code> (public, PKCE, customer-facing)</td><td>24, 13</td></tr>
+          <tr><td>Service account client</td><td><code>fraud-detection-service</code> (confidential, <code>client_credentials</code> grant)</td><td>36</td></tr>
+          <tr><td>Employee groups</td><td><code>tellers</code>, <code>loan-officers</code>, <code>wire-transfer-approvers</code>, <code>back-office</code></td><td>23</td></tr>
+          <tr><td>Key realm roles</td><td><code>transfer-creator</code>, <code>transfer-approver</code> (mutually exclusive)</td><td>10, 23</td></tr>
+          <tr><td>Password policy</td><td>Length + upper/lower/digit/special + <code>notContainsUsername</code></td><td>30</td></tr>
+          <tr><td>Brute-force policy</td><td>Stricter <code>failureFactor</code>/<code>waitIncrementSeconds</code> than Keycloak defaults; no permanent lockout</td><td>30</td></tr>
+          <tr><td>Admin console exposure</td><td>Isolated from the customer-facing login path, behind a reverse proxy, with Keycloak's audience check as a second layer</td><td>45</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>3. Decision log: alternatives considered and rejected</h2>
+    <div class="table-wrap">
+      <table class="table-compare table-compare--pro-con">
+        <caption>What Meridian's architecture chose, and what it deliberately didn't</caption>
+        <thead><tr><th>Chosen</th><th>Rejected alternative, and why</th></tr></thead>
+        <tbody>
+          <tr><td>One realm, isolated by client/role</td><td>Two realms (employees/retail) — would duplicate operational overhead (themes, key rotation, brute-force policy) with no corresponding isolation benefit, since the real separation need is authorization, not authentication</td></tr>
+          <tr><td>Mutually exclusive <code>transfer-creator</code>/<code>transfer-approver</code> roles</td><td>A single "wire-transfer-staff" role with application-side logic to prevent self-approval — moves the control out of the identity layer into application code, where it's easier to bypass accidentally and harder to prove to an auditor</td></tr>
+          <tr><td>ABAC ceiling layered on top of the role check</td><td>A fixed per-role dollar limit — can't express that two <code>transfer-approver</code> holders should have different ceilings based on seniority and the account's own risk tier</td></tr>
+          <tr><td>Flag the manager-of-branch requirement for an external relationship store (OpenFGA)</td><td>A Keycloak group per branch — works at small scale but requires a group (and a policy referencing it) per branch, with membership changes as the only audit record of the relationship and no reverse "who manages this branch" query</td></tr>
+          <tr><td>Conditional, risk-triggered step-up for wire transfers only</td><td>Blanket MFA on every login — frustrates the overwhelming majority of low-risk logins for no corresponding security benefit</td></tr>
+          <tr><td>Brute-force protection with no permanent lockout</td><td>Permanent lockout after N failures — turns the brute-force defense into a customer-facing denial-of-service vector an attacker can trigger deliberately</td></tr>
+          <tr><td><code>view-users</code>-only service account for the fraud pipeline</td><td>Keeping the original <code>manage-users</code> grant "in case a later feature needs it" — exactly the over-provisioning a PCI-DSS least-privilege review flags on sight</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>4. Authorization model: three layers, not one</h2>
+    <p>Meridian's authorization model stacks three distinct mechanisms, each answering a question the one
+      below it structurally cannot (chapters 6, 10, 23, 38):</p>
+    <ol>
+      <li><strong>RBAC — can this person act at all?</strong> The <code>transfer-creator</code> and
+        <code>transfer-approver</code> realm roles, assigned via groups, modeled as mutually exclusive so no
+        single provisioning action can create the toxic combination chapter 10 named: one identity able to
+        both originate and approve the same wire transfer, erasing the independent check Requirement 7
+        exists to guarantee.</li>
+      <li><strong>ABAC — within what limit?</strong> A transfer-approver's actual dollar ceiling is computed
+        from attributes — the employee's seniority tier and the destination account's risk tier — not from
+        the role fact alone. Two employees holding the identical role can have different ceilings.</li>
+      <li><strong>ReBAC — on whose accounts, specifically?</strong> "An employee may approve a transaction
+        only if they are the manager of the branch that owns the account" is a genuine two-hop relationship
+        (<code>manager_of(branch)</code> and <code>owns(branch, account)</code>) that neither a role nor an
+        attribute field can express cleanly. Chapter 38 evaluated and rejected the native-Keycloak
+        approximations (a group per branch; a delimited attribute string) as approaches that degrade further
+        with every added branch or every manager rotation. Meridian's documented target state, past a
+        certain branch count, is an external relationship store — OpenFGA or an equivalent Zanzibar-derived
+        engine — holding the relationship tuples, queried by a custom Keycloak Policy provider at approval
+        time. Keycloak keeps authenticating the employee and issuing their token; it stops being the system
+        of record for which branch they manage, because that was never an authentication-system fact.</li>
+    </ol>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Pitfall</div>
+      <p>A toxic combination fixed at grant time isn't fixed forever. Role assignments drift — a loan
+        officer temporarily covers wire-transfer duty during a staffing gap — and the toxic pairing can form
+        silently later, with no single provisioning action looking wrong in isolation. This is why Meridian's
+        access-review cadence (chapter 10's IGA territory) sits on top of Keycloak rather than being expected
+        from it: Keycloak has no built-in SoD-conflict detection, by design — that's IGA product territory,
+        not IAM product territory (chapter 12).</p>
+    </div>
+
+    <h2>5. Authentication: baseline MFA, and risk-based step-up</h2>
+    <p>Meridian's realm-wide authentication baseline (chapter 30) is password plus a one-time code — the
+      course's own AAA worked example — backed by a password policy that requires length, mixed case,
+      digits, and special characters, plus <code>notContainsUsername</code> specifically, and a brute-force
+      detection policy tuned stricter than Keycloak's own defaults on <code>failureFactor</code> and
+      <code>waitIncrementSeconds</code> — but deliberately never escalating to permanent lockout, because a
+      retail bank's customer base is itself a realistic denial-of-service target: an attacker who can lock
+      out legitimate customers by deliberately failing their logins has simply found a different attack.</p>
+
+    <p>On top of that baseline, Meridian applies <strong>risk-based step-up authentication</strong> (chapter
+      5) to one specific action: initiating a wire transfer. Routine banking — checking a balance, reviewing
+      a statement — uses the normal factor combination. A wire transfer triggers a risk evaluation across
+      contextual signals (a new payee, an unusual amount, a device never seen on this account before); only
+      when that combination crosses a threshold does the flow interrupt to demand an additional factor — a
+      push approval or OTP — before funds move. A $20 transfer to a payee paid monthly for two years from
+      the usual phone sees no extra prompt; a first-time $20,000 transfer from an unrecognized browser does.
+      Mechanically this is a conditional execution inside a Keycloak authentication flow (chapter 25),
+      gated by a Condition - User Role/Attribute execution and triggered via the requesting client's
+      <code>acr_values</code>/<code>claims</code> request, or by the resource server demanding a fresher,
+      stronger token before authorizing the transfer itself.</p>
+
+    <p>This design was validated against a real incident (chapter 9): a spike in failed logins traced not
+      to any weakness in Meridian's own password hashing or storage, but to an unrelated retail-site breach
+      whose leaked passwords a measurable fraction of Meridian's customers had reused on their banking
+      login. The control that actually limited the damage was step-up authentication on wire transfers, not
+      a stronger baseline password policy — credential-stuffed logins that succeeded still couldn't move
+      money without clearing the step-up challenge.</p>
+
+    <h2>6. Session and token lifecycle</h2>
+    <p>Chapter 29 built Meridian's incident-response runbook for a stolen device: a teller's laptop is
+      reported stolen mid-shift, still logged into Meridian's internal banking console. The lesson, proven
+      against a live instance rather than narrated: a <code>204</code> response from a logout or revocation
+      call only confirms the server accepted the request, not that the session is actually gone. The
+      verified runbook is two steps — enumerate the user's active sessions, then issue a targeted
+      <code>DELETE /admin/realms/meridian-trust/sessions/{sessionId}</code> for the specific stolen device's
+      session (not a blanket <code>POST users/{id}/logout</code>, which would also log the teller out of
+      their own phone) — followed by re-listing sessions to confirm none remain for that device. This
+      targeted-revocation-then-reverify pattern is exactly the evidence a PCI-DSS Requirement 10 reviewer
+      would ask Meridian to demonstrate.</p>
+
+    <h2>7. Service-to-service: the fraud-detection pipeline</h2>
+    <p>Meridian runs a nightly fraud-scoring pipeline — unattended, no browser session, no human
+      operator — that pulls account and user metadata out of Keycloak to feed a risk model (chapter 36).
+      Before that chapter's fix, its client held the <code>manage-users</code> client role from
+      <code>realm-management</code> "just in case a later feature needed write access": textbook
+      over-provisioning (chapter 9), and precisely the kind of finding a PCI-DSS least-privilege review
+      flags on sight. The corrected design: a <code>fraud-detection-service</code> confidential client,
+      authenticated via the <code>client_credentials</code> grant, whose service account holds only
+      <code>view-users</code>. Verified directly against a live instance: the pipeline still completes its
+      actual read-only job, and any write attempt now fails immediately and loudly — a finding closed
+      before an assessor ever has to raise it.</p>
+
+    <h2>8. Hardening and audit posture</h2>
+    <p>Chapter 45 turned Meridian's accumulated controls into audit evidence against PCI-DSS Requirements 7,
+      8, and 10 specifically, plus two further items worth calling out on their own:</p>
+    <ul>
+      <li><strong>Admin console isolation.</strong> Keycloak's <code>/admin</code> path is kept off the same
+        public-facing reverse-proxy path that serves customer login traffic, with the 26.8.2 audience check
+        as a second layer — because a retail bank's Keycloak realm sitting behind the same public proxy that
+        serves real customer traffic makes SSRF-class issues specifically dangerous: a successful SSRF
+        against that proxy could otherwise become a path into Meridian's own internal network, not just an
+        information leak.</li>
+      <li><strong>Upgrade strategy.</strong> PCI-DSS Requirement 6's patching expectation is the direct
+        argument for keeping Meridian's Keycloak version current rather than deferring upgrades — several
+        real CVEs in the 26.8.x line (chapter 41-45's security findings) are exactly the kind of
+        unpatched-software finding Requirement 6 is written to catch.</li>
+    </ul>
+
+    <h2>9. Lessons for an IAM specialist</h2>
+    <ul>
+      <li>A single realm with careful client/role separation is often the right call over multiple realms —
+        realm boundaries are expensive to operate and should be reserved for genuine isolation needs, not
+        reached for by default whenever two populations differ.</li>
+      <li>Toxic combinations are fixed structurally (mutually exclusive roles at provisioning time), not
+        just detected after the fact — but detection (access review) still matters, because structural fixes
+        don't catch drift introduced outside the original provisioning flow.</li>
+      <li>Real authorization requirements rarely fit one model. Expect to stack RBAC, ABAC, and sometimes
+        ReBAC, and recognize the specific property (a role fact, a computed limit, a graph relationship)
+        that tells you which model a given requirement actually needs.</li>
+      <li>Step-up authentication is a targeted tool, not a blanket policy — the skill is identifying which
+        specific actions justify the friction, not maximizing MFA everywhere.</li>
+      <li>Least privilege applies as strictly to service accounts and automation as to human employees — an
+        "in case we need it later" grant is a real, auditable finding, not a harmless convenience.</li>
+      <li>A revocation API call succeeding is not the same as the thing it was meant to do actually having
+        happened — always verify the end state, not just the response code, for anything security-critical.</li>
+      <li>Compliance frameworks overlap. Design for the actual set of applicable obligations (here, PCI-DSS
+        plus likely SOC 2 plus possible GDPR), not whichever single framework is most prominent.</li>
+    </ul>
+
+    <p><a href="../case-studies.html">&larr; Back to all case studies</a></p>
+
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/book.js"></script>
+</body>
+</html>

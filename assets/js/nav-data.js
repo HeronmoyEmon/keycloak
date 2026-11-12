@@ -103,11 +103,11 @@ window.COURSE_NAV = [
   { number: 45, slug: "security-hardening-and-upgrades", title: "Security Hardening & Upgrade Strategy", part: "Part IX — Production, Scale & Hardening", minutes: 40, hasLab: false, built: true,
     blurb: "A hardening checklist, and how to upgrade safely." },
 
-  { number: 46, slug: "case-study-northwind", title: "Case Study: Northwind Apps", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: false,
+  { number: 46, slug: "case-study-northwind", title: "Case Study: Northwind Apps", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: true,
     blurb: "Multi-tenant SaaS IAM design, full write-up." },
-  { number: 47, slug: "case-study-riverside", title: "Case Study: Riverside Health", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: false,
+  { number: 47, slug: "case-study-riverside", title: "Case Study: Riverside Health", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: true,
     blurb: "A HIPAA patient portal with step-up authentication, full write-up." },
-  { number: 48, slug: "case-study-meridian", title: "Case Study: Meridian Trust", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: false,
+  { number: 48, slug: "case-study-meridian", title: "Case Study: Meridian Trust", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: true,
     blurb: "A PCI-DSS banking app with fraud-aware authentication, full write-up." },
 
   { number: 49, slug: "becoming-an-iam-specialist", title: "Becoming an IAM Specialist", part: "Part XI — Career & Reference", minutes: 40, hasLab: false, built: false,
