@@ -512,9 +512,11 @@ docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh get "clients/$
 docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps \
   -s name=northwind-editor -s 'description=Can edit shared Northwind documents'
 docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
-  -s username=amara.diallo -s enabled=true -s firstName=Amara -s lastName=Diallo
+  -s username=amara.diallo -s enabled=true -s firstName=Amara -s lastName=Diallo \
+  -s email=amara.diallo@northwindapps.com
 docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
-  -s username=sam.chen -s enabled=true -s firstName=Sam -s lastName=Chen
+  -s username=sam.chen -s enabled=true -s firstName=Sam -s lastName=Chen \
+  -s email=sam.chen@northwindapps.com
 # set-password on both, then:
 docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername amara.diallo --rolename northwind-editor</code></pre>

@@ -324,7 +324,7 @@ $ curl -s -H "Authorization: Bearer &lt;admin token&gt;" \
 <pre><code>$ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
     -d "grant_type=refresh_token" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
     -d "refresh_token=&lt;the refresh token from above&gt;"</code></pre>
-<pre><code>{ "error": "invalid_grant", "error_description": "Session not active" }</code></pre></li>
+<pre><code>{ "error": "invalid_grant", "error_description": "Invalid refresh token" }</code></pre></li>
 
           <li><p><strong>Refresh-token-level revocation</strong> (<code>Revoke Refresh Token</code>, chapter 21),
           enabled for real this time and confirmed:</p>
@@ -369,7 +369,7 @@ $ curl -s -X POST .../token -d grant_type=refresh_token -d refresh_token=$RT1   
             <text x="220" y="130" text-anchor="middle" class="diagram-label-muted" font-size="10">DELETE sessions/{id} or POST users/{id}/logout</text>
             <line x1="220" y1="150" x2="220" y2="180" class="diagram-stroke" marker-end="url(#arrowRV)"/>
             <rect x="40" y="180" width="360" height="60" rx="8" class="diagram-fill-danger diagram-stroke"/>
-            <text x="220" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Session not active"</text>
+            <text x="220" y="202" text-anchor="middle" class="diagram-label" font-size="11">Refresh fails: "Invalid refresh token"</text>
             <text x="220" y="220" text-anchor="middle" class="diagram-label-muted" font-size="10">GET sessions confirms: [] (gone)</text>
 
             <line x1="500" y1="50" x2="680" y2="90" class="diagram-stroke" marker-end="url(#arrowRV)"/>
@@ -492,11 +492,13 @@ offlineSessionMaxLifespanEnabled,revokeRefreshToken</code></pre>
   "offlineSessionIdleTimeout" : 2592000,
   "offlineSessionMaxLifespanEnabled" : false,
   "clientSessionIdleTimeout" : 0,
-  "clientSessionMaxLifespan" : 0
+  "clientSessionMaxLifespan" : 0,
+  "revokeRefreshToken" : false
 }</code></pre>
-          <p>Note <code>revokeRefreshToken</code> is absent entirely — <code>kcadm.sh</code>'s <code>--fields</code>
-          output omits unset fields, the same behavior chapter 26 documented for theme fields; it defaults to
-          <code>false</code> and simply isn't printed until set. <code>clientSessionIdleTimeout</code> and
+          <p>Note <code>revokeRefreshToken</code> already shows up explicitly as <code>false</code> here — unlike
+          chapter 26's theme fields, which really do stay absent from a <code>--fields</code> read until set, this
+          one is a plain boolean with a real default value, so it's printed from the start rather than omitted.
+          <code>clientSessionIdleTimeout</code> and
           <code>clientSessionMaxLifespan</code> both read <code>0</code> — per the guide, that specific value means
           "inherit the SSO session's own idle/max," not "no limit," the fact this chapter's Figure 29.1 is built
           around.</p></li>
@@ -532,7 +534,7 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 <pre><code>curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d "grant_type=refresh_token" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
   -d "refresh_token=&lt;the refresh token from step 4&gt;"</code></pre>
-<pre><code>{ "error": "invalid_grant", "error_description": "Session not active" }</code></pre></li>
+<pre><code>{ "error": "invalid_grant", "error_description": "Invalid refresh token" }</code></pre></li>
 
           <li><p>Enable <code>Revoke Refresh Token</code>, mint a fresh token, use its refresh token once (succeeds,
           new refresh token issued), then replay the stale one:</p>
@@ -629,7 +631,7 @@ docker volume ls | grep keycloak_pg_data   # no output</code></pre></li>
           confirmed every revoke with a separate, independent <code>GET</code> call, the exact discipline a PCI-DSS
           auditor would ask Meridian Trust to demonstrate.</li>
           <li>Revoking a session kills every token tied to it — a refresh attempt against a session already ended
-          via the Admin REST API returned a real, captured <code>invalid_grant</code> / "Session not active"
+          via the Admin REST API returned a real, captured <code>invalid_grant</code> / "Invalid refresh token"
           error, not a guessed one.</li>
           <li><code>Revoke Refresh Token</code> is a different mechanism from session revocation: it rotates the
           refresh token on every use and rejects a replayed, already-spent one ("Maximum allowed refresh token

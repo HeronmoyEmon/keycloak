@@ -247,8 +247,12 @@
       <section class="slide" data-slide="client-design" data-title="Client and scope design">
         <h2>Decision 4: a client per integration shape, not one client for everything</h2>
         <p>Chapter 24's lesson — register the client that matches the actual integration, don't force one
-        client type to do several jobs — shows up concretely across Northwind's realm. Each client exists
-        because of a distinct real need, confirmed live in this course's own labs:</p>
+        client type to do several jobs — shows up concretely across Northwind's realm. Each row below is a
+        distinct real need; most were built and confirmed live in this course's own labs exactly as named —
+        the one exception is <code>northwind-cli</code> itself, named here as the natural device-flow client
+        this pattern implies, but the actual live device-flow lab (chapter 14) ran against Duende's public
+        demo server's own generic <code>device</code> client, not a Northwind-specific one, since Keycloak
+        doesn't enter the course until chapter 20.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Client</th><th>Grant / type</th><th>Why this shape</th></tr></thead>
@@ -257,7 +261,7 @@
               <tr><td>Enterprise customer-integration client</td><td>Authorization code, confidential</td><td>A customer's own app letting its employees log in with their own Northwind accounts; exact-match redirect_uri registration is what stops a stolen code being redirected elsewhere (chapter 13).</td></tr>
               <tr><td><code>billing-service-account</code></td><td>Client credentials</td><td>A nightly reconciliation job — no human, no browser, pure machine-to-machine (chapters 34, 36).</td></tr>
               <tr><td><code>billing-direct-grant</code> users (<code>amara.reader</code>, <code>devon.admin</code>)</td><td>Direct access grant, role-scoped</td><td><code>billing-reader</code> vs. <code>billing-admin</code> — read-only versus read/write, two different jobs, two different roles (chapter 34).</td></tr>
-              <tr><td><code>northwind-cli</code></td><td>Device authorization grant</td><td>A CLI with no embedded browser and no safe place to hold a long-lived static key (chapter 14).</td></tr>
+              <tr><td><code>northwind-cli</code> (named here, not built in a lab)</td><td>Device authorization grant</td><td>A CLI with no embedded browser and no safe place to hold a long-lived static key — the mechanism itself was confirmed live in chapter 14 against Duende's generic <code>device</code> client, not this named one.</td></tr>
               <tr><td>UMA resource-server client (ch37)</td><td>UMA 2.0 protection API</td><td>Document-sharing feature needing resource-owner-driven permissions, not just roles.</td></tr>
             </tbody>
           </table>

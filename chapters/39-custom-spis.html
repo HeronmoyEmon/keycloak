@@ -1401,9 +1401,23 @@ client_auth_method=client-secret, username=dalia.khan}</code></pre></li>
           <code>tenant_id</code> via <code>kcadm.sh</code> would have silently failed to persist at
           all, not merely stayed hidden from the REST response.</p></li>
 
-          <li><p>Created a test user with a real <code>tenant_id=acme-logistics</code> attribute,
+          <li><p>Created a test user with a real <code>tenant_id=acme-logistics</code> attribute, then
           attached <code>northwind-tenant-id-mapper</code> directly to the <code>admin-cli</code>
-          client, then minted and decoded a real token:</p>
+          client (not via a client scope — a protocol mapper can be attached either way; this lab
+          does it directly on the client for the smallest possible reproduction). The one config
+          field that <em>must</em> be set explicitly is <code>claim.name</code> — leave it out and
+          the mapper registers with no error at all, but silently never adds the claim to any token,
+          because <code>OIDCAttributeMapperHelper.mapClaim</code> needs it and has no server-side
+          default:</p>
+<pre><code>kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models -r northwind-apps \
+  -s name=northwind-tenant-id-mapper \
+  -s protocol=openid-connect \
+  -s protocolMapper=northwind-tenant-id-mapper \
+  -s 'config."claim.name"=tenant_id' \
+  -s 'config."id.token.claim"=true' \
+  -s 'config."access.token.claim"=true' \
+  -s 'config."userinfo.token.claim"=true'</code></pre>
+          <p>Then minted and decoded a real token:</p>
           <pre><code>curl -s -X POST ".../realms/northwind-apps/protocol/openid-connect/token" \
   -d "client_id=admin-cli" -d "grant_type=password" -d "scope=openid" \
   -d "username=amara.diallo" -d "password=..."</code></pre>
@@ -1457,6 +1471,11 @@ error_description="Lightweight access token not allowed for userinfo endpoint"</
           <code>userinfo.token.claim</code>, check the client's own "Always use lightweight access
           token" setting — <code>admin-cli</code> has it enabled by default, and it's unrelated to
           anything the mapper's code or config controls.</li>
+          <li>If a protocol mapper attaches cleanly (no error, shows up in <code>kcadm.sh get</code>)
+          but the claim just never appears on any token, check whether <code>config."claim.name"</code>
+          was actually set on the mapper model — <code>OIDCAttributeMapperHelper.mapClaim</code> needs
+          it and has no server-side default, so a mapper created without it fails completely silently,
+          not with an error.</li>
           <li>If a rebuilt provider JAR doesn't seem to take effect after <code>mvn clean package</code>
           even though the build succeeded, check whether the Keycloak container was only
           <code>restart</code>ed rather than recreated — a plain restart can keep serving the old

@@ -284,18 +284,25 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create groups -r northwi
 Created new group with id 'c1a1f336-455f-40dc-9793-af85a4e0dbd3'</code></pre></li>
 
           <li><p>Assign Jane as tenant admin, and give Priya her starting support-agent role plus Support group
-          membership:</p>
+          membership. The group-membership call needs Priya's and the Support group's real ids — <strong>never
+          hardcode a UUID from one run into a command like this</strong>, since every fresh instance generates
+          new ones; capture them with a lookup first, the same pattern chapter 27 and chapter 31 use:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername jane.doe --rolename tenant-admin
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername priya.patel --rolename support-agent
 
+PRIYA_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users -r northwind-apps \
+  -q username=priya.patel --fields id --format csv --noquotes)
+SUPPORT_GROUP_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get groups -r northwind-apps \
+  -q name=Support --fields id --format csv --noquotes)
+
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/c1a1f336-455f-40dc-9793-af85a4e0dbd3" \
+  "users/$PRIYA_ID/groups/$SUPPORT_GROUP_ID" \
   -s realm=northwind-apps \
-  -s userId=758fcf4b-057a-41ca-a8d0-420ccc8f501b \
-  -s groupId=c1a1f336-455f-40dc-9793-af85a4e0dbd3 -n</code></pre>
+  -s userId=$PRIYA_ID \
+  -s groupId=$SUPPORT_GROUP_ID -n</code></pre>
           <p>All three commands return no output on success — normal <code>kcadm.sh</code> behavior for
           <code>add-roles</code> and group-membership <code>update</code> calls; the next step confirms the
           result independently rather than trusting silence.</p>
@@ -307,12 +314,13 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps
           Server Administration Guide, fetched live for this chapter — this session had no browser to click
           through it personally, same limitation chapters 20-21 already flagged).</p></li>
 
-          <li><p>Confirm Priya's starting state independently, before touching anything else:</p>
+          <li><p>Confirm Priya's starting state independently, before touching anything else (still using
+          <code>$PRIYA_ID</code> captured above):</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/role-mappings/realm" -r northwind-apps --fields name
+  "users/$PRIYA_ID/role-mappings/realm" -r northwind-apps --fields name
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups" -r northwind-apps --fields name</code></pre>
+  "users/$PRIYA_ID/groups" -r northwind-apps --fields name</code></pre>
 <pre><code>[ {
   "name" : "support-agent"
 }, {
@@ -355,12 +363,15 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
 
         <ol class="lab-steps">
           <li><p><strong>Grant the new access</strong> — add Priya to <code>Engineering</code> and assign her
-          <code>platform-engineer</code>:</p>
-<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/a18c8082-db97-44e2-9ccd-f2d32e2ce256" \
+          <code>platform-engineer</code>. Another id to capture first, same reason as before:</p>
+<pre><code>ENGINEERING_GROUP_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get groups -r northwind-apps \
+  -q name=Engineering --fields id --format csv --noquotes)
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update -r northwind-apps \
+  "users/$PRIYA_ID/groups/$ENGINEERING_GROUP_ID" \
   -s realm=northwind-apps \
-  -s userId=758fcf4b-057a-41ca-a8d0-420ccc8f501b \
-  -s groupId=a18c8082-db97-44e2-9ccd-f2d32e2ce256 -n
+  -s userId=$PRIYA_ID \
+  -s groupId=$ENGINEERING_GROUP_ID -n
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername priya.patel --rolename platform-engineer</code></pre>
@@ -369,7 +380,7 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-a
 
           <li><p><strong>Remove the old access</strong> — the step chapter 10 called the one beginners skip:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh delete -r northwind-apps \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups/c1a1f336-455f-40dc-9793-af85a4e0dbd3"
+  "users/$PRIYA_ID/groups/$SUPPORT_GROUP_ID"
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh remove-roles -r northwind-apps \
   --uusername priya.patel --rolename support-agent</code></pre>
@@ -383,10 +394,10 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh remove-roles -r northwin
           <li><p><strong>Confirm the after-state independently</strong> — the same two read-only commands run
           before the move, run again:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/role-mappings/realm" -r northwind-apps --fields name
+  "users/$PRIYA_ID/role-mappings/realm" -r northwind-apps --fields name
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get \
-  "users/758fcf4b-057a-41ca-a8d0-420ccc8f501b/groups" -r northwind-apps --fields name</code></pre>
+  "users/$PRIYA_ID/groups" -r northwind-apps --fields name</code></pre>
 <pre><code>[ {
   "name" : "platform-engineer"
 }, {

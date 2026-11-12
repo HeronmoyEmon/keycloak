@@ -269,52 +269,6 @@ $ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
         </div>
       </section>
 
-      <section class="slide" data-slide="client-roles" data-title="Client roles">
-        <h2>Client roles: scoped to one client, not the whole realm</h2>
-        <p>Chapter 23's realm roles (<code>tenant-admin</code>, <code>support-agent</code>,
-        <code>platform-engineer</code>) are visible and assignable across the entire <code>northwind-apps</code>
-        realm. A <strong>client role</strong> is different in exactly one way that matters: it only means
-        something to the one client it belongs to. "Admin of the Northwind Dashboard app" is not the same
-        permission as "admin of the whole realm," and Keycloak models that distinction by attaching the role
-        to the client's own role list, not the realm's.</p>
-
-        <ol class="lab-steps">
-          <li><p>Create a client role directly under <code>northwind-dashboard</code>, and confirm, two
-          different ways, that it lives there and nowhere else:</p>
-<pre><code>$ CLIENT_ID=f854ec22-14e1-4a88-a4bb-ba0d9b34be88   # northwind-dashboard's internal id
-
-$ kcadm.sh create clients/$CLIENT_ID/roles -r northwind-apps \
-    -s name=dashboard-admin \
-    -s description="Full admin access within the Northwind Dashboard app only"
-Created new role with id 'dashboard-admin'
-
-$ kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
-[ {
-  "name" : "dashboard-admin",
-  "composite" : false,
-  "clientRole" : true,
-  "containerId" : "f854ec22-14e1-4a88-a4bb-ba0d9b34be88"
-} ]
-
-$ kcadm.sh get roles -r northwind-apps --fields name
-[ {"name":"offline_access"}, {"name":"default-roles-northwind-apps"}, {"name":"uma_authorization"} ]
-(dashboard-admin does not appear in the realm's own role list at all — "clientRole": true is the field
-that makes the difference real, not just a naming convention)</code></pre></li>
-        </ol>
-
-        <div class="table-wrap">
-          <table>
-            <caption>Realm roles (chapter 23) vs. client roles (this chapter)</caption>
-            <thead><tr><th></th><th>Realm role</th><th>Client role</th></tr></thead>
-            <tbody>
-              <tr><td>Keycloak field</td><td><code>clientRole: false</code>, lives under <code>/roles</code></td><td><code>clientRole: true</code>, lives under <code>/clients/&lt;id&gt;/roles</code></td></tr>
-              <tr><td>Meaning</td><td>Realm-wide — <code>tenant-admin</code> means the same thing everywhere in <code>northwind-apps</code></td><td>Scoped to one client — <code>dashboard-admin</code> means nothing to any other client</td></tr>
-              <tr><td>Northwind example</td><td><code>tenant-admin</code>, <code>support-agent</code>, <code>platform-engineer</code> (chapter 23)</td><td><code>dashboard-admin</code> on <code>northwind-dashboard</code> — built here</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <section class="slide" data-slide="client-scopes" data-title="Client scopes">
         <h2>Client scopes: reusable bundles of claim configuration</h2>
         <p>Chapter 13 defined OAuth's <strong>Scope</strong> as a client-requested identifier naming a slice of
@@ -402,6 +356,52 @@ $ kcadm.sh get clients/1b36f7b1-.../client-secret -r northwind-apps
     -s 'attributes={"display.on.consent.screen":"true","include.in.token.scope":"true"}' -i
 11192168-40ec-49ef-a419-2abd01c09fcd</code></pre></li>
         </ol>
+      </section>
+
+      <section class="slide" data-slide="client-roles" data-title="Client roles">
+        <h2>Client roles: scoped to one client, not the whole realm</h2>
+        <p>Chapter 23's realm roles (<code>tenant-admin</code>, <code>support-agent</code>,
+        <code>platform-engineer</code>) are visible and assignable across the entire <code>northwind-apps</code>
+        realm. A <strong>client role</strong> is different in exactly one way that matters: it only means
+        something to the one client it belongs to. "Admin of the Northwind Dashboard app" is not the same
+        permission as "admin of the whole realm," and Keycloak models that distinction by attaching the role
+        to the client's own role list, not the realm's.</p>
+
+        <ol class="lab-steps">
+          <li><p>Create a client role directly under <code>northwind-dashboard</code>, and confirm, two
+          different ways, that it lives there and nowhere else:</p>
+<pre><code>$ CLIENT_ID=1b36f7b1-6a7f-4907-9290-c80157ab133c   # northwind-dashboard's internal id, captured when it was created above
+
+$ kcadm.sh create clients/$CLIENT_ID/roles -r northwind-apps \
+    -s name=dashboard-admin \
+    -s description="Full admin access within the Northwind Dashboard app only"
+Created new role with id 'dashboard-admin'
+
+$ kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
+[ {
+  "name" : "dashboard-admin",
+  "composite" : false,
+  "clientRole" : true,
+  "containerId" : "1b36f7b1-6a7f-4907-9290-c80157ab133c"
+} ]
+
+$ kcadm.sh get roles -r northwind-apps --fields name
+[ {"name":"offline_access"}, {"name":"default-roles-northwind-apps"}, {"name":"uma_authorization"} ]
+(dashboard-admin does not appear in the realm's own role list at all — "clientRole": true is the field
+that makes the difference real, not just a naming convention)</code></pre></li>
+        </ol>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Realm roles (chapter 23) vs. client roles (this chapter)</caption>
+            <thead><tr><th></th><th>Realm role</th><th>Client role</th></tr></thead>
+            <tbody>
+              <tr><td>Keycloak field</td><td><code>clientRole: false</code>, lives under <code>/roles</code></td><td><code>clientRole: true</code>, lives under <code>/clients/&lt;id&gt;/roles</code></td></tr>
+              <tr><td>Meaning</td><td>Realm-wide — <code>tenant-admin</code> means the same thing everywhere in <code>northwind-apps</code></td><td>Scoped to one client — <code>dashboard-admin</code> means nothing to any other client</td></tr>
+              <tr><td>Northwind example</td><td><code>tenant-admin</code>, <code>support-agent</code>, <code>platform-engineer</code> (chapter 23)</td><td><code>dashboard-admin</code> on <code>northwind-dashboard</code> — built here</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="slide" data-slide="protocol-mapper-add" data-title="Protocol mappers: the department claim">

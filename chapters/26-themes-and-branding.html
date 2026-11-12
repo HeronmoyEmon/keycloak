@@ -322,15 +322,23 @@ keycloak.v2 -&gt; ['login']</code></pre>
         with English as the default.</p>
 
         <ol class="lab-steps">
-          <li><p>Before any change, <code>internationalizationEnabled</code> on a fresh realm defaults to
-          <code>false</code> (confirmed, not assumed):</p>
+          <li><p>Before any internationalization change, <code>internationalizationEnabled</code> on this
+          realm still defaults to <code>false</code> (confirmed, not assumed) — but by this point in the
+          chapter the theme fields from the earlier steps are already set, so they correctly show up in
+          this same query too; this step isn't claiming a fresh, untouched realm, only confirming
+          internationalization specifically hasn't been touched yet:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps \
   --fields loginTheme,accountTheme,adminTheme,emailTheme,internationalizationEnabled,supportedLocales,defaultLocale</code></pre>
 <pre><code>{
+  "loginTheme" : "keycloak",
+  "accountTheme" : "base",
+  "adminTheme" : "base",
+  "emailTheme" : "keycloak",
   "internationalizationEnabled" : false
 }</code></pre>
-          <p>Every other field in that call is simply absent from the response, confirming none of them are set
-          yet either.</p></li>
+          <p>The four theme fields are this chapter's own earlier work persisting, exactly as set;
+          <code>supportedLocales</code> and <code>defaultLocale</code> are the only two fields genuinely
+          absent, since internationalization hasn't been enabled yet.</p></li>
 
           <li><p>Enable it and declare supported locales and a default, all in one <code>kcadm.sh</code> call:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps \

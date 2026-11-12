@@ -305,10 +305,14 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-a
 }</code></pre>
           <p>This was a genuine, unplanned failure this session's own run hit — not a scripted example of a
           mistake. The fix and the real root cause are both in the pitfalls section below; the short version is
-          that <code>priya.patel</code> was created without a first/last name, and the realm's declarative user
-          profile requires them. Setting those two fields and retrying succeeded for real:</p>
+          that <code>priya.patel</code> still has chapter 22's own <code>CONFIGURE_TOTP</code> required action
+          pending (chapter 22 created her with <code>-s 'requiredActions=["CONFIGURE_TOTP"]'</code> — her
+          first/last name were already set in that same command, so re-setting them changes nothing). A
+          pending required action has no interactive flow to complete it on a direct-grant (password) login —
+          there's no browser to walk through "set up OTP" — so Keycloak fails the grant outright instead.
+          Clearing the pending action and retrying succeeded for real:</p>
 <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update users/&lt;priya's-id&gt; -r northwind-apps \
-  -s firstName=Priya -s lastName=Patel
+  -s 'requiredActions=[]'
 curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli \
   -d username=priya.patel -d password='Lab-Pass-2026!'</code></pre>
@@ -452,7 +456,8 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
             <desc id="d2">A horizontal timeline with five real, timestamped events in the order they actually
             occurred. 1. Admin event: DELETE REALM_ROLE_MAPPING, support-agent removed from priya.patel. 2. Admin
             event: CREATE REALM_ROLE_MAPPING, platform-engineer added to priya.patel. 3. Admin event: UPDATE USER,
-            firstName/lastName added to priya.patel (the fix for the required-action failure). 4. Login event:
+            priya.patel's pending CONFIGURE_TOTP required action cleared (the actual fix for the required-action
+            failure — her first/last name were already set back in chapter 22). 4. Login event:
             LOGIN_ERROR, resolve_required_actions, "Account is not fully set up" — the failed grant attempted
             before the fix. 5. Login event: LOGIN, priya.patel's real password grant succeeding, followed
             immediately by a sixth, LOGIN_ERROR with invalid_user_credentials from a deliberately wrong password.
@@ -473,7 +478,7 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 
             <circle cx="510" cy="120" r="6" class="diagram-fill-warning diagram-stroke"/>
             <text x="510" y="100" text-anchor="middle" class="diagram-label-muted" font-size="10">UPDATE user</text>
-            <text x="510" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">firstName/lastName set</text>
+            <text x="510" y="145" text-anchor="middle" class="diagram-label-muted" font-size="9">CONFIGURE_TOTP action cleared</text>
 
             <circle cx="660" cy="120" r="6" class="diagram-fill-success diagram-stroke"/>
             <text x="660" y="80" text-anchor="middle" class="diagram-label-muted" font-size="10">LOGIN</text>
@@ -673,11 +678,14 @@ keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashi
           all, <code>adminEventsDetailsEnabled</code> controls whether it carries the JSON body, and they are a
           third/fourth independent pair layered on the eventsEnabled/adminEventsEnabled pair above.</li>
           <li>If you see a resource-owner-password-credentials grant fail with <code>"error_description": "Account
-          is not fully set up"</code> even though the user's <code>requiredActions</code> array is empty, the cause
-          — confirmed directly in this chapter's own run — can be a declarative user-profile field (here,
-          <code>firstName</code>/<code>lastName</code>) the realm marks required that the user record simply never
-          had set; the events stream's own <code>error: "resolve_required_actions"</code> record is the fastest way
-          to confirm this rather than guessing from the generic OAuth error alone.</li>
+          is not fully set up"</code>, check the user's own <code>requiredActions</code> array directly before
+          guessing — confirmed directly in this chapter's own run, the cause was simply a pending required action
+          (<code>priya.patel</code> still had chapter 22's <code>CONFIGURE_TOTP</code> sitting unresolved), which a
+          direct, non-interactive grant has no browser flow to let the user complete. A declarative user-profile
+          field the realm marks required but the record never had set is a separate, equally real way to hit the
+          identical error message — the events stream's own <code>error: "resolve_required_actions"</code> record
+          confirms that something in this family is the cause, but only checking the user's actual state (required
+          actions first, then profile completeness) tells you which one.</li>
           <li>If you see a realm's <code>representation</code> fields on admin events carrying more of a user's
           underlying attributes than a compliance review is comfortable with, the cause is that
           <code>adminEventsDetailsEnabled</code> captures the full submitted JSON verbatim with no field-level
@@ -719,7 +727,8 @@ keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashi
           102-entry <code>enabledEventTypes</code> default list — only the two main booleans are off by default;
           nothing about "what to record" needs configuring before "whether to record" does.</li>
           <li>This chapter's own lab run hit a real, unplanned bug — a resource-owner-password-credentials grant
-          failing with "Account is not fully set up" due to missing required profile fields — and the events
+          failing with "Account is not fully set up" because <code>priya.patel</code> still had chapter 22's
+          <code>CONFIGURE_TOTP</code> required action pending — and the events
           stream's own <code>resolve_required_actions</code> record was the fastest real diagnostic path to the
           cause, which is itself a demonstration of why this chapter's subject matters operationally, not just for
           compliance paperwork.</li>
@@ -755,8 +764,8 @@ keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashi
             <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span><code>adminEventsDetailsEnabled</code> adds the full <code>representation</code> field — the raw JSON body of what was created, updated, or deleted — on top of the base fields (<code>operationType</code>, <code>resourceType</code>, <code>resourcePath</code>, <code>authDetails</code>) that <code>adminEventsEnabled</code> alone already provides. Without it, an auditor can see that something changed and who changed it, but not the actual before/after value. A HIPAA- or PCI-regulated organization should weigh it deliberately because, as this chapter's pitfall notes, <code>representation</code> captures the submitted JSON verbatim with no field-level filtering — meaning it can store more of a user's or patient's underlying attributes in the events database, for the whole retention window, than a "minimum necessary" review would want. The right approach is a documented decision per resource type, not a reflex "turn everything on for compliance."</p>
           </details></li>
           <li><details>
-            <summary>This chapter's own lab hit "Account is not fully set up" on a password grant. What was the real cause, and why did checking the user's <code>requiredActions</code> array alone fail to reveal it?</summary>
-            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The real cause was that <code>priya.patel</code>'s user record was missing mandatory declarative user-profile fields (<code>firstName</code>/<code>lastName</code>) that the realm's user profile configuration requires — not a pending required action on the account. Checking <code>requiredActions</code> alone fails to reveal this because that array only lists explicitly assigned actions like "update password" or "verify email"; it has nothing to do with the user-profile validation layer, which is a separate mechanism that rejects the login before required actions even come into play. The only place the real cause actually surfaced was the login event's own <code>error: "resolve_required_actions"</code> record with <code>reason: "Account is not fully set up"</code>.</p>
+            <summary>This chapter's own lab hit "Account is not fully set up" on a password grant. What was the real cause, and why did checking the user's <code>requiredActions</code> array directly turn out to be the fastest way to confirm it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The real cause was that <code>priya.patel</code> still had chapter 22's own <code>CONFIGURE_TOTP</code> required action sitting unresolved on her account — not a missing profile field; her <code>firstName</code>/<code>lastName</code> were already set the moment chapter 22 created her. A resource-owner-password-credentials grant is non-interactive: there's no browser round trip for Keycloak to hand the user an OTP-setup screen through, so a pending required action simply fails the grant outright with this generic-sounding OAuth error instead. Checking <code>requiredActions</code> directly (<code>kcadm.sh get users/&lt;id&gt; --fields requiredActions</code>) immediately showed <code>["CONFIGURE_TOTP"]</code> — the cause was never hidden, it just required looking at the user's actual state instead of guessing from the error text alone. The events stream's own <code>error: "resolve_required_actions"</code> record independently pointed at the same family of cause, confirming it rather than replacing the direct check.</p>
           </details></li>
           <li><details>
             <summary>Why do <code>/health</code> and <code>/metrics</code> live on a different port than the events endpoints in Keycloak 26.x, and what operational purpose does keeping them separate actually serve?</summary>

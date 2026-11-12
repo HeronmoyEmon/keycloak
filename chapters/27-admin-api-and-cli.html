@@ -547,18 +547,25 @@ python3 -c "import json; d=json.load(open('partial-export.json')); print('users'
       <section class="slide" data-slide="lab-full-export" data-title="Lab: full export (server CLI)">
         <ol class="lab-steps" style="counter-reset: lab-step 5;">
           <li><p>Run the full export (server CLI). This requires stopping the server first — a genuinely
-          different operation, not a bigger REST call:</p>
+          different operation, not a bigger REST call. <strong>One thing the command needs that's easy to
+          miss</strong>: <code>docker compose run --rm</code> deletes the container itself the instant it
+          exits, and <code>/tmp/export</code> is a path inside that container's own filesystem — without a
+          volume mount, the exported files would be gone before you could ever open them. Bind-mount a real
+          host directory to the same path so the files actually survive:</p>
           <pre><code>docker compose stop keycloak
-docker compose run --rm keycloak export --dir /tmp/export --realm northwind-apps --users different_files</code></pre>
+mkdir -p ./export-out
+docker compose run --rm -v "$(pwd)/export-out:/tmp/export" keycloak \
+  export --dir /tmp/export --realm northwind-apps --users different_files</code></pre>
           <pre><code>...
 2026-11-10 09:17:14,194 INFO  [org.keycloak.services] (main) KC-SERVICES0034: Export of realm 'northwind-apps' requested.
 2026-11-10 09:17:14,594 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Exporting into directory /tmp/export
 2026-11-10 09:17:14,663 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Realm 'northwind-apps' - data exported
 2026-11-10 09:17:14,760 INFO  [org.keycloak.exportimport.dir.DirExportProvider] (main) Users 0 - 4 exported
 2026-11-10 09:17:14,775 INFO  [org.keycloak.services] (main) KC-SERVICES0035: Export finished successfully</code></pre>
-          <p>This produced two real files — <code>northwind-apps-realm.json</code> and
-          <code>northwind-apps-users-0.json</code> — the latter holding each test user's real, Argon2-hashed
-          credential data, confirmed directly (see the pitfall above). Bring the server back up afterward:</p>
+          <p>This produced two real files on the host, in <code>./export-out/</code> —
+          <code>northwind-apps-realm.json</code> and <code>northwind-apps-users-0.json</code> — the latter
+          holding each test user's real, Argon2-hashed credential data, confirmed directly by actually
+          opening it (see the pitfall above). Bring the server back up afterward:</p>
           <pre><code>docker compose up -d keycloak</code></pre></li>
         </ol>
       </section>

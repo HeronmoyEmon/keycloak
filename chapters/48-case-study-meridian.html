@@ -86,9 +86,14 @@
 
       <section class="slide" data-slide="realm-architecture" data-title="One realm, two populations">
         <h2>Realm &amp; client architecture: one realm, deliberately</h2>
-        <p>Chapter 20's lab created a single <code>meridian-trust</code> realm and every later Meridian lab
-        (chapters 23, 29, 30, 36, 45) built on that same realm rather than splitting employees and retail
-        customers into separate realms. That's a real architectural choice, not a default: a realm is
+        <p>Chapters 20-30's hands-on labs ran their realm/role/client mechanics against
+        <code>northwind-apps</code> as the concrete example — the mechanism is organization-agnostic, as
+        chapter 20 itself says explicitly, so the identical steps with <code>meridian-trust</code> in place
+        of <code>northwind-apps</code> produce the same result. Chapter 36 is the one chapter that actually
+        ran those steps against a real <code>meridian-trust</code> realm directly (its service-to-service
+        lab), rather than only discussing Meridian as a case-study tie-in. Either way, this architecture
+        section's point holds regardless of which lab created which realm: a single realm, not split
+        employees/retail realms. That's a real architectural choice, not a default: a realm is
         Keycloak's unit of complete isolation (separate users, roles, clients, themes, keys — chapter 21),
         so the alternative — <code>meridian-employees</code> and <code>meridian-retail</code> as two
         realms — was genuinely on the table.</p>
