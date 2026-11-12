@@ -219,16 +219,17 @@
 
       <section class="slide" data-slide="lab-setup" data-title="Lab: realm, users &amp; roles">
         <h2>The lab: building the real role and group model</h2>
-        <p>This section's commands were actually run against a fresh <code>labs/docker</code> stack, not
-        narrated. Each chapter's lab starts from a clean <code>docker compose up -d</code> rather than a shared
-        running instance, so the first steps below recreate the <code>jane.doe</code>/<code>priya.patel</code>
-        users chapter 22 introduced before building on them.</p>
+        <p>This section's commands were actually run against a fresh stack built from the same
+        <code>docker-compose.yml</code> <a href="20-installing-keycloak.html">chapter 20</a> gave you, not
+        narrated. Each chapter's lab starts from a clean <code>docker compose up -d</code> in that same
+        <code>keycloak-lab</code> folder rather than a shared running instance, so the first steps below
+        recreate the <code>jane.doe</code>/<code>priya.patel</code> users chapter 22 introduced before
+        building on them.</p>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll until Keycloak answers (same pattern chapter 20 established —
-          don't assume a fixed sleep is enough):</p>
-<pre><code>cd labs/docker
-docker compose up -d
+          <li><p>From that same folder, bring the stack up and poll until Keycloak answers (same pattern
+          chapter 20 established — don't assume a fixed sleep is enough):</p>
+<pre><code>docker compose up -d
 for i in $(seq 1 25); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:8080/realms/master/.well-known/openid-configuration)

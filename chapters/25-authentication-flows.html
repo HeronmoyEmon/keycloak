@@ -540,14 +540,15 @@
         <div class="callout callout--pitfall">
           <div class="callout-label">A build-environment pitfall, worth recording here too</div>
           <p>This chapter's own lab run started by colliding with another chapter's lab, running at the same
-          time from the same <code>labs/docker/</code> directory — Docker Compose derives a project name from
-          the directory by default, so two concurrent <code>docker compose up</code> invocations from the same
-          path land on the exact same container names and the same host port, not two separate stacks. This
-          chapter's commands above were run against an isolated copy (a distinct Compose project name and a
-          remapped host port, torn down cleanly afterward) specifically to avoid stepping on, or being stepped
-          on by, that other run. If you ever run two of this course's labs at once on one machine, give each
-          its own <code>-p</code> project name and port rather than assuming <code>docker compose</code> keeps
-          them apart for you.</p>
+          time from the same <code>keycloak-lab/</code> directory this course has you create for every Part
+          IV+ chapter (the one chapter 20 set up) — Docker Compose derives a project name from the directory
+          by default, so two concurrent <code>docker compose up</code> invocations from the same path land on
+          the exact same container names and the same host port, not two separate stacks. This chapter's
+          commands above were run against an isolated copy (a distinct Compose project name and a remapped
+          host port, torn down cleanly afterward) specifically to avoid stepping on, or being stepped on by,
+          that other run. If you ever run two of this course's labs at once on one machine, give each its own
+          <code>-p</code> project name and port rather than assuming <code>docker compose</code> keeps them
+          apart for you.</p>
         </div>
       </section>
 

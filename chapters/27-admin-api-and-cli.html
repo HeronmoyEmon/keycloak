@@ -359,15 +359,15 @@
       <section class="slide" data-slide="lab-setup" data-title="Lab: stack up &amp; realm shape">
         <h2>Lab: scripting <code>northwind-apps</code> for real</h2>
         <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack, the same
-        <code>labs/docker/docker-compose.yml</code> environment every Part IV+ chapter uses — not narrated. Each
-        step is confirmed with a separate read, never trusted from a write command's own (often silent)
-        response.</p>
+        <a href="20-installing-keycloak.html">chapter 20</a> <code>docker-compose.yml</code>
+        every Part IV+ chapter uses — not narrated. Each step is confirmed with a separate read, never
+        trusted from a write command's own (often silent) response.</p>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll until Keycloak is ready, the same pattern every lab chapter since 20
-          has used:</p>
-          <pre><code>cd labs/docker
-docker compose up -d
+          <li><p>From the same <code>keycloak-lab</code> folder you created in chapter 20 (or a fresh one
+          with that chapter's <code>docker-compose.yml</code>), bring the stack up and poll until Keycloak
+          is ready, the same pattern every lab chapter since 20 has used:</p>
+          <pre><code>docker compose up -d
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:8080/realms/master/.well-known/openid-configuration)
@@ -575,10 +575,10 @@ docker compose run --rm keycloak export --dir /tmp/export --realm northwind-apps
 
           <li><p>Tear the stack down cleanly:</p>
           <pre><code>docker compose down -v</code></pre>
-          <pre><code> Container docker-keycloak-1 Removed
- Container docker-postgres-1 Removed
- Volume docker_keycloak_pg_data Removed
- Network docker_default Removed</code></pre></li>
+          <pre><code> Container keycloak-lab-keycloak-1 Removed
+ Container keycloak-lab-postgres-1 Removed
+ Volume keycloak-lab_keycloak_pg_data Removed
+ Network keycloak-lab_default Removed</code></pre></li>
         </ol>
       </section>
 

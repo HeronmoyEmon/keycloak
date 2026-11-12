@@ -276,16 +276,18 @@
 
       <section class="slide" data-slide="lab-setup" data-title="Lab: bring up the realm">
         <h2>Lab: configuring <code>northwind-apps</code>'s realm settings for real</h2>
-        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-        <code>labs/docker/docker-compose.yml</code>, the same lab environment chapter 20 used — not narrated.
-        Each change is confirmed with a separate <code>kcadm.sh get</code> call, never just the update command's
-        own success (or silent) response.</p>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack — the
+        same <code>docker-compose.yml</code> <a href="20-installing-keycloak.html">chapter 20</a> gave
+        you, in the same <code>keycloak-lab</code> folder. If you tore that stack down, see chapter 20
+        for the exact file to recreate it; nothing new to install for this chapter. Each change is
+        confirmed with a separate <code>kcadm.sh get</code> call, never just the update command's own
+        success (or silent) response.</p>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll the discovery endpoint until Keycloak is actually ready — a fixed
-          sleep is a guess, polling is a fact (same lesson chapter 20 established):</p>
-<pre><code>cd labs/docker
-docker compose up -d
+          <li><p>From inside that same <code>keycloak-lab</code> folder, bring the stack up and poll the
+          discovery endpoint until Keycloak is actually ready — a fixed sleep is a guess, polling is a
+          fact (same lesson chapter 20 established):</p>
+<pre><code>docker compose up -d
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:8080/realms/master/.well-known/openid-configuration)
@@ -376,20 +378,20 @@ Created new realm with id 'northwind-apps'</code></pre></li>
 
           <li><p>Tear the stack down cleanly — no stray containers, volumes, or networks left behind:</p>
 <pre><code>docker compose down -v</code></pre>
-<pre><code> Container docker-keycloak-1 Stopping
- Container docker-keycloak-1 Stopped
- Container docker-keycloak-1 Removing
- Container docker-keycloak-1 Removed
- Container docker-postgres-1 Stopping
- Container docker-postgres-1 Stopped
- Container docker-postgres-1 Removing
- Container docker-postgres-1 Removed
- Volume docker_keycloak_pg_data Removing
- Network docker_default Removing
- Volume docker_keycloak_pg_data Removed
- Network docker_default Removed</code></pre>
-<pre><code>docker ps -a | grep docker-keycloak   # no output
-docker volume ls | grep docker_keycloak   # no output</code></pre></li>
+<pre><code> Container keycloak-lab-keycloak-1 Stopping
+ Container keycloak-lab-keycloak-1 Stopped
+ Container keycloak-lab-keycloak-1 Removing
+ Container keycloak-lab-keycloak-1 Removed
+ Container keycloak-lab-postgres-1 Stopping
+ Container keycloak-lab-postgres-1 Stopped
+ Container keycloak-lab-postgres-1 Removing
+ Container keycloak-lab-postgres-1 Removed
+ Volume keycloak-lab_keycloak_pg_data Removing
+ Network keycloak-lab_default Removing
+ Volume keycloak-lab_keycloak_pg_data Removed
+ Network keycloak-lab_default Removed</code></pre>
+<pre><code>docker ps -a | grep keycloak-lab   # no output
+docker volume ls | grep keycloak-lab   # no output</code></pre></li>
         </ol>
 
         <div class="callout callout--pitfall">

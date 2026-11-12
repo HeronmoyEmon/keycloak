@@ -162,23 +162,25 @@
 
       <section class="slide" data-slide="lab-setup" data-title="Lab: realm &amp; stack setup">
         <h2>The lab: standing up the realm and registering the client, for real</h2>
-        <p>Every command below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack
-        (<code>labs/docker/docker-compose.yml</code>), not narrated. <strong>One environmental note worth being
-        honest about</strong>: several Part IV chapters' labs were being built in parallel this session against
+        <p>Every command below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack — the
+        same <code>docker-compose.yml</code> <a href="20-installing-keycloak.html">chapter
+        20</a> showed in full — not narrated. <strong>One environmental note worth being honest
+        about</strong>: several Part IV chapters' labs were being built in parallel this session against
         the same shared Docker host, and this chapter's first attempt collided with a sibling chapter's own
         concurrent <code>docker compose</code> run on the same default project name and port — the realm this
         chapter needed had already been created and the stack was torn down mid-command by that other session.
         The fix was simply to run this chapter's own stack under an isolated Compose project name and host
         port, which fully resolved it; everything from here on is a clean, independent run with no shared
-        state. A reader following along on their own machine will never hit this — it's purely an artifact of
-        multiple chapters being authored against one shared host at once.</p>
+        state. A reader following along on their own machine, from the one <code>keycloak-lab</code> folder
+        chapter 20 had you create, will never hit this — it's purely an artifact of multiple chapters being
+        authored against one shared host at once.</p>
 
         <ol class="lab-steps">
           <li><p>Bring the stack up and poll until Keycloak answers (same discipline chapter 20 established —
           a fixed sleep is a guess, polling the discovery endpoint is a fact):</p>
-<pre><code>$ cd labs/docker &amp;&amp; docker compose up -d
+<pre><code>$ docker compose up -d
 ...
- Container docker-keycloak-1 Started
+ Container keycloak-lab-keycloak-1 Started
 
 $ for i in $(seq 1 20); do
     code=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -589,7 +591,7 @@ $ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
           <li><p>Tear down, confirmed clean:</p>
 <pre><code>$ docker compose down -v
 ...
- Volume docker_keycloak_pg_data Removed
+ Volume keycloak-lab_keycloak_pg_data Removed
 
 $ docker ps -a | grep keycloak    # (no matching rows)
 $ docker volume ls | grep keycloak_pg_data   # (no matching rows)</code></pre></li>

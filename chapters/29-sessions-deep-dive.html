@@ -446,15 +446,16 @@ $ curl -s -X POST .../token -d grant_type=refresh_token -d refresh_token=$RT1   
 
       <section class="slide" data-slide="lab-setup-and-revoke" data-title="Lab: setup &amp; session revocation">
         <h2>Lab: bring up the environment and run every step above for real</h2>
-        <p>Run fresh from a <code>docker compose up -d</code>, the same base lab environment chapters 20-28 use.
-        <strong>Every output quoted above and below in this chapter was actually captured against a live Keycloak
-        26.8.2 + PostgreSQL 17 stack</strong> — not narrated.</p>
+        <p>Run fresh from a <code>docker compose up -d</code> in the same <code>keycloak-lab</code> folder
+        (<a href="20-installing-keycloak.html">chapter 20</a> has the exact
+        <code>docker-compose.yml</code> if you need to recreate it) — the same base lab environment
+        chapters 20-28 use. <strong>Every output quoted above and below in this chapter was actually
+        captured against a live Keycloak 26.8.2 + PostgreSQL 17 stack</strong> — not narrated.</p>
 
         <ol class="lab-steps">
           <li><p>Bring the stack up and poll until ready, then recreate the realm, user, and the two clients this
           chapter needs:</p>
-<pre><code>cd labs/docker
-docker compose up -d
+<pre><code>docker compose up -d
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/realms/master/.well-known/openid-configuration)
   if [ "$code" = "200" ]; then echo "ready after attempt $i"; break; fi
@@ -567,10 +568,10 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $ADMI
 
           <li><p>Tear the stack down cleanly:</p>
 <pre><code>docker compose down -v</code></pre>
-<pre><code> Container docker-keycloak-1 Removed
- Container docker-postgres-1 Removed
- Volume docker_keycloak_pg_data Removed
- Network docker_default Removed</code></pre>
+<pre><code> Container keycloak-lab-keycloak-1 Removed
+ Container keycloak-lab-postgres-1 Removed
+ Volume keycloak-lab_keycloak_pg_data Removed
+ Network keycloak-lab_default Removed</code></pre>
 <pre><code>docker ps -a | grep keycloak      # no output
 docker volume ls | grep keycloak_pg_data   # no output</code></pre></li>
         </ol>

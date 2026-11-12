@@ -265,15 +265,15 @@
       <section class="slide" data-slide="lab-setup" data-title="Lab: realm, client &amp; service account">
         <h2>Lab: a real realm, a real confidential client, a real service account</h2>
         <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack — the same
-        <code>labs/docker/docker-compose.yml</code> environment every Part IV+ chapter uses, unmodified, in an
+        stack <a href="20-installing-keycloak.html">chapter 20</a> brought up, unmodified, in an
         isolated test instance for this chapter's own authoring. Every claimed outcome below is a real HTTP
         response, not a narrated one.</p>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll until Keycloak is ready, then authenticate <code>kcadm.sh</code>
-          and create a fresh <code>meridian-trust</code> realm:</p>
-          <pre><code>cd labs/docker
-docker compose up -d
+          <li><p>Bring the stack up (see chapter 20 for the exact <code>docker-compose.yml</code> if you
+          don't already have it running) and poll until Keycloak is ready, then authenticate
+          <code>kcadm.sh</code> and create a fresh <code>meridian-trust</code> realm:</p>
+          <pre><code>docker compose up -d
 # poll /realms/master/.well-known/openid-configuration until it returns 200, as in every prior lab chapter
 
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \

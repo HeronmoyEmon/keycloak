@@ -202,17 +202,18 @@
 
       <section class="slide" data-slide="lab-enable" data-title="Lab: turning both streams on">
         <h2>Lab: turning both streams on, for real</h2>
-        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-        <code>labs/docker/docker-compose.yml</code>, the same lab environment chapters 20-27 used — not narrated.
-        Each read is a separate, independent <code>kcadm.sh get</code> or <code>curl</code> call, never trusted
-        from an update command's own silent success.</p>
+        <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack via the
+        same <a href="20-installing-keycloak.html">chapter 20</a> <code>docker-compose.yml</code>
+        chapters 20-27 used — not narrated. Each read is a separate, independent <code>kcadm.sh get</code>
+        or <code>curl</code> call, never trusted from an update command's own silent success.</p>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll until ready, then authenticate and recreate
-          <code>northwind-apps</code> with its roles, groups, and the two users this course has used since chapter
-          22 (each chapter's lab starts from a fresh stack, per this course's convention):</p>
-<pre><code>cd labs/docker
-docker compose up -d
+          <li><p>From the same <code>keycloak-lab</code> folder (chapter 20 has the exact
+          <code>docker-compose.yml</code> if you need to recreate it), bring the stack up and poll until
+          ready, then authenticate and recreate <code>northwind-apps</code> with its roles, groups, and the
+          two users this course has used since chapter 22 (each chapter's lab starts from a fresh stack,
+          per this course's convention):</p>
+<pre><code>docker compose up -d
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:8080/realms/master/.well-known/openid-configuration)
