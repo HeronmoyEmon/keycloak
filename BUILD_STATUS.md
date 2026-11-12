@@ -8,9 +8,55 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
+**Self-contained-labs retrofit (user-requested, off-queue, ahead of the Final QA pass) — in progress,
+started 2026-11-12.** The user will only ever share this site's deployed Vercel link, never this GitHub
+repo — but every lab chapter currently tells the reader to `cd labs/<folder>` or references a file like
+`labs/docker/docker-compose.yml` as if they had the repo cloned. Fix: every lab becomes fully
+self-contained — real file contents pasted directly into the chapter with a copy button, a "files you'll
+need" menu before the first step, and commands that start from an empty folder, never a repo path.
+
+- **New site-wide infra, built and approved (user said "proceed" after reviewing the pattern on
+  chapter 20):** `assets/js/book.js`'s `initCodeBlocks()` auto-wraps every `<pre>` on every page with a
+  copy button (works retroactively across all ~535 existing `<pre>` blocks sitewide, zero markup changes
+  needed for plain command blocks); a `<pre data-filename="...">` attribute gets a header bar naming the
+  file instead. New `.callout--files-needed` style in `book.css` for the "files you'll need" menu
+  (anchor-links to each file's block, `id="file-<slugified-name>"`). Hidden/adjusted cleanly in
+  `print.css`.
+- **Reference chapter done:** chapter 20 rewritten — real `docker-compose.yml` pasted inline, a
+  "files you'll need" box, `mkdir keycloak-lab && cd keycloak-lab` instead of a repo path, and the compose
+  output transcript corrected to match (Docker names containers/network/volume after the folder name).
+  `labs.html` also fixed (same anti-pattern, a file-path table) — replaced with a "no repository
+  required" note pointing at chapter 20.
+- **Scope, confirmed with the user:** all 28 `hasLab:true` chapters (13-15 are curl-only against a public
+  demo server, already self-contained, no fix needed) plus the capstone. Split by actual content shape,
+  found via grepping each chapter for `labs/` before writing briefs:
+  - **Lightweight** (15 chapters: 21-31, 36, 46-48) — all reuse the *same, already-shown* chapter-20
+    `docker-compose.yml` unmodified, no new files of their own. Fix is prose/command edits only: drop
+    every `labs/docker` path reference, cross-link back to chapter 20 for the file (an internal site
+    link, not a repo path — fine to reuse rather than re-pasting the same 37-line file 15 times), and
+    change any leftover `cd labs/docker` commands to assume the same `keycloak-lab` folder. Four of these
+    (21, 24, 27, 29) also have old `docker-postgres-1`/`docker_default`-style transcript output that needs
+    the same `keycloak-lab-*` rename chapter 20's transcript got.
+  - **Heavy** (9 chapters: 32 ldap-federation, 33 custom-user-storage-spi, 34 spring-boot-resource-server,
+    35 react-spa, 37 authorization-services, 39 custom-spis, 40 custom-idp-and-required-actions,
+    41 high-availability-clustering, 42 keycloak-on-kubernetes) — each has its own real `labs/<folder>`
+    with files that exist nowhere else on the site; every one of those files gets fully inlined.
+  - **Capstone** (`capstone.html`) — currently the worst offender (defers almost entirely to
+    `capstone/README.md`/`docker-compose.yml`/`seed-realm.sh`/`billing-api`/`dashboard-spa`). Biggest,
+    most interconnected, handled as its own dedicated pass, not parallelized, same as its original build.
+- **Execution plan:** parallel fork agents, grouped into waves (lightweight chapters bundled 3-per-agent
+  since the fix is small and uniform per chapter; heavy chapters one agent each since each introduces
+  distinct real files; capstone last, alone). Each agent edits only its own chapter file directly — no
+  shared-data-file collisions this time (no new glossary/quiz content, pure content/markup rewrite), so
+  no central-merge splicing step is needed, only a verification pass (tag balance, internal links,
+  `data-filename`/menu-anchor consistency) before committing each wave.
+- **Not yet done, tracked here so a new session can resume cleanly if this gets interrupted:** which
+  wave is in flight, and which chapters remain, gets updated below after each wave completes.
+
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
-detail. **Queue item 21, the Final QA pass, is next and last** — closes out CLAUDE.md §8's Final QA gate
-and v1.0. The brief that built chapters 49-50 is preserved below for reference.
+detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out
+CLAUDE.md §8's Final QA gate and v1.0. The brief that built chapters 49-50 is preserved below for
+reference.
 
 - **Ch 49 — Becoming an IAM Specialist** (`chapters/49-becoming-an-iam-specialist.html`, slug
   `becoming-an-iam-specialist`, already placeholdered in `nav-data.js`). Skills matrix (vendor-neutral

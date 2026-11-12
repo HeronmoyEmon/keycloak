@@ -33,21 +33,23 @@
         environment below.</p>
     </div>
 
+    <div class="callout callout--key-idea">
+      <div class="callout-label">No repository required</div>
+      <p>Every lab chapter is fully self-contained: it gives you the complete, real contents of every
+        file it needs (compose files, config, source code) directly on the page, each with a copy
+        button, plus a short "files you'll need" checklist before the first step. You never need this
+        course's own source repository to follow a lab — a blank folder on your own machine and the
+        tools chapter 0 lists (Docker, a JDK, Node, Python, curl) are enough.</p>
+    </div>
+
     <div class="part-card">
       <h3>Keycloak + PostgreSQL (chapters 20-26, and most later Keycloak chapters)</h3>
       <p>A Docker Compose stack: Keycloak 26.8.2 (Quarkus distribution, <code>start-dev</code> mode) with
         a PostgreSQL 17 database. Confirmed working end to end before any chapter was built on it:
         the stack boots, the Admin Console and Admin REST API both come up, and <code>kcadm.sh</code>
-        (the admin CLI, bundled in the Keycloak image) can log in and create realms/users/roles/clients.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>File</th><th>Purpose</th></tr></thead>
-          <tbody>
-            <tr><td><code>labs/docker/docker-compose.yml</code></td><td>The stack definition</td></tr>
-            <tr><td><code>labs/docker/README.md</code></td><td>Start/stop instructions, credentials, <code>kcadm.sh</code> usage</td></tr>
-          </tbody>
-        </table>
-      </div>
+        (the admin CLI, bundled in the Keycloak image) can log in and create realms/users/roles/clients.
+        <a href="chapters/20-installing-keycloak.html">Chapter 20</a> gives you the exact
+        <code>docker-compose.yml</code> to create, with a copy button, and the commands to bring it up.</p>
       <p>Chapter 20 creates a single realm, <code>northwind-apps</code>, used as the running example
         through chapter 26 — each of those chapters' labs starts from a fresh
         <code>docker compose up</code> rather than one long-lived shared instance, and briefly

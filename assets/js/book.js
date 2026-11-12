@@ -138,11 +138,82 @@
     }).join("") + "</dl>";
   }
 
+  /* Copy-to-clipboard button, auto-injected around every <pre> on the page.
+     Plain command blocks get a floating "Copy" button; a <pre data-filename="...">
+     gets a header bar naming the file, with the button in it, so the markup for a
+     lab's file listing never needs anything beyond that one attribute. */
+  function copyText(text, btn) {
+    var original = btn.textContent;
+    function showCopied() {
+      btn.textContent = "Copied!";
+      btn.classList.add("copied");
+      setTimeout(function () {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 1500);
+    }
+    function fallback() {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        showCopied();
+      } catch (e) { /* clipboard unavailable; silently do nothing */ }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showCopied, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function initCodeBlocks() {
+    var pres = document.querySelectorAll("pre");
+    pres.forEach(function (pre) {
+      if (pre.closest(".code-block")) return; // already wrapped (defensive, shouldn't happen)
+      var filename = pre.getAttribute("data-filename");
+      var wrapper = document.createElement("div");
+      wrapper.className = "code-block" + (filename ? "" : " code-block--plain");
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "code-copy-btn";
+      btn.textContent = "Copy";
+      btn.setAttribute("aria-label", filename ? "Copy " + filename + " to clipboard" : "Copy command to clipboard");
+      btn.addEventListener("click", function () {
+        var codeEl = pre.querySelector("code") || pre;
+        copyText(codeEl.textContent, btn);
+      });
+
+      if (filename) {
+        var header = document.createElement("div");
+        header.className = "code-block-header";
+        var nameSpan = document.createElement("span");
+        nameSpan.className = "code-block-filename";
+        nameSpan.textContent = filename;
+        header.appendChild(nameSpan);
+        header.appendChild(btn);
+        wrapper.insertBefore(header, pre);
+      } else {
+        wrapper.appendChild(btn);
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initThemeAndFont();
     buildSidebar();
     wireTopBar();
     buildChapterFooter();
     renderChapterGlossary();
+    initCodeBlocks();
   });
 })();

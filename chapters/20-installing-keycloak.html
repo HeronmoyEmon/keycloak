@@ -72,10 +72,12 @@
 
       <section class="slide" data-slide="stack-diagram" data-title="The lab stack">
         <h2>The lab environment: bringing the stack up for real</h2>
-        <p>This chapter's lab lives in <code>labs/docker/docker-compose.yml</code> — a two-service stack
-        (Keycloak 26.8.2 + PostgreSQL 17) that every Part IV chapter reuses. It was built and independently
-        confirmed working in an earlier session; this chapter re-ran it from a clean state rather than trusting
-        that confirmation secondhand.</p>
+        <p>This chapter's lab is one file you create yourself: a two-service Docker Compose stack
+        (Keycloak 26.8.2 + PostgreSQL 17) that every Part IV-V chapter reuses as-is. You don't need this
+        site's own source repository to run it — the complete, real file is given on the next slide, with
+        a copy button, exactly as it was actually built and run for this course. It was independently
+        confirmed working end to end in an earlier session; this chapter re-ran it from a clean state
+        rather than trusting that confirmation secondhand.</p>
 
         <figure class="diagram">
           <svg viewBox="0 0 900 300" role="img" aria-labelledby="t0 d0">
@@ -123,24 +125,83 @@
 
       <section class="slide" data-slide="stack-lab-steps" data-title="Lab: bring the stack up">
         <h2>Lab: bring the stack up and confirm it's ready</h2>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-docker-compose-yml"><code>docker-compose.yml</code></a> — the only file this
+            lab needs: a two-service stack definition (Keycloak 26.8.2 + PostgreSQL 17). Requires Docker
+            Engine or Docker Desktop with the Compose plugin (confirmed on Docker 29.x per chapter 0's
+            environment setup) — nothing else to install.</li>
+          </ul>
+        </div>
+
         <ol class="lab-steps">
-          <li><p>Start the stack from <code>labs/docker/</code>:</p>
-<pre><code>cd labs/docker
-docker compose up -d</code></pre>
-<pre><code> Network docker_default Creating
- Network docker_default Created
- Volume docker_keycloak_pg_data Creating
- Volume docker_keycloak_pg_data Created
- Container docker-postgres-1 Creating
- Container docker-postgres-1 Created
- Container docker-keycloak-1 Creating
- Container docker-keycloak-1 Created
- Container docker-postgres-1 Starting
- Container docker-postgres-1 Started
- Container docker-postgres-1 Waiting
- Container docker-postgres-1 Healthy
- Container docker-keycloak-1 Starting
- Container docker-keycloak-1 Started</code></pre>
+          <li><p>Make a new, empty folder for this lab and move into it — everything from here on assumes
+          you're inside it:</p>
+<pre><code>mkdir keycloak-lab
+cd keycloak-lab</code></pre>
+          <p>Create a file named <code>docker-compose.yml</code> inside that folder with exactly this
+          content (click Copy, paste it in, save it):</p>
+<pre id="file-docker-compose-yml" data-filename="docker-compose.yml"><code>services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - keycloak_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  keycloak_pg_data:</code></pre>
+          <p>This is the real file this chapter's lab actually ran — not a simplified stand-in. Port 8080
+          is the Admin Console and Admin REST API; port 9000 is a separate management port for
+          <code>/health</code>/<code>/metrics</code> (chapter 28's subject — it's set up correctly here
+          from the start). Now bring the stack up from inside the same folder:</p>
+<pre><code>docker compose up -d</code></pre>
+<pre><code> Network keycloak-lab_default Creating
+ Network keycloak-lab_default Created
+ Volume keycloak-lab_keycloak_pg_data Creating
+ Volume keycloak-lab_keycloak_pg_data Created
+ Container keycloak-lab-postgres-1 Creating
+ Container keycloak-lab-postgres-1 Created
+ Container keycloak-lab-keycloak-1 Creating
+ Container keycloak-lab-keycloak-1 Created
+ Container keycloak-lab-postgres-1 Starting
+ Container keycloak-lab-postgres-1 Started
+ Container keycloak-lab-postgres-1 Waiting
+ Container keycloak-lab-postgres-1 Healthy
+ Container keycloak-lab-keycloak-1 Starting
+ Container keycloak-lab-keycloak-1 Started</code></pre>
+          <p>Docker Compose names the network, volume, and containers after your folder name
+          (<code>keycloak-lab</code>) by default — if you named your folder something else, you'll see
+          that name here instead. That's expected and harmless; nothing in the rest of this lab depends
+          on the exact project name.</p>
           <p>Note the ordering: Postgres starts first and the compose file's <code>depends_on: condition:
           service_healthy</code> makes Keycloak wait for Postgres's own healthcheck
           (<code>pg_isready</code>) before it starts at all — Keycloak never gets a chance to race a database
@@ -497,9 +558,9 @@ keycloak-1  | 2026-11-10 08:06:16,728 INFO  [io.quarkus] (main) Keycloak 26.8.2 
       <section class="slide" data-slide="takeaways" data-title="Takeaways">
         <h2>Takeaways</h2>
         <ul class="takeaways">
-          <li>This chapter's lab ran against a real Keycloak 26.8.2 + PostgreSQL 17 stack via
-          <code>labs/docker/docker-compose.yml</code> — every command and output shown was actually executed,
-          not narrated.</li>
+          <li>This chapter's lab ran against a real Keycloak 26.8.2 + PostgreSQL 17 stack from the exact
+          <code>docker-compose.yml</code> given on this chapter's own lab slide — every command and output
+          shown was actually executed, not narrated.</li>
           <li>Keycloak's own boot log explicitly says "Running the server in development mode. DO NOT use this
           configuration in production" — the warning is printed on every single <code>start-dev</code> boot, not
           a one-time notice.</li>

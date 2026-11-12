@@ -1,7 +1,8 @@
 /* Print stylesheet: expand content, hide interactive chrome */
 @media print {
   .top-bar, .sidebar, .sidebar-toggle, .quiz-controls, .quiz-option,
-  .icon-btn, .chapter-nav, .progress-track { display: none !important; }
+  .icon-btn, .chapter-nav, .progress-track, .code-copy-btn { display: none !important; }
+  .code-block-header { background: #fff; border-color: #999; }
   body { background: #fff; color: #000; }
   main.content { display: block; padding: 0; }
   .content-inner { max-width: 100%; }
