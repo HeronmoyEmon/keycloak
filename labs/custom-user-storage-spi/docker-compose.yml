@@ -1,18 +1,17 @@
 # Chapter 33's own, isolated Keycloak + PostgreSQL stack.
 #
-# This is deliberately a SEPARATE compose file from labs/docker/docker-compose.yml, not an override
-# of it: this chapter needs a Keycloak instance with a custom provider JAR mounted into
-# /opt/keycloak/providers/, which the shared lab stack every other Keycloak chapter uses should
-# never be asked to carry around permanently. Bring it up with its own project name so it never
-# collides with the shared stack or any other chapter's isolated stack:
+# This is deliberately a SEPARATE compose file from the shared Keycloak + PostgreSQL stack chapter 20
+# gives you, not an override of it: this chapter needs a Keycloak instance with a custom provider JAR
+# mounted into /opt/keycloak/providers/, which that shared stack should never be asked to carry around
+# permanently. Bring it up with its own project name so it never collides with the shared stack or any
+# other chapter's isolated stack:
 #
-#   cd labs/custom-user-storage-spi
 #   mvn clean package
 #   docker compose -p ch33kc up -d
 #
 # Keycloak is published on host port 18133 (http://localhost:18133), matching every other Part VI
 # chapter's pattern of giving each new, chapter-owned stack its own port so it can run alongside the
-# shared labs/docker stack without a port clash.
+# shared stack without a port clash.
 services:
   postgres:
     image: postgres:17-alpine

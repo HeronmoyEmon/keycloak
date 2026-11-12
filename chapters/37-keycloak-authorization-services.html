@@ -428,15 +428,66 @@
         <h2>Lab: a real realm, a real resource-server client, a real role, two real users</h2>
         <p>Everything below was actually run against a real Keycloak 26.8.2 + PostgreSQL 17 stack —
         confirmed live at <code>/admin/serverinfo</code> — standing in its own isolated Docker Compose
-        project (<code>ch37kc</code>, host port <strong>18137</strong>, never the shared
-        <code>labs/docker/docker-compose.yml</code> stack other chapters use). Every output below is a real
-        HTTP response or real <code>kcadm.sh</code> output, not narrated.</p>
+        project (<code>ch37kc</code>, host port <strong>18137</strong>). This is a genuinely separate
+        stack from chapter 20's, not a reuse of it — different project name, different port, its own
+        Postgres volume — so it needs its own file, given below. Every output below is a real HTTP
+        response or real <code>kcadm.sh</code> output, not narrated.</p>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-authz-docker-compose-yml"><code>docker-compose.yml</code></a> — an
+            isolated Keycloak 26.8.2 + PostgreSQL 17 stack, deliberately separate from chapter 20's own
+            stack (project name <code>ch37kc</code>, host port 18137) so this lab can run side by side
+            with another chapter's without a port collision.</li>
+          </ul>
+        </div>
 
         <ol class="lab-steps">
-          <li><p>Bring the isolated stack up, poll until ready, authenticate <code>kcadm.sh</code>, and
-          create the realm:</p>
-          <pre><code>cd labs/authorization-services
-docker compose -p ch37kc up -d
+          <li><p>Make a new, empty folder for this lab and move into it:</p>
+          <pre><code>mkdir ch37-authz-lab
+cd ch37-authz-lab</code></pre>
+          <p>Create a file named <code>docker-compose.yml</code> inside it with exactly this content:</p>
+          <pre id="file-authz-docker-compose-yml" data-filename="docker-compose.yml"><code># Chapter 37 lab environment: Keycloak + PostgreSQL, isolated for Authorization Services work.
+# Project name ch37kc, host port 18137, so it never collides with another chapter's stack.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch37_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "18137:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch37_pg_data:</code></pre>
+          <p>Bring the stack up, poll until ready, authenticate <code>kcadm.sh</code>, and create the
+          realm:</p>
+          <pre><code>docker compose -p ch37kc up -d
 # poll http://localhost:18137/realms/master/.well-known/openid-configuration until it returns 200
 
 docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
@@ -673,12 +724,11 @@ docker compose -p ch37kc exec keycloak /opt/keycloak/bin/kcadm.sh update \
       <section class="slide" data-slide="lab-teardown" data-title="Lab: tear down">
         <h2>Lab: tear down</h2>
         <p>This lab's isolated stack is torn down completely once the chapter's checks above have all been
-        reproduced:</p>
-        <pre><code>cd labs/authorization-services
-docker compose -p ch37kc down -v</code></pre>
-        <p>The supporting <code>docker-compose.yml</code> and a README documenting every step above live in
-        <code>labs/authorization-services/</code> for anyone who wants to reproduce this lab exactly, the
-        same pattern chapter 32's <code>labs/ldap-federation/</code> folder established.</p>
+        reproduced, from the same <code>ch37-authz-lab</code> folder:</p>
+        <pre><code>docker compose -p ch37kc down -v</code></pre>
+        <p>Every file and command needed to reproduce this lab exactly is given above on this page — the
+        <code>docker-compose.yml</code> this lab created, plus every <code>kcadm.sh</code> and
+        <code>curl</code> command run against it.</p>
       </section>
 
       <section class="slide" data-slide="common-mistakes" data-title="Common mistakes">

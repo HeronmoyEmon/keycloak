@@ -63,8 +63,9 @@
         <code>org.springframework.boot:spring-boot</code>, queried live
         (<code>repo1.maven.org</code>) to pin the exact current Spring Boot version rather than guess it;
         and this chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker
-        Compose stack (<code>labs/docker/docker-compose.yml</code>, unmodified) plus a real Spring Boot app
-        this chapter owns (<code>labs/spring-boot-resource-server/</code>).</p>
+        Compose stack (the same one <a href="20-installing-keycloak.html">chapter 20</a> brought up,
+        unmodified) plus a real Spring Boot app this chapter gives you the complete source for, file by
+        file, in the lab below.</p>
       </section>
 
       <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
@@ -209,14 +210,15 @@
 
         <div class="callout callout--pitfall">
           <div class="callout-label">Reader-facing port note — get this right</div>
-          <p>This chapter's Keycloak instance uses the same <code>labs/docker/docker-compose.yml</code>
-          every chapter since 20 has used, unmodified, publishing <strong>8080</strong> (Admin
-          Console/Admin REST API/token endpoint) and <strong>9000</strong> (health/metrics, chapter 28).
-          If this app's own <code>server.port</code> also defaulted to 8080, starting it alongside Keycloak
-          — which this chapter's entire point requires — would fail immediately with a port-already-in-use
-          error. <code>labs/spring-boot-resource-server/src/main/resources/application.properties</code>
-          therefore ships with <code>server.port=8081</code> as the actual shipped default, not a
-          one-off override used only for this chapter's own test run.</p>
+          <p>This chapter's Keycloak instance uses the same <code>docker-compose.yml</code>
+          <a href="20-installing-keycloak.html">chapter 20</a> brought up, unmodified, publishing
+          <strong>8080</strong> (Admin Console/Admin REST API/token endpoint) and <strong>9000</strong>
+          (health/metrics, chapter 28). If this app's own <code>server.port</code> also defaulted to
+          8080, starting it alongside Keycloak — which this chapter's entire point requires — would fail
+          immediately with a port-already-in-use error. This chapter's own
+          <code>application.properties</code> (given in full in the lab below) therefore ships with
+          <code>server.port=8081</code> as the actual shipped default, not a one-off override used only
+          for this chapter's own test run.</p>
         </div>
 
         <figure class="diagram">
@@ -401,10 +403,12 @@
 
       <section class="slide" data-slide="lab-keycloak-setup" data-title="Lab: realm, roles, clients, users">
         <h2>Lab: setting up a real Keycloak realm for this chapter's API</h2>
-        <p>Reader-facing commands below assume the standard stack is already up
-        (<code>cd labs/docker &amp;&amp; docker compose up -d</code>, port 8080) — this chapter's own test
-        run used an isolated project name/port (<code>ch34kc</code> / 18134) purely to avoid colliding with
-        two sibling chapters built in parallel; every command shown here is the plain, reader-facing form.</p>
+        <p>Reader-facing commands below assume the standard stack
+        <a href="20-installing-keycloak.html">chapter 20</a> brought up is already running
+        (<code>docker compose up -d</code> from that same <code>keycloak-lab</code> folder, port 8080) —
+        this chapter's own test run used an isolated project name/port (<code>ch34kc</code> / 18134)
+        purely to avoid colliding with two sibling chapters built in parallel; every command shown here is
+        the plain, reader-facing form.</p>
         <ol class="lab-steps">
           <li><p><strong>Create the realm and its two roles</strong>:</p>
           <pre><code>kcadm.sh create realms -s realm=northwind-apps -s enabled=true
@@ -470,6 +474,368 @@ kcadm.sh set-password -r northwind-apps --username priya.sales --new-password 'S
           something this chapter's own code or configuration introduced. The fix was adding the two
           attributes the commands above already include — no realm-setting change was needed this time,
           unlike chapter 33's version of this same profile-completeness gap.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-app-files" data-title="Lab: the billing API's files">
+        <h2>Lab: the billing API's complete source, file by file</h2>
+        <p>No repository is needed for this lab — every file below is the real, complete source this
+        chapter's app actually ran, given here in full so you can create it yourself from scratch.</p>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-pom-xml"><code>pom.xml</code></a> — the Maven build: Spring Boot
+            <code>4.1.2</code> parent, the web + OAuth2 resource-server starters.</li>
+            <li><a href="#file-billingapiapplication-java"><code>BillingApiApplication.java</code></a> —
+            the Spring Boot entry point.</li>
+            <li><a href="#file-securityconfig-java"><code>SecurityConfig.java</code></a> — the
+            resource-server filter chain: stateless sessions, CSRF disabled, URL- and method-level
+            authorization, the custom role converter wired in.</li>
+            <li><a href="#file-keycloakrealmroleconverter-java"><code>KeycloakRealmRoleConverter.java</code></a>
+            — reads Keycloak's <code>realm_access.roles</code> claim and turns it into Spring Security
+            authorities (the fix for this chapter's gotcha, two slides back).</li>
+            <li><a href="#file-billingcontroller-java"><code>BillingController.java</code></a> — the three
+            endpoints this chapter's lab actually calls.</li>
+            <li><a href="#file-application-properties"><code>application.properties</code></a> — the port
+            (<code>8081</code>) and the <code>issuer-uri</code> pointing at the realm.</li>
+          </ul>
+        </div>
+
+        <ol class="lab-steps">
+          <li><p>Create the Maven project layout — Maven expects Java sources at
+          <code>src/main/java/&lt;package-path&gt;</code>, so the nested folders matter:</p>
+<pre><code>mkdir -p billing-api/src/main/java/com/northwindapps/billing
+mkdir -p billing-api/src/main/resources
+cd billing-api</code></pre></li>
+
+          <li><p>Create <code>pom.xml</code> directly inside <code>billing-api/</code>:</p>
+<pre id="file-pom-xml" data-filename="pom.xml"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!--
+  Northwind Apps billing/invoicing API: a real Spring Boot OAuth2 Resource Server validating
+  Keycloak-issued JWTs, built for chapter 34 (Securing a Backend API) of the IAM and Keycloak
+  Mastery course.
+
+  Spring Boot version was live-verified against repo1.maven.org's maven-metadata.xml for
+  org.springframework.boot:spring-boot immediately before this POM was written (2026-11-11):
+  4.1.2 is the newest fully released GA version (4.2.0 exists only as M1/M2/RC1/RC2 as of that
+  check, so 4.2 is not yet GA), pinned here rather than guessed. Spring Boot 4.x's parent POM
+  defaults java.version to 17; this project overrides it to 21, the JDK confirmed available on
+  the dev machine (java version reports OpenJDK 21.0.13).
+
+  Reader facing port note: this app's own server.port defaults to 8081 in
+  src/main/resources/application.properties, deliberately NOT 8080, since this chapter's
+  Keycloak instance (the same stack chapter 20 brought up, unmodified) already occupies 8080
+  and 9000, and a reader following this chapter runs both side by side.
+--&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;parent&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+    &lt;version&gt;4.1.2&lt;/version&gt;
+    &lt;relativePath/&gt;
+  &lt;/parent&gt;
+
+  &lt;groupId&gt;com.northwindapps&lt;/groupId&gt;
+  &lt;artifactId&gt;billing-api&lt;/artifactId&gt;
+  &lt;version&gt;1.0.0&lt;/version&gt;
+  &lt;packaging&gt;jar&lt;/packaging&gt;
+
+  &lt;name&gt;Northwind Apps Billing API&lt;/name&gt;
+  &lt;description&gt;
+    A small Spring Boot OAuth2 Resource Server securing a billing/invoicing API with
+    Keycloak-issued JWTs, for chapter 34 of the IAM &amp;amp; Keycloak Mastery course.
+  &lt;/description&gt;
+
+  &lt;properties&gt;
+    &lt;java.version&gt;21&lt;/java.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-oauth2-resource-server&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+      &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+
+&lt;/project&gt;</code></pre></li>
+
+          <li><p>Create <code>src/main/java/com/northwindapps/billing/BillingApiApplication.java</code>:</p>
+<pre id="file-billingapiapplication-java" data-filename="src/main/java/com/northwindapps/billing/BillingApiApplication.java"><code>package com.northwindapps.billing;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * Northwind Apps billing/invoicing API -- the chapter 34 lab's Spring Boot OAuth2 Resource
+ * Server. See {@link SecurityConfig} for the JWT validation and authorization wiring, and
+ * {@link BillingController} for the three endpoints this chapter curls at three different
+ * protection levels.
+ */
+@SpringBootApplication
+public class BillingApiApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(BillingApiApplication.class, args);
+    }
+}</code></pre></li>
+
+          <li><p>Create <code>src/main/java/com/northwindapps/billing/SecurityConfig.java</code>:</p>
+<pre id="file-securityconfig-java" data-filename="src/main/java/com/northwindapps/billing/SecurityConfig.java"><code>package com.northwindapps.billing;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * Wires this app up as an OAuth2 Resource Server: every request is authenticated (or rejected)
+ * based solely on a bearer JWT's validity against the realm named in
+ * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} -- no session, no cookie, no
+ * login form of its own. This is "What concept is this?" territory recalled concretely: chapter
+ * 8 named the bearer-token model and chapter 16 named signature verification against a JWKS;
+ * this class is where Spring Security actually performs both, automatically, once
+ * {@code spring-boot-starter-oauth2-resource-server} is on the classpath and an issuer-uri is
+ * configured -- fetching {@code &lt;issuer-uri&gt;/.well-known/openid-configuration} to learn the
+ * token issuer and jwks_uri, then verifying every incoming token's signature, issuer, and
+ * expiry against that JWKS automatically on every request (see this chapter's validation-flow
+ * diagram).
+ *
+ * &lt;p&gt;The one piece Spring Security does &lt;em&gt;not&lt;/em&gt; do automatically, correctly, out of the
+ * box against a Keycloak-issued token is turn that token's roles into Spring Security
+ * authorities -- see {@link KeycloakRealmRoleConverter}'s javadoc for the real gotcha this
+ * chapter's lab hit and how {@code jwtAuthenticationConverter()} below fixes it.
+ */
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            // This API is a pure resource server: every caller presents a fresh bearer token on
+            // every request, so there is no server-side session to create or maintain.
+            .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // A resource server validating only bearer tokens (never a browser form submission)
+            // has no CSRF-vulnerable session-cookie-based state to protect -- CSRF protection is
+            // a defense for cookie-authenticated, browser-based requests, which this API never
+            // accepts (chapter 18 covers CSRF defenses for flows that genuinely need them).
+            .csrf(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(authorize -&gt; authorize
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/invoices/**").hasAnyRole("billing-reader", "billing-admin")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -&gt; oauth2
+                .jwt(jwt -&gt; jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+            );
+        return http.build();
+    }
+
+    /**
+     * Combines Spring Security's default JWT claim extraction ({@code sub} as the principal
+     * name) with {@link KeycloakRealmRoleConverter}'s realm-role-to-authority mapping, instead
+     * of the default {@code JwtGrantedAuthoritiesConverter} that looks for a {@code scope}/
+     * {@code scp} claim Keycloak's access tokens don't carry in that shape.
+     */
+    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
+        return converter;
+    }
+}</code></pre></li>
+
+          <li><p>Create <code>src/main/java/com/northwindapps/billing/KeycloakRealmRoleConverter.java</code>:</p>
+<pre id="file-keycloakrealmroleconverter-java" data-filename="src/main/java/com/northwindapps/billing/KeycloakRealmRoleConverter.java"><code>package com.northwindapps.billing;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+
+/**
+ * Converts a Keycloak-issued JWT's {@code realm_access.roles} claim into Spring Security
+ * {@link GrantedAuthority} instances, each prefixed {@code ROLE_} so {@code hasRole(...)} and
+ * {@code @PreAuthorize("hasRole(...)")} work the way Spring Security expects.
+ *
+ * &lt;p&gt;This class exists because of a real, well-documented gap -- confirmed the hard way while
+ * building this chapter's lab, not assumed up front: Spring Security's own default JWT-to-
+ * authorities converter ({@code JwtGrantedAuthoritiesConverter}) looks for a {@code scope} or
+ * {@code scp} claim (space-separated OAuth2 scopes), which is the shape a generic OAuth2
+ * authorization server's access token carries. Keycloak's access tokens carry roles in a
+ * differently-shaped, Keycloak-specific claim instead:
+ *
+ * &lt;pre&gt;
+ * "realm_access": { "roles": ["billing-reader", "offline_access", "uma_authorization"] }
+ * &lt;/pre&gt;
+ *
+ * Without this converter, every endpoint protected with {@code hasRole("billing-reader")} or
+ * similar returns 403 for every caller, no matter how correctly that caller's token was issued
+ * and signed -- the token is valid and authenticated, but Spring Security never extracts any
+ * authority named {@code ROLE_billing-reader} from it, because it was never looking at
+ * {@code realm_access} in the first place. This chapter's "common mistakes" section covers the
+ * exact 403 this produces and how it was diagnosed.
+ */
+public class KeycloakRealmRoleConverter implements Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt; {
+
+    private static final String REALM_ACCESS_CLAIM = "realm_access";
+    private static final String ROLES_CLAIM = "roles";
+    private static final String ROLE_AUTHORITY_PREFIX = "ROLE_";
+
+    @Override
+    public Collection&lt;GrantedAuthority&gt; convert(Jwt jwt) {
+        Map&lt;String, Object&gt; realmAccess = jwt.getClaim(REALM_ACCESS_CLAIM);
+        if (realmAccess == null || !(realmAccess.get(ROLES_CLAIM) instanceof List&lt;?&gt; roles)) {
+            return List.of();
+        }
+        return roles.stream()
+                .map(Object::toString)
+                .map(role -&gt; new SimpleGrantedAuthority(ROLE_AUTHORITY_PREFIX + role))
+                .collect(Collectors.toList());
+    }
+}</code></pre></li>
+
+          <li><p>Create <code>src/main/java/com/northwindapps/billing/BillingController.java</code>:</p>
+<pre id="file-billingcontroller-java" data-filename="src/main/java/com/northwindapps/billing/BillingController.java"><code>package com.northwindapps.billing;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Three endpoints at three different protection levels, exactly as chapter 34's brief asks for:
+ *
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code GET /api/public/health} -- no token required at all.&lt;/li&gt;
+ *   &lt;li&gt;{@code GET /api/invoices} -- any caller holding the realm role {@code billing-reader}
+ *       or {@code billing-admin} (enforced in {@link SecurityConfig}'s filter chain, before this
+ *       method body ever runs).&lt;/li&gt;
+ *   &lt;li&gt;{@code POST /api/invoices} -- only a caller holding {@code billing-admin}, enforced here
+ *       with method-level {@code @PreAuthorize} instead of the filter chain, to show both
+ *       enforcement styles for real in the same small app.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Invoice data is an in-memory stand-in (no database) -- this chapter's subject is the
+ * security boundary in front of the API, not the billing domain behind it.
+ */
+@RestController
+@RequestMapping("/api")
+public class BillingController {
+
+    private final List&lt;Map&lt;String, Object&gt;&gt; invoices = new java.util.concurrent.CopyOnWriteArrayList&lt;&gt;(List.of(
+            Map.of("id", 1001, "customer", "Acme Robotics", "amountUsd", 4200.00, "status", "paid"),
+            Map.of("id", 1002, "customer", "Blue Harbor Logistics", "amountUsd", 980.50, "status", "overdue")
+    ));
+    private final AtomicLong nextId = new AtomicLong(1003);
+
+    @GetMapping("/public/health")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; health() {
+        return ResponseEntity.ok(Map.of(
+                "status", "up",
+                "service", "northwind-apps-billing-api",
+                "time", Instant.now().toString()
+        ));
+    }
+
+    @GetMapping("/invoices")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; listInvoices(JwtAuthenticationToken auth) {
+        Jwt jwt = (Jwt) auth.getCredentials();
+        return ResponseEntity.ok(Map.of(
+                "invoices", invoices,
+                "requestedBy", jwt.getClaimAsString("preferred_username") != null
+                        ? jwt.getClaimAsString("preferred_username")
+                        : jwt.getSubject(),
+                "callerAuthorities", auth.getAuthorities().stream().map(Object::toString).toList()
+        ));
+    }
+
+    @PostMapping("/invoices")
+    @PreAuthorize("hasRole('billing-admin')")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; createInvoice(@RequestBody Map&lt;String, Object&gt; body) {
+        long id = nextId.getAndIncrement();
+        Map&lt;String, Object&gt; invoice = Map.of(
+                "id", id,
+                "customer", body.getOrDefault("customer", "Unknown"),
+                "amountUsd", body.getOrDefault("amountUsd", 0.0),
+                "status", "draft"
+        );
+        invoices.add(invoice);
+        return ResponseEntity.status(201).body(invoice);
+    }
+
+    @GetMapping("/invoices/{id}")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; getInvoice(@PathVariable long id) {
+        return invoices.stream()
+                .filter(inv -&gt; ((Number) inv.get("id")).longValue() == id)
+                .findFirst()
+                .&lt;ResponseEntity&lt;Map&lt;String, Object&gt;&gt;&gt;map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+}</code></pre></li>
+
+          <li><p>Create <code>src/main/resources/application.properties</code>:</p>
+<pre id="file-application-properties" data-filename="src/main/resources/application.properties"><code># Northwind Apps billing API -- reader-facing defaults.
+#
+# server.port is deliberately NOT 8080: this chapter's Keycloak instance (the same stack
+# chapter 20 brought up, started with the plain `docker compose up -d`) already publishes 8080
+# (Admin Console / Admin REST API / token endpoint) and 9000 (health/metrics). A reader runs
+# both this app and that Keycloak side by side, so this app needs its own port.
+server.port=8081
+
+# Spring Security's OAuth2 Resource Server support fetches this realm's OpenID Connect discovery
+# document (http://localhost:8080/realms/northwind-apps/.well-known/openid-configuration) at
+# startup to learn the token issuer and JWKS endpoint, then caches and auto-refreshes the JWKS
+# (chapter 16's JWK Set, ch08/ch16 recalled on this chapter's second slide) used to verify every
+# incoming JWT's signature.
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8080/realms/northwind-apps
+
+# Keep Spring Security's own request logging reasonably visible while working through the lab;
+# turn this down (or remove it) for anything beyond local lab use.
+logging.level.org.springframework.security=INFO</code></pre></li>
         </ol>
       </section>
 

@@ -50,8 +50,34 @@ need" menu before the first step, and commands that start from an empty folder, 
   shared-data-file collisions this time (no new glossary/quiz content, pure content/markup rewrite), so
   no central-merge splicing step is needed, only a verification pass (tag balance, internal links,
   `data-filename`/menu-anchor consistency) before committing each wave.
-- **Not yet done, tracked here so a new session can resume cleanly if this gets interrupted:** which
-  wave is in flight, and which chapters remain, gets updated below after each wave completes.
+- **Wave 1 (lightweight, 12 chapters touched + ch26 needed no change) — DONE, committed `465b60a`.**
+  Chapters 21-25, 27-31, 36, 48: dropped every `cd labs/...`/`labs/docker/...` reference, cross-linked
+  back to chapter 20 instead of re-pasting its file, and renamed stale `docker-postgres-1`/
+  `docker_default`-style transcript naming in 21/24/27/29 to the `keycloak-lab-*` convention. 5 parallel
+  fork agents, verified centrally (tag balance, zero remaining `labs/` references, link resolution) —
+  no shared-data-file collisions since this is pure markup/prose, so no splice step was needed.
+- **Wave 2 (heavy, 9 chapters) — DONE, committed `58caba1` (ch39, self-committed by its own agent —
+  independently re-verified, see below) + a second commit for the other 8.** 32 ldap-federation,
+  33 custom-user-storage-spi, 34 spring-boot-resource-server, 35 react-spa (which also re-ran a real
+  `npm install` to capture accurate transcript output, per CLAUDE.md §2 rule 5), 37 authorization-
+  services (whose compose file turned out to be a genuinely separate isolated stack from chapter 20's,
+  not a duplicate — correctly inlined in full rather than cross-linked), 39 custom-spis,
+  40 custom-idp-and-required-actions, 41 high-availability-clustering, 42 keycloak-on-kubernetes.
+  9 parallel fork agents (41+42 bundled as one, both small). Coordinator independently re-verified
+  (not just trusted the reports): zero remaining `labs/` references across all 9 files; every
+  files-needed-menu anchor matches a real `id` (programmatic check, 50 anchors/ids total across the 9
+  files, zero mismatches); byte-exact diff of a spot-check sample (7 of the heaviest inlined
+  Java/XML/Python/FTL files) against the real source on disk — all matched exactly; nested
+  `mkdir -p` directory structures in 33/39/40 checked against the real Java package paths — correct.
+  One agent (ch33) also fixed a stale repo-path comment inside the *source*
+  `labs/custom-user-storage-spi/docker-compose.yml` itself, so the file a reader copies is clean too —
+  reviewed and kept. Process note: the ch39 agent committed on its own initiative (not instructed to);
+  reviewed its commit message (no attribution-line violation) and its diff independently before
+  accepting it rather than re-doing the work.
+- **Wave 3 (capstone) — not started.** Biggest, most interconnected (compose file, seed script,
+  `billing-api` ~8 files, `dashboard-spa` ~15 files) — dedicated single pass, not parallelized.
+- Tracked here so a new session can resume cleanly if this gets interrupted: whichever wave isn't yet
+  marked done above is the one to pick up.
 
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
 detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out

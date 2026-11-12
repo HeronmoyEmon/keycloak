@@ -230,9 +230,85 @@ deployment "keycloak-operator" successfully rolled out</code></pre>
 
       <section class="slide" data-slide="lab-db-tls" data-title="Lab: dev database and TLS">
         <h2>Hands-on: ephemeral Postgres, a DB secret, and a dev TLS cert</h2>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-example-postgres-yaml"><code>example-postgres.yaml</code></a> — an
+            ephemeral, dev-only PostgreSQL StatefulSet + Service (below).</li>
+            <li><a href="#file-example-kc-yaml"><code>example-kc.yaml</code></a> — the Keycloak custom
+            resource the Operator reconciles into a running server (next slide).</li>
+          </ul>
+          <p style="margin-top:0.6em;">Also needs: the local <code>kind</code> cluster and Operator
+          install the previous slide already walked through, plus <code>kubectl</code> and
+          <code>openssl</code> (both covered by chapter 0's environment setup).</p>
+        </div>
+
         <p>The Operator docs' own example uses an ephemeral, <code>emptyDir</code>-backed PostgreSQL StatefulSet
         for development — data doesn't survive a restart, which is fine here since the whole cluster gets
-        deleted at the end anyway (full manifest in <code>labs/keycloak-on-kubernetes/example-postgres.yaml</code>):</p>
+        deleted at the end anyway. Create a file named <code>example-postgres.yaml</code> with exactly
+        this content:</p>
+<pre id="file-example-postgres-yaml" data-filename="example-postgres.yaml"><code># Ephemeral, development-only PostgreSQL for the Keycloak Operator lab (chapter 42).
+# Copied in structure from https://www.keycloak.org/operator/basic-deployment's own
+# "Dev PostgreSQL Database" example (same StatefulSet/Service shape, same emptyDir
+# storage -- data is lost if the pod restarts, which is fine for this lab since the
+# whole kind cluster gets deleted at the end anyway). Namespaced to `keycloak` to
+# match the operator's default namespace-scoped install.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-db
+  namespace: keycloak
+spec:
+  serviceName: postgresql-db-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql-db
+  template:
+    metadata:
+      labels:
+        app: postgresql-db
+    spec:
+      containers:
+        - name: postgresql-db
+          image: postgres:15
+          volumeMounts:
+            - mountPath: /data
+              name: cache-volume
+          env:
+            - name: POSTGRES_USER
+              value: testuser
+            - name: POSTGRES_PASSWORD
+              value: testpassword
+            - name: PGDATA
+              value: /data/pgdata
+            - name: POSTGRES_DB
+              value: keycloak
+          ports:
+            - containerPort: 5432
+      volumes:
+        - name: cache-volume
+          emptyDir: {}
+---
+# NOTE: the Service Keycloak actually connects to is named `postgres-db` (not
+# `postgresql-db`, the StatefulSet's name) -- the docs' own example has this same
+# one-letter naming mismatch between the two objects, and it is easy to typo when
+# copying by hand. `type: LoadBalancer` stays &lt;pending&gt; on kind (no cloud LB
+# controller), but the ClusterIP it also gets assigned is all Keycloak needs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+  namespace: keycloak
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgresql-db</code></pre>
+        <p>Apply it:</p>
         <pre><code>$ kubectl apply -f example-postgres.yaml
 statefulset.apps/postgresql-db created
 service/postgres-db created
@@ -251,7 +327,22 @@ secret/example-tls-secret created</code></pre>
 
       <section class="slide" data-slide="lab-deploy" data-title="Lab: the Keycloak custom resource">
         <h2>Hands-on: applying the Keycloak CR</h2>
-        <pre><code>apiVersion: k8s.keycloak.org/v2beta1
+        <p>Create a file named <code>example-kc.yaml</code> with exactly this content — the second and
+        last file this lab needs:</p>
+<pre id="file-example-kc-yaml" data-filename="example-kc.yaml"><code># The Keycloak custom resource (CR) the Operator reconciles into a running server.
+# apiVersion/kind/field shapes verified live against https://www.keycloak.org/operator/basic-deployment
+# (Keycloak 26.8.2). Two fields deviate from that page's own example, both documented
+# in the chapter text as this lab's own judgment calls, not something the docs state:
+#
+#   - hostname.hostname: "localhost" instead of the docs' "test.keycloak.org" --
+#     there is no real DNS for a throwaway kind cluster, and setting it to localhost
+#     is what makes `kubectl port-forward` + `curl https://localhost:&lt;port&gt;` resolve
+#     correctly without extra /etc/hosts or Host-header tricks.
+#   - ingress.enabled: false -- kind ships no Ingress controller by default, so a
+#     Keycloak-created Ingress object would sit there with no controller to satisfy
+#     it. Reaching the service by `kubectl port-forward` instead (see this chapter's
+#     verification slide).
+apiVersion: k8s.keycloak.org/v2beta1
 kind: Keycloak
 metadata:
   name: example-kc
@@ -261,14 +352,19 @@ spec:
   db:
     vendor: postgres
     host: postgres-db
-    usernameSecret: {name: keycloak-db-secret, key: username}
-    passwordSecret: {name: keycloak-db-secret, key: password}
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
   http:
     tlsSecret: example-tls-secret
   hostname:
-    hostname: localhost      # deviation from the docs' own test.keycloak.org — see labs/README
+    hostname: localhost
   ingress:
-    enabled: false           # kind ships no Ingress controller by default</code></pre>
+    enabled: false</code></pre>
+        <p>Apply it:</p>
         <pre><code>$ kubectl apply -f example-kc.yaml
 keycloak.k8s.keycloak.org/example-kc created
 

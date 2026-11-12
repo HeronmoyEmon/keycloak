@@ -62,7 +62,8 @@
         Developer Guide — User Storage SPI</a> (version 26.8.2, fetched live for this chapter); Maven Central
         (<code>search.maven.org</code> and <code>repo1.maven.org</code>), queried live to pin exact dependency
         coordinates; and this chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17
-        Docker Compose stack this chapter owns (<code>labs/custom-user-storage-spi/</code>).</p>
+        Docker Compose stack this chapter owns — the exact <code>docker-compose.yml</code>, Java
+        source, and Maven build file are all given below, no repository required.</p>
       </section>
 
       <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
@@ -406,7 +407,592 @@ public SubjectCredentialManager credentialManager() {
         <p>Everything below actually happened, in this order, while writing this chapter — not cleaned up
         after the fact. The point of showing both failures is that a custom SPI provider is ordinary Java and
         Maven, with ordinary Java and Maven failure modes, not some opaque Keycloak-specific magic.</p>
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-pom-xml"><code>pom.xml</code></a> — the Maven build file, pinning the two
+            Keycloak dependencies this provider needs at <code>scope=provided</code>.</li>
+            <li><a href="#file-staffrecord-java"><code>StaffRecord.java</code></a> — a plain record for one
+            row of the legacy HR directory.</li>
+            <li><a href="#file-legacystaffdirectorystore-java"><code>LegacyStaffDirectoryStore.java</code></a>
+            — loads the toy CSV once and serves lookups from memory.</li>
+            <li><a href="#file-legacystaffuseradapter-java"><code>LegacyStaffUserAdapter.java</code></a> —
+            adapts one <code>StaffRecord</code> into the <code>UserModel</code> shape Keycloak core expects.</li>
+            <li><a href="#file-legacystaffdirectoryuserstorageprovider-java"><code>LegacyStaffDirectoryUserStorageProvider.java</code></a>
+            — the per-transaction provider instance: lookup + password validation.</li>
+            <li><a href="#file-legacystaffdirectoryuserstorageproviderfactory-java"><code>LegacyStaffDirectoryUserStorageProviderFactory.java</code></a>
+            — the factory, discovered once at boot via <code>ServiceLoader</code>.</li>
+            <li><a href="#file-meta-inf-service"><code>META-INF/services/org.keycloak.storage.UserStorageProviderFactory</code></a>
+            — the one-line <code>ServiceLoader</code> registration file — get its exact filename or
+            contents wrong and Keycloak never finds this provider, with no error pointing at why.</li>
+            <li><a href="#file-riverside-legacy-staff-csv"><code>riverside-legacy-staff.csv</code></a> — the
+            toy external data source standing in for Riverside Health's real legacy HR system.</li>
+            <li><a href="#file-docker-compose-yml"><code>docker-compose.yml</code></a> — this chapter's own,
+            isolated Keycloak + PostgreSQL stack (separate from chapter 20's shared one — see the next step
+            for why). Requires a JDK 21 and Maven in addition to Docker (confirmed in chapter 0's environment
+            setup) to compile the provider before it can be mounted in.</li>
+          </ul>
+        </div>
+
         <ol class="lab-steps">
+          <li><p>Make a new, empty folder for this lab, and lay out the Maven directory structure this
+          provider's Java package (<code>com.riversidehealth.keycloak.legacyhr</code>) requires:</p>
+<pre><code>mkdir custom-user-storage-spi-lab
+cd custom-user-storage-spi-lab
+mkdir -p src/main/java/com/riversidehealth/keycloak/legacyhr
+mkdir -p src/main/resources/META-INF/services</code></pre>
+          <p>Everything from here on assumes you're inside <code>custom-user-storage-spi-lab</code>.</p></li>
+
+          <li><p>Create <code>pom.xml</code> in the project root with exactly this content — the real
+          build file this chapter's lab actually used, dependency coordinates live-verified against Maven
+          Central and the real running image (see two slides back):</p>
+<pre id="file-pom-xml" data-filename="pom.xml"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!--
+  Riverside Health "legacy staff directory" custom User Storage SPI provider.
+
+  This is a teaching lab for chapter 33 (Custom User Storage SPI) of the IAM &amp; Keycloak Mastery
+  course. It federates Keycloak against a toy stand-in for a legacy, proprietary HR system's own
+  user table (a bundled CSV file) — the kind of non-LDAP directory chapter 32's native LDAP
+  provider cannot talk to at all.
+
+  Dependency coordinates were live-verified against Maven Central and against the actual jars
+  bundled inside the quay.io/keycloak/keycloak:26.8.2 image before this POM was written (see the
+  chapter text for the full verification trail). As of Keycloak 26.4+, the UserStorageProvider /
+  UserStorageProviderFactory / AbstractUserAdapter classes live in keycloak-model-storage, not in
+  keycloak-server-spi(-private) alone — both artifacts are needed. Exact 26.8.2 releases of both
+  were confirmed to exist on Maven Central (no nearest-version substitute was required), and
+  running "docker run (rm, entrypoint sh) quay.io/keycloak/keycloak:26.8.2 -c find /opt/keycloak/lib ..."
+  confirmed the running server bundles exactly org.keycloak.keycloak-server-spi-26.8.2.jar and
+  org.keycloak.keycloak-model-storage-26.8.2.jar — the identical versions pinned below.
+
+  Both Keycloak dependencies are scope=provided: the server supplies these classes at runtime from
+  its own /opt/keycloak/lib; bundling them into this provider's JAR would duplicate classes already
+  on the server's classpath and risks classloading conflicts (see the chapter's "common mistakes"
+  section). Nothing else needs shading or an assembly plugin — this JAR has no other runtime
+  dependencies at all.
+--&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;groupId&gt;com.riversidehealth.keycloak&lt;/groupId&gt;
+  &lt;artifactId&gt;legacy-staff-directory-spi&lt;/artifactId&gt;
+  &lt;version&gt;1.0.0&lt;/version&gt;
+  &lt;packaging&gt;jar&lt;/packaging&gt;
+
+  &lt;name&gt;Riverside Health Legacy Staff Directory User Storage SPI&lt;/name&gt;
+  &lt;description&gt;
+    A custom Keycloak User Storage SPI provider that federates Keycloak against a toy stand-in for
+    Riverside Health's legacy, proprietary HR staff directory (a bundled CSV file), for chapter 33
+    of the IAM &amp;amp; Keycloak Mastery course.
+  &lt;/description&gt;
+
+  &lt;properties&gt;
+    &lt;maven.compiler.release&gt;21&lt;/maven.compiler.release&gt;
+    &lt;project.build.sourceEncoding&gt;UTF-8&lt;/project.build.sourceEncoding&gt;
+    &lt;!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. --&gt;
+    &lt;keycloak.version&gt;26.8.2&lt;/keycloak.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;!-- org.keycloak.credential.*, org.keycloak.storage.user.UserLookupProvider, org.keycloak.models.*,
+         org.keycloak.component.ComponentModel, org.keycloak.models.credential.PasswordCredentialModel,
+         org.keycloak.storage.StorageId --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-server-spi&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+
+    &lt;!-- org.keycloak.storage.UserStorageProvider, UserStorageProviderFactory,
+         org.keycloak.storage.adapter.AbstractUserAdapter (moved here from keycloak-server-spi-private
+         as of Keycloak 26.4+, confirmed live for 26.8.2 as described above). --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-model-storage&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;finalName&gt;legacy-staff-directory-spi-${project.version}&lt;/finalName&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.13.0&lt;/version&gt;
+      &lt;/plugin&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-jar-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.4.1&lt;/version&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</code></pre></li>
+
+          <li><p>Create the five Java source files below under
+          <code>src/main/java/com/riversidehealth/keycloak/legacyhr/</code> (all five live in that same
+          package directory):</p>
+<pre id="file-staffrecord-java" data-filename="src/main/java/com/riversidehealth/keycloak/legacyhr/StaffRecord.java"><code>package com.riversidehealth.keycloak.legacyhr;
+
+/**
+ * One row of Riverside Health's legacy HR staff directory, exactly as the real proprietary system
+ * would hand it over (minus everything this toy lab doesn't need).
+ *
+ * &lt;p&gt;The password field is intentionally plaintext in the backing CSV, not hashed. That is a
+ * deliberately honest stand-in for a real-world failure mode this chapter calls out directly: a
+ * 20-year-old internal HR system built long before argon2/bcrypt were standard practice, storing
+ * plaintext or weakly-reversible credentials, that a hospital cannot simply "turn off" overnight.
+ * A custom User Storage SPI provider is how Keycloak sits in front of exactly that kind of legacy
+ * store without being able to fix its internals — see the chapter's pitfall callout on this.&lt;/p&gt;
+ */
+public record StaffRecord(
+        String username,
+        String password,
+        String firstName,
+        String lastName,
+        String email,
+        String employeeId,
+        String department) {
+}</code></pre>
+<pre id="file-legacystaffdirectorystore-java" data-filename="src/main/java/com/riversidehealth/keycloak/legacyhr/LegacyStaffDirectoryStore.java"><code>package com.riversidehealth.keycloak.legacyhr;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * A tiny read-only, in-memory stand-in for Riverside Health's real legacy HR system's own data
+ * access layer.
+ *
+ * &lt;p&gt;In real life this class's five methods (or something very like them) would instead issue a
+ * query against that system's own proprietary database or API. The point of this lab is the
+ * Keycloak-facing SPI code built on top, not the toy store underneath it — a flat CSV bundled as a
+ * classpath resource is the simplest thing that is still a genuinely separate, external user
+ * store Keycloak itself does not understand natively (unlike LDAP, which chapter 32 covered with
+ * Keycloak's own built-in federation provider, requiring no custom code at all).&lt;/p&gt;
+ */
+public final class LegacyStaffDirectoryStore {
+
+    private final Map&lt;String, StaffRecord&gt; byUsername;
+    private final Map&lt;String, StaffRecord&gt; byEmail;
+
+    private LegacyStaffDirectoryStore(Map&lt;String, StaffRecord&gt; byUsername, Map&lt;String, StaffRecord&gt; byEmail) {
+        this.byUsername = byUsername;
+        this.byEmail = byEmail;
+    }
+
+    /**
+     * Loads every row of the bundled CSV once. Called exactly once, from the provider factory's
+     * {@code init()}, and the resulting store is shared read-only across every provider instance
+     * {@code create()} hands back for the lifetime of this deployment — there is no per-request
+     * re-parsing.
+     */
+    public static LegacyStaffDirectoryStore loadFromClasspath(String resourcePath) {
+        Map&lt;String, StaffRecord&gt; byUsername = new HashMap&lt;&gt;();
+        Map&lt;String, StaffRecord&gt; byEmail = new HashMap&lt;&gt;();
+
+        try (InputStream in = LegacyStaffDirectoryStore.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new IllegalStateException(
+                        "Bundled legacy staff directory CSV not found on the classpath at " + resourcePath
+                                + " -- check that it's under src/main/resources and the JAR actually contains it.");
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line = reader.readLine(); // header row, discarded
+                while ((line = reader.readLine()) != null) {
+                    if (line.isBlank()) {
+                        continue;
+                    }
+                    String[] fields = line.split(",", -1);
+                    if (fields.length != 7) {
+                        throw new IllegalStateException("Malformed row in " + resourcePath + ": " + line);
+                    }
+                    StaffRecord record = new StaffRecord(
+                            fields[0].trim(),  // username
+                            fields[1].trim(),  // password (plaintext in this toy store -- see StaffRecord's javadoc)
+                            fields[2].trim(),  // firstName
+                            fields[3].trim(),  // lastName
+                            fields[4].trim(),  // email
+                            fields[5].trim(),  // employeeId
+                            fields[6].trim()); // department
+                    byUsername.put(record.username().toLowerCase(), record);
+                    byEmail.put(record.email().toLowerCase(), record);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed reading bundled legacy staff directory CSV at " + resourcePath, e);
+        }
+
+        return new LegacyStaffDirectoryStore(Map.copyOf(byUsername), Map.copyOf(byEmail));
+    }
+
+    public StaffRecord findByUsername(String username) {
+        if (username == null) {
+            return null;
+        }
+        return byUsername.get(username.toLowerCase());
+    }
+
+    public StaffRecord findByEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        return byEmail.get(email.toLowerCase());
+    }
+
+    public int size() {
+        return byUsername.size();
+    }
+}</code></pre>
+<pre id="file-legacystaffuseradapter-java" data-filename="src/main/java/com/riversidehealth/keycloak/legacyhr/LegacyStaffUserAdapter.java"><code>package com.riversidehealth.keycloak.legacyhr;
+
+import org.keycloak.component.ComponentModel;
+import org.keycloak.credential.UserCredentialManager;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.SubjectCredentialManager;
+import org.keycloak.models.UserModel;
+import org.keycloak.storage.adapter.AbstractUserAdapter;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Adapts one {@link StaffRecord} from Riverside Health's legacy HR directory into the
+ * {@link UserModel} shape Keycloak core actually works with.
+ *
+ * &lt;p&gt;{@code AbstractUserAdapter} (from {@code keycloak-model-storage}) implements every
+ * {@code UserModel} method except {@link #getUsername()} with a reasonable read-only default, and
+ * every write method ({@code setEmail}, {@code setFirstName}, ...) throws
+ * {@code org.keycloak.storage.ReadOnlyException} unless overridden. That is exactly the right fit
+ * here: this lab's provider has no way to write back into the real legacy HR system even if it
+ * wanted to, so there is nothing to override on the write side at all -- the read-only default
+ * behavior &lt;em&gt;is&lt;/em&gt; the correct behavior, not a shortcut taken to save code.&lt;/p&gt;
+ */
+public class LegacyStaffUserAdapter extends AbstractUserAdapter {
+
+    private final StaffRecord record;
+
+    public LegacyStaffUserAdapter(KeycloakSession session, RealmModel realm, ComponentModel storageProviderModel,
+                                   StaffRecord record) {
+        super(session, realm, storageProviderModel);
+        this.record = record;
+    }
+
+    @Override
+    public String getUsername() {
+        return record.username();
+    }
+
+    @Override
+    public String getFirstName() {
+        return record.firstName();
+    }
+
+    @Override
+    public String getLastName() {
+        return record.lastName();
+    }
+
+    @Override
+    public String getEmail() {
+        return record.email();
+    }
+
+    @Override
+    public boolean isEmailVerified() {
+        // The legacy HR system is itself the source of truth for staff email addresses -- treat
+        // every address it hands over as already verified rather than re-running Keycloak's own
+        // email-verification required action against staff who never signed up through Keycloak.
+        return true;
+    }
+
+    @Override
+    public Map&lt;String, List&lt;String&gt;&gt; getAttributes() {
+        Map&lt;String, List&lt;String&gt;&gt; attributes = new HashMap&lt;&gt;();
+        attributes.put(UserModel.USERNAME, List.of(getUsername()));
+        attributes.put(UserModel.FIRST_NAME, List.of(record.firstName()));
+        attributes.put(UserModel.LAST_NAME, List.of(record.lastName()));
+        attributes.put(UserModel.EMAIL, List.of(record.email()));
+        // Two attributes the legacy system carries that Keycloak's built-in UserModel fields have
+        // no slot for at all -- exactly the kind of extra, organization-specific data a custom SPI
+        // provider can expose that Keycloak's native LDAP federation (chapter 32) would need an
+        // explicit attribute mapper configured for instead.
+        attributes.put("legacyEmployeeId", List.of(record.employeeId()));
+        attributes.put("department", List.of(record.department()));
+        return attributes;
+    }
+
+    @Override
+    public List&lt;String&gt; getAttribute(String name) {
+        return getAttributes().getOrDefault(name, List.of());
+    }
+
+    @Override
+    public SubjectCredentialManager credentialManager() {
+        // UserModel.credentialManager() is abstract all the way down -- AbstractUserAdapter does
+        // not implement it on a subclass's behalf (confirmed the hard way: this class failed to
+        // compile without this override, with javac naming the missing method directly). Keycloak
+        // core's own org.keycloak.credential.UserCredentialManager (from keycloak-model-storage) is
+        // the standard bridge that forwards isValid()/isConfiguredFor() calls straight through to
+        // this provider's own CredentialInputValidator implementation, so a federated, legacy-style
+        // provider like this one never has to implement SubjectCredentialManager's full surface
+        // itself.
+        return new UserCredentialManager(session, realm, this);
+    }
+}</code></pre>
+<pre id="file-legacystaffdirectoryuserstorageprovider-java" data-filename="src/main/java/com/riversidehealth/keycloak/legacyhr/LegacyStaffDirectoryUserStorageProvider.java"><code>package com.riversidehealth.keycloak.legacyhr;
+
+import org.keycloak.component.ComponentModel;
+import org.keycloak.credential.CredentialInput;
+import org.keycloak.credential.CredentialInputValidator;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.credential.PasswordCredentialModel;
+import org.keycloak.storage.StorageId;
+import org.keycloak.storage.UserStorageProvider;
+import org.keycloak.storage.user.UserLookupProvider;
+
+/**
+ * Keycloak-facing provider instance for Riverside Health's legacy staff directory.
+ *
+ * &lt;p&gt;This is the object chapter 33's diagram calls "the provider" -- created fresh per Keycloak
+ * transaction by {@link LegacyStaffDirectoryUserStorageProviderFactory#create}, sharing the one
+ * factory-owned, already-loaded {@link LegacyStaffDirectoryStore} rather than re-reading the CSV
+ * on every call. It implements the two SPI capabilities this lab actually needs:&lt;/p&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@link UserLookupProvider} -- so Keycloak core can resolve a username/id/email to a
+ *       {@code UserModel} it didn't create or store itself.&lt;/li&gt;
+ *   &lt;li&gt;{@link CredentialInputValidator} -- so Keycloak's own direct-grant and browser login flows
+ *       can ask "is this password correct for this user?" without this provider needing to
+ *       implement an entire custom authenticator.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+public class LegacyStaffDirectoryUserStorageProvider implements UserStorageProvider, UserLookupProvider,
+        CredentialInputValidator {
+
+    private final KeycloakSession session;
+    private final ComponentModel model;
+    private final LegacyStaffDirectoryStore store;
+
+    public LegacyStaffDirectoryUserStorageProvider(KeycloakSession session, ComponentModel model,
+                                                     LegacyStaffDirectoryStore store) {
+        this.session = session;
+        this.model = model;
+        this.store = store;
+    }
+
+    @Override
+    public UserModel getUserById(RealmModel realm, String id) {
+        // Keycloak hands federated users an id of the form "f:&lt;componentId&gt;:&lt;externalId&gt;"
+        // (org.keycloak.storage.StorageId's own convention) wherever a user's UUID would normally
+        // go. StorageId.externalId() strips the "f:&lt;componentId&gt;:" prefix back off.
+        String externalId = StorageId.externalId(id);
+        return getUserByUsername(realm, externalId);
+    }
+
+    @Override
+    public UserModel getUserByUsername(RealmModel realm, String username) {
+        StaffRecord record = store.findByUsername(username);
+        if (record == null) {
+            return null;
+        }
+        return new LegacyStaffUserAdapter(session, realm, model, record);
+    }
+
+    @Override
+    public UserModel getUserByEmail(RealmModel realm, String email) {
+        StaffRecord record = store.findByEmail(email);
+        if (record == null) {
+            return null;
+        }
+        return new LegacyStaffUserAdapter(session, realm, model, record);
+    }
+
+    @Override
+    public boolean supportsCredentialType(String credentialType) {
+        return PasswordCredentialModel.TYPE.equals(credentialType);
+    }
+
+    @Override
+    public boolean isConfiguredFor(RealmModel realm, UserModel user, String credentialType) {
+        return supportsCredentialType(credentialType) &amp;&amp; store.findByUsername(user.getUsername()) != null;
+    }
+
+    @Override
+    public boolean isValid(RealmModel realm, UserModel user, CredentialInput input) {
+        if (!supportsCredentialType(input.getType())) {
+            return false;
+        }
+        StaffRecord record = store.findByUsername(user.getUsername());
+        if (record == null) {
+            return false;
+        }
+        // A real provider for a real legacy system would call that system's own authentication
+        // API or compare against whatever hash format it actually uses. This toy store's plaintext
+        // comparison is the honest, simplest possible stand-in -- see StaffRecord's javadoc and
+        // this chapter's pitfall callout for why that's a real-world risk, not a code shortcut to
+        // ignore.
+        return record.password().equals(input.getChallengeResponse());
+    }
+
+    @Override
+    public void close() {
+        // Nothing provider-instance-scoped to release: the CSV-backed store is loaded once by the
+        // factory and is shared, read-only, across every per-transaction provider instance.
+    }
+}</code></pre>
+<pre id="file-legacystaffdirectoryuserstorageproviderfactory-java" data-filename="src/main/java/com/riversidehealth/keycloak/legacyhr/LegacyStaffDirectoryUserStorageProviderFactory.java"><code>package com.riversidehealth.keycloak.legacyhr;
+
+import org.keycloak.Config;
+import org.keycloak.component.ComponentModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.storage.UserStorageProviderFactory;
+
+/**
+ * Factory for {@link LegacyStaffDirectoryUserStorageProvider}.
+ *
+ * &lt;p&gt;{@link #getId()}'s return value is the provider id that shows up as an option in the Admin
+ * Console's "Add provider" dropdown under User Federation, and is also the {@code providerId}
+ * value a {@code kcadm.sh}/REST-created component must specify. This class is wired to Keycloak
+ * through {@code META-INF/services/org.keycloak.storage.UserStorageProviderFactory}, a plain text
+ * file (the standard Java {@link java.util.ServiceLoader} convention, which is how Keycloak itself
+ * discovers every SPI provider factory on its classpath) listing this class's fully qualified
+ * name -- see that file for the real, necessary detail: get its filename or contents wrong and
+ * Keycloak never finds this provider at all, with no error message pointing at why.&lt;/p&gt;
+ */
+public class LegacyStaffDirectoryUserStorageProviderFactory
+        implements UserStorageProviderFactory&lt;LegacyStaffDirectoryUserStorageProvider&gt; {
+
+    public static final String PROVIDER_ID = "riverside-legacy-staff-directory";
+
+    /**
+     * Loaded once, from {@link #init(Config.Scope)}, and shared read-only across every provider
+     * instance {@link #create} hands back for this deployment's lifetime.
+     */
+    private LegacyStaffDirectoryStore store;
+
+    @Override
+    public void init(Config.Scope config) {
+        this.store = LegacyStaffDirectoryStore.loadFromClasspath("/riverside-legacy-staff.csv");
+    }
+
+    @Override
+    public LegacyStaffDirectoryUserStorageProvider create(KeycloakSession session, ComponentModel model) {
+        return new LegacyStaffDirectoryUserStorageProvider(session, model, store);
+    }
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public String getHelpText() {
+        return "Bridges Keycloak to Riverside Health's legacy, proprietary HR staff directory "
+                + "(a bundled CSV standing in for the real system) for read-only lookup and password "
+                + "validation, without migrating or rewriting that system.";
+    }
+}</code></pre></li>
+
+          <li><p>Create the <code>ServiceLoader</code> registration file — this exact filename, one line of
+          content, no file extension — under <code>src/main/resources/META-INF/services/</code>:</p>
+<pre id="file-meta-inf-service" data-filename="src/main/resources/META-INF/services/org.keycloak.storage.UserStorageProviderFactory"><code>com.riversidehealth.keycloak.legacyhr.LegacyStaffDirectoryUserStorageProviderFactory</code></pre></li>
+
+          <li><p>Create the toy legacy-HR data source, <code>riverside-legacy-staff.csv</code>, directly under
+          <code>src/main/resources/</code> (not inside the <code>META-INF</code> subfolder):</p>
+<pre id="file-riverside-legacy-staff-csv" data-filename="src/main/resources/riverside-legacy-staff.csv"><code>username,password,firstName,lastName,email,employeeId,department
+jmartinez,Clinic#2026,Jordan,Martinez,jmartinez@riversidehealth.example,RH-10234,Cardiology
+awong,Nursing$88,Amara,Wong,awong@riversidehealth.example,RH-10391,Nursing
+dkhan,OnCall!55,Dalia,Khan,dkhan@riversidehealth.example,RH-10477,Emergency Medicine</code></pre></li>
+
+          <li><p>Create <code>docker-compose.yml</code> in the project root — this chapter's own, isolated
+          stack, deliberately separate from the shared <code>docker-compose.yml</code> chapter 20 gave you: this
+          one needs a custom provider JAR mounted into <code>/opt/keycloak/providers/</code>, which the stack
+          every other chapter reuses unmodified should never be asked to carry around permanently. It runs on
+          its own project name and port so it never collides with any other chapter's stack:</p>
+<pre id="file-docker-compose-yml" data-filename="docker-compose.yml"><code># Chapter 33's own, isolated Keycloak + PostgreSQL stack.
+#
+# This is deliberately a SEPARATE compose file from the shared Keycloak + PostgreSQL stack chapter 20
+# gives you, not an override of it: this chapter needs a Keycloak instance with a custom provider JAR
+# mounted into /opt/keycloak/providers/, which that shared stack should never be asked to carry around
+# permanently. Bring it up with its own project name so it never collides with the shared stack or any
+# other chapter's isolated stack:
+#
+#   mvn clean package
+#   docker compose -p ch33kc up -d
+#
+# Keycloak is published on host port 18133 (http://localhost:18133), matching every other Part VI
+# chapter's pattern of giving each new, chapter-owned stack its own port so it can run alongside the
+# shared stack without a port clash.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch33_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev (not production "start" mode) to match every other chapter's lab stack -- no TLS/
+    # hostname configuration needed for a local teaching lab. start-dev also auto-detects and
+    # re-augments for a changed providers/ directory on its own at each boot; this chapter's lab
+    # still runs `kc.sh build` explicitly as its own step, both because that is the command a
+    # production deployment (started with plain `start`) genuinely requires, and because it makes
+    # the "re-augment, then restart" mechanism visible rather than invisible. See the chapter text
+    # for what was actually observed running build explicitly under start-dev.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18133:8080"
+    volumes:
+      # The built provider JAR, mounted read-only into Keycloak's own providers directory -- the
+      # one piece of real deployment mechanics this whole lab exists to exercise. Build it first
+      # (mvn clean package); this bind mount will fail silently (an empty/missing file inside the
+      # container, not a compose error) if the JAR doesn't exist yet at this host path.
+      - ./target/legacy-staff-directory-spi-1.0.0.jar:/opt/keycloak/providers/legacy-staff-directory-spi-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch33_pg_data:</code></pre>
+          <p>Keycloak is published on host port <strong>18133</strong> (<code>http://localhost:18133</code>),
+          not the usual 8080 — every Part VI+ chapter that needs its own isolated stack gives it a unique
+          port this way so it can run alongside chapter 20's shared stack without a clash. The files above are
+          already the fixed, working versions — the lab steps below narrate two real bugs hit while
+          originally building them, kept in as instructive material, but your own build from these files
+          should succeed cleanly the first time.</p></li>
+        </ol>
+
+        <ol class="lab-steps" style="counter-reset: lab-step 6;">
           <li><p><strong>First attempt: a broken POM.</strong> The <code>pom.xml</code>'s own explanatory comment
           happened to include a real shell command containing <code>--rm</code> inside an XML comment — and XML
           comments cannot contain two consecutive hyphens anywhere in their body, not just at the boundary.
@@ -445,11 +1031,11 @@ is not abstract and does not override abstract method credentialManager() in org
       </section>
 
       <section class="slide" data-slide="lab-compose-up" data-title="Lab: deploying the JAR — a real Docker gotcha">
-        <ol class="lab-steps" style="counter-reset: lab-step 3;">
-          <li><p><strong>Bring up this chapter's own isolated stack</strong> (<code>labs/custom-user-storage-spi/
-          docker-compose.yml</code>, project name <code>ch33kc</code>, Keycloak published on host port 18133 —
-          isolated from the shared <code>labs/docker/</code> stack every other chapter uses):</p>
-          <pre><code>cd labs/custom-user-storage-spi
+        <ol class="lab-steps" style="counter-reset: lab-step 9;">
+          <li><p><strong>Build the provider, then bring up the stack you just created</strong> — project
+          name <code>ch33kc</code>, Keycloak published on host port 18133, isolated from chapter 20's shared
+          stack:</p>
+          <pre><code>mvn clean package
 docker compose -p ch33kc up -d</code></pre>
           <p>Then, to confirm the JAR actually mounted, inside the container:</p>
           <pre><code>docker compose -p ch33kc exec keycloak ls -la /opt/keycloak/providers/</code></pre>
@@ -518,7 +1104,7 @@ docker compose -p ch33kc exec keycloak ls -la /opt/keycloak/providers/</code></p
       </section>
 
       <section class="slide" data-slide="lab-build-restart" data-title="Lab: kc.sh build, restart, and confirmation">
-        <ol class="lab-steps" style="counter-reset: lab-step 4;">
+        <ol class="lab-steps" style="counter-reset: lab-step 10;">
           <li><p><strong>Re-augment the server</strong> so it picks up the new provider, then restart:</p>
           <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kc.sh build</code></pre>
           <pre><code>Updating the configuration and installing your custom providers, if any. Please wait.
@@ -556,7 +1142,7 @@ password validation, without migrating or rewriting that system.</code></pre>
       </section>
 
       <section class="slide" data-slide="lab-register" data-title="Lab: registering the provider — a real parentId mistake">
-        <ol class="lab-steps" style="counter-reset: lab-step 6;">
+        <ol class="lab-steps" style="counter-reset: lab-step 12;">
           <li><p><strong>Create a fresh realm</strong> for this chapter's case study, and authenticate
           <code>kcadm.sh</code> the same way chapter 27 established:</p>
           <pre><code>docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
@@ -608,7 +1194,7 @@ docker compose -p ch33kc exec keycloak /opt/keycloak/bin/kcadm.sh create compone
       </section>
 
       <section class="slide" data-slide="lab-auth" data-title="Lab: real authentication, and a real attribute gotcha">
-        <ol class="lab-steps" style="counter-reset: lab-step 8;">
+        <ol class="lab-steps" style="counter-reset: lab-step 14;">
           <li><p><strong>Direct grant against a user who exists only in the CSV</strong> — no Keycloak-local
           account for <code>jmartinez</code> exists anywhere:</p>
           <pre><code>curl -s -X POST "http://localhost:18133/realms/riverside-health/protocol/openid-connect/token" \

@@ -309,18 +309,196 @@
 
       <section class="slide" data-slide="lab-setup" data-title="Lab: stack up &amp; confirm the seed">
         <h2>Lab: a real OpenLDAP + Keycloak stack, federated for real</h2>
-        <p>Everything from here on was actually run against a real stack — <code>labs/ldap-federation/
-        docker-compose.yml</code>, this chapter's own new environment (PostgreSQL + Keycloak 26.8.2 +
-        <code>osixia/openldap:1.5.0</code>, live-verified as the newest actual release tag of that image —
-        full reasoning in that folder's README) — not narrated. The reader's own run uses the plain
-        commands below against the ports this compose file bakes in, 18132 (Keycloak) and 18389 (LDAP);
-        this chapter's own verification additionally isolated the Compose project name as
-        <code>ch32kc</code> while multiple chapters' labs were being built in parallel.</p>
+        <p>Everything from here on was actually run against a real stack — this chapter's own new
+        environment (PostgreSQL + Keycloak 26.8.2 + <code>osixia/openldap:1.5.0</code>, live-verified as
+        the newest actual release tag of that image) — not narrated. It's independent of chapter 20's
+        stack (different ports, an added LDAP container) so the two can run side by side without a
+        collision. The reader's own run uses the plain commands below against the ports this compose
+        file bakes in, 18132 (Keycloak) and 18389 (LDAP).</p>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-docker-compose-yml-ldap"><code>docker-compose.yml</code></a> — a
+            three-service stack: PostgreSQL, Keycloak 26.8.2, and an OpenLDAP server pre-seeded on first
+            start.</li>
+            <li><a href="#file-seed-ldap-seed-ldif"><code>seed/50-meridian-seed.ldif</code></a> — the
+            directory's starting contents: 5 real Meridian Trust staff entries and 5 groups, standing in
+            for an existing on-prem directory. Must go in a <code>seed/</code> subfolder next to the
+            compose file — the compose file mounts that exact subfolder into the OpenLDAP container.</li>
+          </ul>
+        </div>
 
         <ol class="lab-steps">
-          <li><p>Bring the stack up and poll until Keycloak is ready:</p>
-          <pre><code>cd labs/ldap-federation
-docker compose up -d
+          <li><p>Make a new folder for this lab, with the <code>seed/</code> subfolder the compose file
+          expects:</p>
+<pre><code>mkdir -p keycloak-lab-ldap/seed
+cd keycloak-lab-ldap</code></pre>
+          <p>Create <code>docker-compose.yml</code> in that folder with exactly this content:</p>
+<pre id="file-docker-compose-yml-ldap" data-filename="docker-compose.yml"><code>services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ldap_fed_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  openldap:
+    # 1.5.0 (OpenLDAP 2.4.57) is the newest *stable, final* release tag as of this course's own
+    # verification — the project's v2 line exists only as alpha/beta/rc prereleases and carries an
+    # explicit "v2 is a breaking release" warning in its own README. Re-verify before reusing this
+    # file much later; a stable v2 release may exist by then.
+    image: osixia/openldap:1.5.0
+    hostname: ldap.meridiantrust.example
+    environment:
+      LDAP_ORGANISATION: "Meridian Trust"
+      LDAP_DOMAIN: "meridiantrust.example"
+      LDAP_BASE_DN: "dc=meridiantrust,dc=example"
+      LDAP_ADMIN_PASSWORD: "ldap_admin_lab_password"
+      LDAP_TLS: "false"
+      # This image's "seed from internal path" feature COPIES whatever is in this directory into its
+      # default seeding location, rather than moving/consuming the source files — the only approach
+      # that leaves ./seed/50-meridian-seed.ldif untouched on the host across repeated
+      # `down -v && up -d` runs (two more "obvious" approaches were tried and genuinely failed —
+      # see the "Common mistakes" slide).
+      LDAP_SEED_INTERNAL_LDIF_PATH: "/ldap-seed-src"
+    ports:
+      - "18389:389"
+    volumes:
+      - ./seed:/ldap-seed-src
+      - ldap_fed_data:/var/lib/ldap
+      - ldap_fed_config:/etc/ldap/slapd.d
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+    ports:
+      - "18132:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openldap:
+        condition: service_started
+
+volumes:
+  ldap_fed_pg_data:
+  ldap_fed_data:
+  ldap_fed_config:</code></pre>
+          <p>Create <code>seed/50-meridian-seed.ldif</code> (note the <code>seed/</code> subfolder) with
+          exactly this content — Meridian Trust's stand-in staff directory:</p>
+<pre id="file-seed-ldap-seed-ldif" data-filename="seed/50-meridian-seed.ldif"><code># Stands in for Meridian Trust's existing on-prem staff directory (ou=staff) -- a retail bank that
+# already runs LDAP/AD for its employees, federating Keycloak against it instead of duplicating every
+# account. Loaded automatically at container first start. Base DN dc=meridiantrust,dc=example matches
+# this compose file's LDAP_BASE_DN.
+
+dn: ou=staff,dc=meridiantrust,dc=example
+objectClass: organizationalUnit
+ou: staff
+
+dn: ou=groups,dc=meridiantrust,dc=example
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=jmartinez,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: jmartinez
+cn: Julia Martinez
+sn: Martinez
+givenName: Julia
+mail: jmartinez@meridiantrust.example
+employeeType: Teller
+userPassword: TellerLdap-2026!
+
+dn: uid=dkim,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: dkim
+cn: David Kim
+sn: Kim
+givenName: David
+mail: dkim@meridiantrust.example
+employeeType: LoanOfficer
+userPassword: LoanLdap-2026!
+
+dn: uid=rpatel,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: rpatel
+cn: Rhea Patel
+sn: Patel
+givenName: Rhea
+mail: rpatel@meridiantrust.example
+employeeType: FraudAnalyst
+userPassword: FraudLdap-2026!
+
+dn: uid=swilliams,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: swilliams
+cn: Sara Williams
+sn: Williams
+givenName: Sara
+mail: swilliams@meridiantrust.example
+employeeType: BranchManager
+userPassword: BranchLdap-2026!
+
+dn: uid=aoconnor,ou=staff,dc=meridiantrust,dc=example
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: aoconnor
+cn: Aidan O'Connor
+sn: O'Connor
+givenName: Aidan
+mail: aoconnor@meridiantrust.example
+employeeType: ITAdmin
+userPassword: ITAdminLdap-2026!
+
+dn: cn=tellers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: tellers
+member: uid=jmartinez,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=loan-officers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: loan-officers
+member: uid=dkim,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=fraud-analysts,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: fraud-analysts
+member: uid=rpatel,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=branch-managers,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: branch-managers
+member: uid=swilliams,ou=staff,dc=meridiantrust,dc=example
+
+dn: cn=it-admins,ou=groups,dc=meridiantrust,dc=example
+objectClass: groupOfNames
+cn: it-admins
+member: uid=aoconnor,ou=staff,dc=meridiantrust,dc=example</code></pre>
+          <p>Bring the stack up and poll until Keycloak is ready:</p>
+<pre><code>docker compose up -d
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w "%{http_code}" \
     http://localhost:18132/realms/master/.well-known/openid-configuration)
@@ -357,10 +535,10 @@ numEntries: 1</code></pre>
           <p>Five real staff entries and five real <code>groupOfNames</code> groups exist at this point —
           getting the seed to load at all took two failed attempts during this chapter's own build (a
           single-file bind mount, then a directory bind mount that the image's bootstrap step silently
-          deleted the seed file out of); see the "Common mistakes" slide and <code>labs/ldap-federation/
-          README.md</code> for exactly what broke and the fix actually used
-          (<code>LDAP_SEED_INTERNAL_LDIF_PATH</code>, a copy-based seeding mechanism instead of the two
-          move/rename-based ones that failed).</p></li>
+          deleted the seed file out of); see the "Common mistakes" slide for exactly what broke and the
+          fix actually used (<code>LDAP_SEED_INTERNAL_LDIF_PATH</code>, a copy-based seeding mechanism
+          instead of the two move/rename-based ones that failed — already baked into the
+          <code>docker-compose.yml</code> above).</p></li>
         </ol>
       </section>
 
@@ -517,15 +695,16 @@ curl -s -X POST "http://localhost:18132/admin/realms/meridian-trust/components" 
           <pre><code>{"error":"invalid_grant","error_description":"Invalid user credentials"}</code></pre></li>
 
           <li><p>Tear the isolated stack down cleanly (the seed file on the host survives this, by
-          design — see the README's seeding-gotchas section):</p>
+          design — the <code>LDAP_SEED_INTERNAL_LDIF_PATH</code> mechanism above copies rather than
+          consumes it):</p>
           <pre><code>docker compose down -v</code></pre>
-          <pre><code> Container ldap-federation-keycloak-1 Removed
- Container ldap-federation-openldap-1 Removed
- Container ldap-federation-postgres-1 Removed
- Volume ldap-federation_ldap_fed_pg_data Removed
- Volume ldap-federation_ldap_fed_data Removed
- Volume ldap-federation_ldap_fed_config Removed
- Network ldap-federation_default Removed</code></pre></li>
+          <pre><code> Container keycloak-lab-ldap-keycloak-1 Removed
+ Container keycloak-lab-ldap-openldap-1 Removed
+ Container keycloak-lab-ldap-postgres-1 Removed
+ Volume keycloak-lab-ldap_ldap_fed_pg_data Removed
+ Volume keycloak-lab-ldap_ldap_fed_data Removed
+ Volume keycloak-lab-ldap_ldap_fed_config Removed
+ Network keycloak-lab-ldap_default Removed</code></pre></li>
         </ol>
       </section>
 

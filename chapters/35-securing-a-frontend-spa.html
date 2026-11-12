@@ -476,78 +476,133 @@ $ npm view @vitejs/plugin-react@4.7.0 engines
         </div>
       </section>
 
-      <section class="slide" data-slide="lab-scaffold" data-title="Lab: scaffolding the app">
-        <h2>Hands-on lab, continued: scaffolding and installing for real</h2>
+      <section class="slide" data-slide="lab-scaffold" data-title="Lab: creating the app's files">
+        <h2>Hands-on lab, continued: creating every file this app needs, then installing for real</h2>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-package-json"><code>package.json</code></a> — the dependency/script
+            manifest. This is the only file <code>npm install</code> actually reads; every other file
+            below is the app's own source, not something a package manager needs.</li>
+            <li><a href="#file-vite-config-js"><code>vite.config.js</code></a> — the dev-server/build
+            configuration (just the React plugin, nothing custom).</li>
+            <li><a href="#file-eslint-config-js"><code>eslint.config.js</code></a> — lint rules; not
+            required to run the app, but step 8 below checks it comes back clean.</li>
+            <li><a href="#file-index-html"><code>index.html</code></a> — the app's actual HTML entry
+            point (note the title: Riverside Health's real app, not a generic template).</li>
+            <li><a href="#file-src-main-jsx"><code>src/main.jsx</code></a> — the React root render,
+            wrapping the whole app in <code>react-oidc-context</code>'s <code>&lt;AuthProvider&gt;</code>.</li>
+            <li><a href="#file-src-app-jsx"><code>src/App.jsx</code></a> — the actual login/logout UI,
+            driven entirely by the <code>useAuth()</code> hook.</li>
+            <li><a href="#file-src-app-css"><code>src/App.css</code></a> — styling for the
+            card/status/claims UI <code>App.jsx</code> renders.</li>
+            <li><a href="#file-src-index-css"><code>src/index.css</code></a> — page-level base styling.</li>
+            <li><a href="#file-src-oidcconfig-js"><code>src/oidcConfig.js</code></a> — the OIDC client
+            configuration: realm, client ID, redirect URIs, scopes. Deliberately has no
+            <code>client_secret</code> field — see the "What concept is this?" box above for why.</li>
+          </ul>
+        </div>
+
         <ol class="lab-steps" start="6" style="counter-reset: lab-step 5">
-          <li><p><strong>Step 6 — scaffold the project</strong> with the pinned, Node-18-compatible
-          generator:</p>
-          <pre><code>$ npm create vite@6.5.0 . -- --template react
-npm warn exec The following package was not found and will be installed: create-vite@6.5.0
-
-&gt; npx
-&gt; cva . --template react
-
-│
-◇  Scaffolding project in .../labs/react-spa...
-│
-└  Done. Now run:
-
-  npm install
-  npm run dev</code></pre>
-          <p>Real output, this machine, this session. The generated <code>package.json</code> pins
-          <code>"vite": "^6.3.5"</code>, <code>"@vitejs/plugin-react": "^4.4.1"</code>,
-          <code>"react": "^19.1.0"</code>, <code>"react-dom": "^19.1.0"</code> — confirming step 5's
-          prediction rather than merely asserting it.</p></li>
-
-          <li><p><strong>Step 7 — install, and watch for engine warnings</strong> (there are none):</p>
-          <pre><code>$ npm install
-npm warn deprecated eslint@9.39.5: This version is no longer supported. ...
-
-added 153 packages, and audited 154 packages in 15s
-found 0 vulnerabilities</code></pre>
-          <p>The only warning is ESLint's own end-of-support notice (unrelated to Node/Vite compatibility,
-          and not something that blocks anything here) — no "unsupported engine" warning for Vite or
-          plugin-react, which is exactly what the live research in steps 2-5 predicted.</p></li>
-
-          <li><p><strong>Step 8 — add the OIDC library, verifying current versions before pinning them</strong>
-          rather than assuming a name heard once is still current:</p>
-          <pre><code>$ npm view react-oidc-context version
-3.3.1
-$ npm view react-oidc-context peerDependencies
-{ 'oidc-client-ts': '^3.1.0', react: '&gt;=16.14.0' }
-$ npm view oidc-client-ts version
-3.5.0
-
-$ npm install react-oidc-context oidc-client-ts
-added 4 packages, and audited 158 packages in 1s
-found 0 vulnerabilities</code></pre>
-          <p><code>react-oidc-context@3.3.1</code> (which bundles <code>oidc-client-ts@3.5.0</code> as a
-          dependency, satisfying its own <code>^3.1.0</code> peer requirement) installed cleanly — both
-          packages declare <code>node: '&gt;=18'</code>, so no Node-version surprises here either.</p></li>
-        </ol>
-      </section>
-
-      <section class="slide" data-slide="lab-app-code" data-title="Lab: the app's OIDC configuration">
-        <h2>Hands-on lab, continued: wiring up <code>AuthProvider</code></h2>
-        <p>Three files do the real work. <code>src/oidcConfig.js</code> holds the OIDC settings as a plain
-        object — deliberately with no <code>client_secret</code> field, because this is a public client:</p>
-        <pre><code>// labs/react-spa/src/oidcConfig.js
-export const oidcConfig = {
-  authority: "http://localhost:8080/realms/riverside-health",
-  client_id: "patient-portal",
-  redirect_uri: "http://localhost:5173/",
-  post_logout_redirect_uri: "http://localhost:5173/",
-  scope: "openid profile email",
-  // oidc-client-ts defaults to an in-memory token store when no userStore
-  // is supplied -- exactly the choice this chapter's "token storage" slide
-  // argues for, so nothing further needs configuring here.
-  onSigninCallback: () =&gt; {
-    window.history.replaceState({}, document.title, window.location.pathname);
+          <li><p><strong>Step 6 — create the project folder and every file above</strong>, with their
+          exact real content. Steps 2-5's live research already settled which dependency versions are
+          Node-18-safe, so <code>package.json</code> below is written directly with those exact pins
+          already in it, rather than running a scaffolding tool and then editing its output:</p>
+<pre><code>mkdir -p patient-portal/src
+cd patient-portal</code></pre>
+          <p>Create <code>package.json</code>:</p>
+<pre id="file-package-json" data-filename="package.json"><code>{
+  "name": "react-spa",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
   },
-};</code></pre>
-        <p><code>src/main.jsx</code> wraps the whole app in <code>&lt;AuthProvider&gt;</code>:</p>
-        <pre><code>// labs/react-spa/src/main.jsx
+  "dependencies": {
+    "oidc-client-ts": "^3.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-oidc-context": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "vite": "^6.3.5"
+  }
+}</code></pre>
+          <p>Create <code>vite.config.js</code>:</p>
+<pre id="file-vite-config-js" data-filename="vite.config.js"><code>import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})</code></pre>
+          <p>Create <code>eslint.config.js</code>:</p>
+<pre id="file-eslint-config-js" data-filename="eslint.config.js"><code>import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+
+export default [
+  { ignores: ['dist'] },
+  {
+    files: ['**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
+    },
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+    },
+  },
+]</code></pre>
+          <p>Create <code>index.html</code>:</p>
+<pre id="file-index-html" data-filename="index.html"><code>&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+  &lt;head&gt;
+    &lt;meta charset="UTF-8" /&gt;
+    &lt;link rel="icon" href="data:," /&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0" /&gt;
+    &lt;title&gt;Riverside Health Patient Portal&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id="root"&gt;&lt;/div&gt;
+    &lt;script type="module" src="/src/main.jsx"&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+          <p>Create <code>src/main.jsx</code>:</p>
+<pre id="file-src-main-jsx" data-filename="src/main.jsx"><code>import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 import { AuthProvider } from "react-oidc-context";
+import "./index.css";
+import App from "./App.jsx";
 import { oidcConfig } from "./oidcConfig.js";
 
 createRoot(document.getElementById("root")).render(
@@ -557,17 +612,258 @@ createRoot(document.getElementById("root")).render(
     &lt;/AuthProvider&gt;
   &lt;/StrictMode&gt;,
 );</code></pre>
-        <p><code>src/App.jsx</code> reads everything it needs from the <code>useAuth()</code> hook —
-        <code>isLoading</code>, <code>isAuthenticated</code>, <code>user.profile</code> (the decoded ID
-        token claims), and <code>signinRedirect()</code>/<code>removeUser()</code> to drive the flow
-        Figure 35.1 diagrams:</p>
-        <pre><code>const auth = useAuth();
-// ...
-if (auth.isAuthenticated) {
-  const { profile } = auth.user;
-  return &lt;p&gt;Signed in as {profile.preferred_username}&lt;/p&gt;;
+          <p>Create <code>src/App.jsx</code> — the full login/logout UI, not a trimmed snippet:</p>
+<pre id="file-src-app-jsx" data-filename="src/App.jsx"><code>import { useAuth } from "react-oidc-context";
+import "./App.css";
+
+// Riverside Health's patient portal: the minimal shell this chapter's lab
+// actually builds and runs. react-oidc-context's useAuth() hook exposes the
+// same authorization-code + PKCE round trip chapters 13/15 taught by hand --
+// isAuthenticated, user.profile (decoded ID token claims), and
+// signinRedirect()/removeUser() driving the real /authorize and /token calls.
+function App() {
+  const auth = useAuth();
+
+  if (auth.isLoading) {
+    return &lt;p className="status"&gt;Loading patient portal session...&lt;/p&gt;;
+  }
+
+  if (auth.error) {
+    return (
+      &lt;div className="card card--error"&gt;
+        &lt;h1&gt;Riverside Health Patient Portal&lt;/h1&gt;
+        &lt;p className="status status--error"&gt;Authentication error: {auth.error.message}&lt;/p&gt;
+        &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Try signing in again&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  if (auth.isAuthenticated) {
+    const { profile } = auth.user;
+    return (
+      &lt;div className="card card--authenticated"&gt;
+        &lt;h1&gt;Riverside Health Patient Portal&lt;/h1&gt;
+        &lt;p className="status status--ok"&gt;
+          Signed in as &lt;strong&gt;{profile.preferred_username ?? profile.sub}&lt;/strong&gt;
+        &lt;/p&gt;
+        &lt;dl className="claims"&gt;
+          &lt;dt&gt;sub&lt;/dt&gt;
+          &lt;dd&gt;{profile.sub}&lt;/dd&gt;
+          &lt;dt&gt;email&lt;/dt&gt;
+          &lt;dd&gt;{profile.email ?? "(email scope not granted)"}&lt;/dd&gt;
+          &lt;dt&gt;iss&lt;/dt&gt;
+          &lt;dd&gt;{profile.iss}&lt;/dd&gt;
+          &lt;dt&gt;exp&lt;/dt&gt;
+          &lt;dd&gt;{new Date(profile.exp * 1000).toLocaleString()}&lt;/dd&gt;
+        &lt;/dl&gt;
+        &lt;button onClick={() =&gt; auth.removeUser()}&gt;Sign out&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className="card"&gt;
+      &lt;h1&gt;Riverside Health Patient Portal&lt;/h1&gt;
+      &lt;p className="status"&gt;You are not signed in.&lt;/p&gt;
+      &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Sign in with Keycloak&lt;/button&gt;
+    &lt;/div&gt;
+  );
 }
-return &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Sign in with Keycloak&lt;/button&gt;;</code></pre>
+
+export default App;</code></pre>
+          <p>Create <code>src/App.css</code>:</p>
+<pre id="file-src-app-css" data-filename="src/App.css"><code>#root {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: left;
+}
+
+.card {
+  padding: 1.5em 2em;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+}
+
+.card--authenticated {
+  border-color: #2f9e44;
+}
+
+.card--error {
+  border-color: #e03131;
+}
+
+.status {
+  font-size: 1.05em;
+}
+
+.status--ok {
+  color: #2f9e44;
+}
+
+.status--error {
+  color: #e03131;
+}
+
+.claims {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25em 1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  margin: 1em 0;
+}
+
+.claims dt {
+  font-weight: 700;
+}
+
+.claims dd {
+  margin: 0;
+  word-break: break-all;
+}</code></pre>
+          <p>Create <code>src/index.css</code>:</p>
+<pre id="file-src-index-css" data-filename="src/index.css"><code>:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}</code></pre>
+          <p>Create <code>src/oidcConfig.js</code> — deliberately no <code>client_secret</code> field,
+          because this is a public client (see "What concept is this?" above):</p>
+<pre id="file-src-oidcconfig-js" data-filename="src/oidcConfig.js"><code>// OIDC / PKCE configuration for react-oidc-context's AuthProvider.
+//
+// Points at the plain `docker compose up -d` Keycloak instance from chapter
+// 20, running on the default http://localhost:8080, in a realm/client this
+// chapter's own lab steps create below (realm "riverside-health", public
+// client "patient-portal").
+export const oidcConfig = {
+  authority: "http://localhost:8080/realms/riverside-health",
+  client_id: "patient-portal",
+  redirect_uri: "http://localhost:5173/",
+  post_logout_redirect_uri: "http://localhost:5173/",
+  // No client_secret anywhere in this object -- this is a PUBLIC client. A secret
+  // embedded in a browser bundle would be readable by anyone who opens devtools,
+  // so Keycloak's "Client authentication: Off" + "PKCE required" is the only
+  // correct combination for a browser-based SPA (chapter 24 covers the admin
+  // console fields; this chapter is where the consequence becomes concrete).
+  scope: "openid profile email",
+  // Keep tokens in memory, not localStorage/sessionStorage -- see this chapter's
+  // "token storage tradeoffs" slide for why. oidc-client-ts defaults to an
+  // in-memory WebStorageStateStore when none is supplied, which is what we want
+  // here, so no userStore override is set.
+  onSigninCallback: () => {
+    // Strip the ?code=...&state=... the authorization server appended to our
+    // redirect_uri so a page refresh doesn't try to replay a single-use code.
+    window.history.replaceState({}, document.title, window.location.pathname);
+  },
+};</code></pre></li>
+
+          <li><p><strong>Step 7 — install, and watch for engine warnings</strong> (there are none) — this
+          was actually re-run against the exact files above, from scratch, to confirm the combined
+          install (one <code>npm install</code>, not a scaffold-then-add-OIDC-library two-step) still
+          resolves cleanly:</p>
+          <pre><code>$ npm install
+npm warn deprecated eslint@9.39.5: This version is no longer supported. ...
+
+added 156 packages, and audited 157 packages in 19s
+found 0 vulnerabilities</code></pre>
+          <p>No "unsupported engine" warning for Vite or plugin-react, which is exactly what the live
+          research in steps 2-5 predicted. The only warning is ESLint's own end-of-support notice,
+          unrelated to Node/Vite compatibility.</p></li>
+
+          <li><p><strong>Step 8 — confirm the exact resolved versions</strong>, rather than trusting the
+          pins in <code>package.json</code> alone:</p>
+<pre><code>$ npm ls react-oidc-context oidc-client-ts vite
+react-spa@0.0.0 .../patient-portal
+├─┬ @vitejs/plugin-react@4.7.0
+│ └── vite@6.4.6 deduped
+├── oidc-client-ts@3.5.0
+├─┬ react-oidc-context@3.3.1
+│ └── oidc-client-ts@3.5.0 deduped
+└── vite@6.4.6</code></pre>
+          <p><code>react-oidc-context@3.3.1</code> resolved with <code>oidc-client-ts@3.5.0</code> as its
+          own dependency (satisfying its <code>^3.1.0</code> peer requirement), and Vite resolved to
+          <code>6.4.6</code> — inside the <code>^6.3.5</code> range step 5 pinned, genuinely
+          Node-18-compatible, not a guess.</p></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-app-code" data-title="Lab: the app's OIDC configuration">
+        <h2>Hands-on lab, continued: wiring up <code>AuthProvider</code></h2>
+        <p>Three of the files created in step 6 do the real work, recapped here in words rather than
+        repasting the code: <code>src/oidcConfig.js</code> holds the OIDC settings as a plain object —
+        deliberately with no <code>client_secret</code> field, because this is a public client, and no
+        <code>userStore</code> override, because <code>oidc-client-ts</code> already defaults to the
+        in-memory token store this chapter's "token storage" slide argues for. <code>src/main.jsx</code>
+        wraps the whole app in <code>&lt;AuthProvider {...oidcConfig}&gt;</code>, which is the one line
+        that actually activates everything <code>oidcConfig.js</code> configured. <code>src/App.jsx</code>
+        reads everything it needs from the <code>useAuth()</code> hook —
+        <code>isLoading</code>, <code>isAuthenticated</code>, <code>user.profile</code> (the decoded ID
+        token claims), and <code>signinRedirect()</code>/<code>removeUser()</code> — to drive the exact
+        flow Figure 35.1 diagrams, entirely through that one hook's return value.</p>
 
         <div class="callout callout--in-keycloak">
           <div class="callout-label">In Keycloak</div>
@@ -663,9 +959,11 @@ $ npm run lint
       <section class="slide" data-slide="lab-keycloak-setup" data-title="Lab: the realm and client">
         <h2>Hands-on lab, continued: a real realm and public client</h2>
         <ol class="lab-steps" start="12" style="counter-reset: lab-step 11">
-          <li><p><strong>Step 12 — bring up Keycloak</strong> (plain, reader-facing command — default
-          port 8080, matching <code>oidcConfig.js</code> above):</p>
-          <pre><code>$ docker compose -f labs/docker/docker-compose.yml up -d
+          <li><p><strong>Step 12 — bring up Keycloak</strong> — the same stack
+          <a href="20-installing-keycloak.html">chapter 20</a> brought up (see that chapter for the exact
+          <code>docker-compose.yml</code> if you don't already have it running), default port 8080,
+          matching <code>oidcConfig.js</code> above:</p>
+          <pre><code>$ docker compose up -d
 # ... postgres healthy, keycloak started ...
 $ curl -s http://localhost:8080/realms/master/.well-known/openid-configuration | python3 -m json.tool | head -3
 {

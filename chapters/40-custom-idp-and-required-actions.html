@@ -64,7 +64,8 @@
         neither this chapter's Identity Provider SPI contract nor its Required Action SPI contract were assumed
         to live where an older guide or a different SPI family's chapter might suggest); and this chapter's own
         lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker Compose stack this chapter
-        owns (<code>labs/custom-idp-and-required-actions/</code>).</p>
+        owns — every file it needs is given in full later on this page, no separate repository
+        required.</p>
       </section>
 
       <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
@@ -329,13 +330,889 @@
 
       <section class="slide" data-slide="lab-idp-setup" data-title="Lab: standing up the IdP side">
         <h2>Lab: building, deploying, and registering the custom Identity Provider</h2>
-        <p>Isolated stack, project name <code>ch40kc</code>, host port <strong>18140</strong> — never the shared
-        <code>labs/docker/docker-compose.yml</code>, and distinct from chapter 33's <code>ch33kc</code>/18133
-        and chapter 39's <code>ch39kc</code>/18139.</p>
+        <p>Isolated stack, project name <code>ch40kc</code>, host port <strong>18140</strong> — its own
+        dedicated Keycloak + PostgreSQL stack, distinct from the shared stack chapter 20 set up, and from
+        chapter 33's <code>ch33kc</code>/18133 and chapter 39's <code>ch39kc</code>/18139.</p>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-pom-xml"><code>pom.xml</code></a> — Maven build file — two SPI providers, one jar</li>
+            <li><a href="#file-docker-compose-yml"><code>docker-compose.yml</code></a> — This chapter's own isolated Keycloak + PostgreSQL stack</li>
+            <li><a href="#file-src-main-java-com-meridiantrust-keycloak-legacysso-legacyssoutil-java"><code>src/main/java/com/meridiantrust/keycloak/legacysso/LegacySsoUtil.java</code></a> — Shared HMAC sign/verify helper for the toy Cascade SSO protocol</li>
+            <li><a href="#file-src-main-java-com-meridiantrust-keycloak-legacysso-meridianlegacyssoidentityproviderfactory-java"><code>src/main/java/com/meridiantrust/keycloak/legacysso/MeridianLegacySsoIdentityProviderFactory.java</code></a> — Registers the custom Identity Provider with Keycloak</li>
+            <li><a href="#file-src-main-java-com-meridiantrust-keycloak-legacysso-meridianlegacyssoidentityprovider-java"><code>src/main/java/com/meridiantrust/keycloak/legacysso/MeridianLegacySsoIdentityProvider.java</code></a> — The custom Identity Provider itself (redirect-out + callback-in)</li>
+            <li><a href="#file-src-main-java-com-riversidehealth-keycloak-hipaaconsent-riversidehipaaacknowledgmentrequiredaction-java"><code>src/main/java/com/riversidehealth/keycloak/hipaaconsent/RiversideHipaaAcknowledgmentRequiredAction.java</code></a> — The custom Required Action (HIPAA acknowledgment)</li>
+            <li><a href="#file-src-main-resources-meta-inf-services-org-keycloak-authentication-requiredactionfactory"><code>src/main/resources/META-INF/services/org.keycloak.authentication.RequiredActionFactory</code></a> — ServiceLoader registration for the Required Action</li>
+            <li><a href="#file-src-main-resources-meta-inf-services-org-keycloak-broker-provider-identityproviderfactory"><code>src/main/resources/META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory</code></a> — ServiceLoader registration for the Identity Provider</li>
+            <li><a href="#file-src-main-resources-theme-resources-templates-riverside-hipaa-consent-ftl"><code>src/main/resources/theme-resources/templates/riverside-hipaa-consent.ftl</code></a> — The HIPAA acknowledgment page's FreeMarker template</li>
+            <li><a href="#file-toy-legacy-idp-legacy_sso_server-py"><code>toy-legacy-idp/legacy_sso_server.py</code></a> — The toy external "Cascade SSO" legacy IdP (plain Python, stdlib only)</li>
+          </ul>
+        </div>
+
         <ol class="lab-steps">
-          <li><p><strong>Build the jar and bring the stack up:</strong></p>
-<pre><code>cd labs/custom-idp-and-required-actions
-mvn clean package
+          <li><p>Create a new folder for this lab and lay out the Maven project structure — a real
+          Maven module needs these exact nested directories, not a flat folder of files:</p>
+<pre><code>mkdir -p ch40-lab/src/main/java/com/meridiantrust/keycloak/legacysso
+mkdir -p ch40-lab/src/main/java/com/riversidehealth/keycloak/hipaaconsent
+mkdir -p ch40-lab/src/main/resources/META-INF/services
+mkdir -p ch40-lab/src/main/resources/theme-resources/templates
+mkdir -p ch40-lab/toy-legacy-idp
+cd ch40-lab</code></pre>
+          <p>Now create each file below at the matching path shown in its header, with exactly the
+          content shown (click Copy on each):</p>
+
+<pre id="file-pom-xml" data-filename="pom.xml"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!--
+  Chapter 40's two-component advanced-SPI lab, built as ONE Maven module producing ONE provider jar
+  (the same "one jar, multiple provider factories" shape Keycloak itself ships — a single provider
+  jar is free to register as many unrelated SPI implementations as it likes via separate
+  META-INF/services files; nothing requires a one-jar-per-SPI split). This mirrors chapter 33's
+  single-project-per-lab pattern rather than splitting into two Maven modules: the two components
+  are functionally independent (a custom Identity Provider for Meridian Trust vs. a custom Required
+  Action for Riverside Health), but they share the exact same dependency coordinates, the exact same
+  target Keycloak version, and the exact same deploy step (drop one jar into /opt/keycloak/providers),
+  so a second module would only have added build-script duplication without buying any real isolation.
+
+  Dependency coordinates were live-verified against the actual jars bundled inside the running
+  quay.io/keycloak/keycloak:26.8.2 image before this POM was written (same method chapter 33 and
+  chapter 39 used: "docker create" + "docker cp" the real jars out, then "javap -c -p" the actual
+  class files — not guessed from older docs). The key finding that makes this POM's dependency list
+  different from chapter 33's: IdentityProvider / IdentityProviderFactory / AbstractIdentityProvider
+  / AbstractIdentityProviderFactory / UserAuthenticationIdentityProvider (identity-broker SPI) AND
+  RequiredActionProvider / RequiredActionFactory / RequiredActionContext (required-action SPI) all
+  live in org.keycloak:keycloak-server-spi-private, NOT in keycloak-server-spi alone (confirmed via
+  "jar tf" + "javap" against the real 26.8.2 jar: the classpath-visible org.keycloak.models.* support
+  types, such as IdentityProviderModel and RequiredActionConfigModel, are in keycloak-server-spi, but
+  the SPI *contracts* for both of this chapter's providers are in keycloak-server-spi-private). This
+  is a different artifact split than chapter 33's UserStorageProvider (server-spi + model-storage),
+  and different again from whatever chapter 39's authenticator/event-listener/protocol-mapper SPIs
+  turned out to need — each SPI family can live in a different jar; always re-verify, never assume
+  the previous chapter's coordinates carry over.
+
+  All four Keycloak/Jakarta dependencies below are scope=provided: Keycloak supplies these classes at
+  runtime from its own /opt/keycloak/lib; bundling them into this provider's jar would duplicate
+  classes already on the server's classpath. Two corrections made against the initial guess while
+  actually compiling this POM: (1) org.keycloak.Config/Config.Scope (needed by the RequiredActionFactory
+  contract's init() method) is NOT in either server-spi artifact — it lives in keycloak-core, confirmed
+  by grepping the real 26.8.2 jar; (2) jakarta.ws.rs-api is NOT pulled in transitively from
+  keycloak-server-spi-private's own POM as first assumed — "mvn clean package" failed with "package
+  jakarta.ws.rs does not exist" until it was added explicitly below, pinned to 3.1.0, the exact version
+  confirmed bundled in the running image (jakarta.ws.rs.jakarta.ws.rs-api-3.1.0.jar under
+  /opt/keycloak/lib/lib/main). No shading or assembly plugin is needed: this jar has no other runtime
+  dependencies at all.
+--&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;groupId&gt;com.keycloakmastery.lab40&lt;/groupId&gt;
+  &lt;artifactId&gt;custom-idp-and-required-action-spi&lt;/artifactId&gt;
+  &lt;version&gt;1.0.0&lt;/version&gt;
+  &lt;packaging&gt;jar&lt;/packaging&gt;
+
+  &lt;name&gt;Chapter 40 Custom Identity Provider + Required Action SPI&lt;/name&gt;
+  &lt;description&gt;
+    Two independent Keycloak SPI providers in one jar, for chapter 40 of the IAM &amp;amp; Keycloak
+    Mastery course: a custom Identity Provider that brokers a toy stand-in "legacy proprietary SSO"
+    protocol for Meridian Trust (modeling an acquired-institution integration scenario), and a custom
+    Required Action that forces a one-time HIPAA data-handling acknowledgment for Riverside Health.
+  &lt;/description&gt;
+
+  &lt;properties&gt;
+    &lt;maven.compiler.release&gt;21&lt;/maven.compiler.release&gt;
+    &lt;project.build.sourceEncoding&gt;UTF-8&lt;/project.build.sourceEncoding&gt;
+    &lt;!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. --&gt;
+    &lt;keycloak.version&gt;26.8.2&lt;/keycloak.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;!-- org.keycloak.models.IdentityProviderModel, org.keycloak.models.RequiredActionConfigModel,
+         org.keycloak.provider.ProviderConfigProperty, org.keycloak.provider.Provider --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-server-spi&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+
+    &lt;!-- org.keycloak.broker.provider.{IdentityProvider,IdentityProviderFactory,AbstractIdentityProvider,
+         AbstractIdentityProviderFactory,UserAuthenticationIdentityProvider,AuthenticationRequest,
+         BrokeredIdentityContext,IdentityProviderDataMarshaller,DefaultDataMarshaller}; and
+         org.keycloak.authentication.{RequiredActionProvider,RequiredActionFactory,RequiredActionContext}.
+         Confirmed live, in THIS artifact, for Keycloak 26.8.2 (not keycloak-server-spi alone). --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-server-spi-private&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+
+    &lt;!-- org.keycloak.Config / org.keycloak.Config.Scope, required by RequiredActionFactory.init().
+         Lives in keycloak-core, not either server-spi artifact — confirmed by grepping the real jar. --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-core&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+
+    &lt;!-- jakarta.ws.rs.* (Response, UriInfo, UriBuilder, MultivaluedMap, GET/Path/Context annotations).
+         Version pinned to the exact jar bundled in quay.io/keycloak/keycloak:26.8.2
+         (jakarta.ws.rs.jakarta.ws.rs-api-3.1.0.jar under /opt/keycloak/lib/lib/main). --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;jakarta.ws.rs&lt;/groupId&gt;
+      &lt;artifactId&gt;jakarta.ws.rs-api&lt;/artifactId&gt;
+      &lt;version&gt;3.1.0&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;finalName&gt;custom-idp-and-required-action-spi-${project.version}&lt;/finalName&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.13.0&lt;/version&gt;
+      &lt;/plugin&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-jar-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.4.1&lt;/version&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</code></pre>
+
+<pre id="file-docker-compose-yml" data-filename="docker-compose.yml"><code># Chapter 40's own, isolated Keycloak + PostgreSQL stack.
+#
+# A separate compose file from the shared stack chapter 20 set up (used by every other Keycloak
+# chapter that doesn't need its own custom provider jar) and from chapter 33's/39's own per-chapter
+# stacks, for the same reason chapter 33 gave:
+# this chapter needs a Keycloak instance with its own custom provider jar mounted into
+# /opt/keycloak/providers/, which no other chapter's stack should be asked to carry around. Project
+# name ch40kc, host port 18140 -- the two things this chapter was told to isolate on, so it can run
+# alongside the shared stack, chapter 33's ch33kc/18133, and chapter 39's ch39kc/18139 without any
+# collision.
+#
+#
+# The toy Cascade SSO legacy IdP (toy-legacy-idp/legacy_sso_server.py) is NOT part of this compose
+# file -- it runs as a plain host process (python3 legacy_sso_server.py --port 18141 --secret ...),
+# reachable at http://localhost:18141. This is deliberate, not an oversight: every redirect in this
+# chapter's broker round trip is followed by the BROWSER (or, in this lab, curl standing in for one),
+# never by the Keycloak container reaching out to the toy IdP server-to-server -- so the toy IdP only
+# ever needs to be reachable from the host the curl commands run on, and no container-to-host network
+# bridging (extra_hosts/host.docker.internal) is needed at all. See the chapter text for the full
+# request-by-request trace that makes this concrete.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch40_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev, matching every other chapter's lab stack -- no TLS/hostname configuration needed for
+    # a local teaching lab.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18140:8080"
+    volumes:
+      - ./target/custom-idp-and-required-action-spi-1.0.0.jar:/opt/keycloak/providers/custom-idp-and-required-action-spi-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch40_pg_data:</code></pre>
+
+<pre id="file-src-main-java-com-meridiantrust-keycloak-legacysso-legacyssoutil-java" data-filename="src/main/java/com/meridiantrust/keycloak/legacysso/LegacySsoUtil.java"><code>package com.meridiantrust.keycloak.legacysso;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.InvalidKeyException;
+import java.util.HexFormat;
+
+/**
+ * Shared HMAC-SHA256 signing/verification helper for the toy "Cascade Legacy SSO" protocol.
+ *
+ * &lt;p&gt;This is deliberately the ONLY cryptographic ingredient the toy protocol uses: a shared secret,
+ * known to both this Keycloak provider and the toy legacy IdP server
+ * ({@code toy-legacy-idp/legacy_sso_server.py}), used to sign the handful of fields the legacy IdP
+ * hands back on its callback redirect ({@code legacy_user}, {@code legacy_email}, {@code state},
+ * {@code ts}). Without this signature, anything could forge a "successful legacy login" callback by
+ * simply crafting the right query string and sending the browser's own request straight at Keycloak's
+ * broker endpoint &amp;mdash; the whole point of brokering trust (chapter 7's IdP/SP trust triangle) is
+ * that the relying side only accepts an assertion it can verify came from the trusted IdP, not merely
+ * one that *looks* right.&lt;/p&gt;
+ */
+final class LegacySsoUtil {
+
+    private LegacySsoUtil() {
+    }
+
+    static String hmacSha256Hex(String secret, String message) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] raw = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(raw);
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new IllegalStateException("HmacSHA256 unavailable", e);
+        }
+    }
+
+    /** Constant-time comparison so a timing side-channel can't leak the expected signature. */
+    static boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                a.getBytes(StandardCharsets.UTF_8),
+                b.getBytes(StandardCharsets.UTF_8));
+    }
+}</code></pre>
+
+<pre id="file-src-main-java-com-meridiantrust-keycloak-legacysso-meridianlegacyssoidentityproviderfactory-java" data-filename="src/main/java/com/meridiantrust/keycloak/legacysso/MeridianLegacySsoIdentityProviderFactory.java"><code>package com.meridiantrust.keycloak.legacysso;
+
+import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.provider.ProviderConfigProperty;
+
+import java.util.List;
+
+/**
+ * Registers {@link MeridianLegacySsoIdentityProvider} with Keycloak under the realm's "Add provider"
+ * Identity Provider picker, the same discovery mechanism chapter 33's User Storage SPI used: this
+ * factory's fully qualified name is listed in
+ * {@code META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory}, and Keycloak scans
+ * every jar in {@code /opt/keycloak/providers} for that file at build/startup time (chapter 39's
+ * generic SPI-discovery diagram covers the common shape all of Keycloak's provider families share).
+ */
+public class MeridianLegacySsoIdentityProviderFactory
+        extends AbstractIdentityProviderFactory&lt;MeridianLegacySsoIdentityProvider&gt; {
+
+    public static final String PROVIDER_ID = "meridian-legacy-sso";
+
+    @Override
+    public String getName() {
+        return "Meridian Legacy SSO (Cascade)";
+    }
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public MeridianLegacySsoIdentityProvider create(KeycloakSession session, IdentityProviderModel model) {
+        return new MeridianLegacySsoIdentityProvider(session, model);
+    }
+
+    @Override
+    public IdentityProviderModel createConfig() {
+        return new IdentityProviderModel();
+    }
+
+    @Override
+    public List&lt;ProviderConfigProperty&gt; getConfigProperties() {
+        ProviderConfigProperty baseUrl = new ProviderConfigProperty();
+        baseUrl.setName(MeridianLegacySsoIdentityProvider.CONFIG_LEGACY_BASE_URL);
+        baseUrl.setLabel("Legacy SSO base URL");
+        baseUrl.setHelpText("Base URL of the toy Cascade Savings Bank legacy SSO server, e.g. http://localhost:18141");
+        baseUrl.setType(ProviderConfigProperty.STRING_TYPE);
+
+        ProviderConfigProperty clientId = new ProviderConfigProperty();
+        clientId.setName(MeridianLegacySsoIdentityProvider.CONFIG_CLIENT_ID);
+        clientId.setLabel("Legacy client id");
+        clientId.setHelpText("The client_id this Keycloak realm is registered under at the legacy SSO server.");
+        clientId.setType(ProviderConfigProperty.STRING_TYPE);
+
+        ProviderConfigProperty sharedSecret = new ProviderConfigProperty();
+        sharedSecret.setName(MeridianLegacySsoIdentityProvider.CONFIG_SHARED_SECRET);
+        sharedSecret.setLabel("Shared HMAC secret");
+        sharedSecret.setHelpText("Secret shared out-of-band with the legacy SSO server, used to verify its callback signature.");
+        sharedSecret.setType(ProviderConfigProperty.PASSWORD);
+        sharedSecret.setSecret(true);
+
+        return List.of(baseUrl, clientId, sharedSecret);
+    }
+
+    @Override
+    public String getHelpText() {
+        return "Brokers logins against the toy stand-in 'Cascade SSO' legacy protocol (chapter 40 lab).";
+    }
+}</code></pre>
+
+<pre id="file-src-main-java-com-meridiantrust-keycloak-legacysso-meridianlegacyssoidentityprovider-java" data-filename="src/main/java/com/meridiantrust/keycloak/legacysso/MeridianLegacySsoIdentityProvider.java"><code>package com.meridiantrust.keycloak.legacysso;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
+import org.keycloak.broker.provider.AbstractIdentityProvider;
+import org.keycloak.broker.provider.AuthenticationRequest;
+import org.keycloak.broker.provider.BrokeredIdentityContext;
+import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.models.FederatedIdentityModel;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
+
+import java.time.Instant;
+
+/**
+ * A custom Keycloak Identity Provider that brokers logins against a toy stand-in for "Cascade SSO" --
+ * a fictional legacy, proprietary single-sign-on system belonging to Cascade Savings Bank, a smaller
+ * institution Meridian Trust has just acquired. Cascade SSO is NOT a real named vendor product; it is
+ * a deliberately minimal protocol invented for this chapter so the redirect-out/callback-in shape
+ * every broker needs can be built and exercised end to end without a real external dependency. See
+ * chapter 40's text for why this scenario (an acquired institution's un-migrated legacy IdP) is a
+ * realistic reason a real IAM specialist would ever need to write a brand-new broker type instead of
+ * reaching for one of Keycloak's built-in OIDC/SAML/social broker implementations (chapter 31).
+ *
+ * &lt;p&gt;The protocol this class speaks, end to end:&lt;/p&gt;
+ * &lt;ol&gt;
+ *   &lt;li&gt;{@link #performLogin} redirects the browser to the toy IdP's
+ *       {@code GET /legacy-sso/authorize} endpoint, carrying {@code client_id}, the
+ *       Keycloak-computed {@code redirect_uri} (the fixed broker-endpoint convention from chapter 31 --
+ *       {@code /realms/{realm}/broker/{alias}/endpoint}), and the opaque, Keycloak-minted
+ *       {@code state} value unchanged.&lt;/li&gt;
+ *   &lt;li&gt;The toy IdP authenticates the user itself (its own login form, its own user table -- Keycloak
+ *       never sees the Cascade credential) and 302-redirects the browser back to that exact
+ *       {@code redirect_uri}, appending {@code legacy_user}, {@code legacy_email}, {@code legacy_first_name},
+ *       {@code legacy_last_name}, the same {@code state} it was given, a unix-seconds {@code ts}, and an
+ *       HMAC-SHA256 {@code sig} over those fields, keyed with a secret shared out-of-band with this
+ *       provider's configuration.&lt;/li&gt;
+ *   &lt;li&gt;Keycloak's generic broker endpoint resolves this provider and calls {@link #callback}, which
+ *       hands back {@link Endpoint} -- a small JAX-RS sub-resource that verifies the signature and the
+ *       timestamp, resolves the real Keycloak {@link AuthenticationSessionModel} behind the state value,
+ *       and -- only if all of that checks out -- builds a {@link BrokeredIdentityContext} and calls
+ *       {@code callback.authenticated(...)}, which is what actually lets Keycloak proceed to its own
+ *       First Broker Login / JIT-provisioning logic (chapter 31) for the Cascade identity.&lt;/li&gt;
+ * &lt;/ol&gt;
+ */
+public class MeridianLegacySsoIdentityProvider extends AbstractIdentityProvider&lt;IdentityProviderModel&gt; {
+
+    static final String CONFIG_LEGACY_BASE_URL = "legacyBaseUrl";
+    static final String CONFIG_CLIENT_ID = "legacyClientId";
+    static final String CONFIG_SHARED_SECRET = "sharedSecret";
+
+    /** Callback signatures older than this many seconds are rejected as a stale/replayed redirect. */
+    private static final long MAX_CLOCK_SKEW_SECONDS = 300;
+
+    public MeridianLegacySsoIdentityProvider(KeycloakSession session, IdentityProviderModel config) {
+        super(session, config);
+    }
+
+    @Override
+    public Response performLogin(AuthenticationRequest request) {
+        IdentityProviderModel config = getConfig();
+        String legacyBaseUrl = config.getConfig().get(CONFIG_LEGACY_BASE_URL);
+        String clientId = config.getConfig().get(CONFIG_CLIENT_ID);
+        if (legacyBaseUrl == null || legacyBaseUrl.isBlank()) {
+            throw new IdentityBrokerException(
+                    "Meridian legacy SSO provider '" + config.getAlias() + "' has no " + CONFIG_LEGACY_BASE_URL
+                            + " configured.");
+        }
+        UriBuilder authorizeUri = UriBuilder.fromUri(legacyBaseUrl)
+                .path("legacy-sso/authorize")
+                .queryParam("client_id", clientId)
+                .queryParam("redirect_uri", request.getRedirectUri())
+                .queryParam("state", request.getState().getEncoded());
+        return Response.seeOther(authorizeUri.build()).build();
+    }
+
+    @Override
+    public Object callback(RealmModel realm, UserAuthenticationIdentityProvider.AuthenticationCallback callback,
+                            EventBuilder event) {
+        return new Endpoint(realm, callback, event, this);
+    }
+
+    @Override
+    public Response retrieveToken(KeycloakSession session, FederatedIdentityModel federatedIdentityModel) {
+        // Cascade SSO is a pure redirect-and-assert protocol with nothing resembling an OAuth access
+        // token to hand back -- there is no further token to retrieve. This method exists only
+        // because UserAuthenticationIdentityProvider declares it abstract for providers (like the
+        // OIDC/OAuth2 brokers) that DO have something to return here; a token-less broker like this
+        // one legitimately has nothing to put in the body.
+        return Response.ok("{\"note\":\"Cascade legacy SSO has no retrievable token.\"}").build();
+    }
+
+    @Override
+    public Response retrieveToken(KeycloakSession session, FederatedIdentityModel federatedIdentityModel,
+                                   UserSessionModel userSession, UserModel user) {
+        return retrieveToken(session, federatedIdentityModel);
+    }
+
+    @Override
+    public void importNewUser(KeycloakSession session, RealmModel realm, UserModel user,
+                               BrokeredIdentityContext context) {
+        // Mark provenance on the JIT-provisioned local user so an auditor (chapter 11's compliance
+        // concerns are exactly this) can tell, years later, that this account's identity originated
+        // from the acquired Cascade Savings Bank system rather than a native Meridian Trust signup.
+        user.setSingleAttribute("legacySource", "cascade-sso");
+        super.importNewUser(session, realm, user, context);
+    }
+
+    /**
+     * The JAX-RS sub-resource Keycloak's generic broker endpoint dispatches to for every request that
+     * lands on {@code /realms/{realm}/broker/{alias}/endpoint} for this provider -- the "callback-in"
+     * half of the redirect-out/callback-in sequence.
+     */
+    public static class Endpoint {
+
+        private final RealmModel realm;
+        private final UserAuthenticationIdentityProvider.AuthenticationCallback callback;
+        private final EventBuilder event;
+        private final MeridianLegacySsoIdentityProvider provider;
+
+        Endpoint(RealmModel realm, UserAuthenticationIdentityProvider.AuthenticationCallback callback,
+                 EventBuilder event, MeridianLegacySsoIdentityProvider provider) {
+            this.realm = realm;
+            this.callback = callback;
+            this.event = event;
+            this.provider = provider;
+        }
+
+        @GET
+        @Path("")
+        public Response callback(@Context UriInfo uriInfo) {
+            String legacyUser = uriInfo.getQueryParameters().getFirst("legacy_user");
+            String legacyEmail = uriInfo.getQueryParameters().getFirst("legacy_email");
+            String legacyFirstName = uriInfo.getQueryParameters().getFirst("legacy_first_name");
+            String legacyLastName = uriInfo.getQueryParameters().getFirst("legacy_last_name");
+            String state = uriInfo.getQueryParameters().getFirst("state");
+            String ts = uriInfo.getQueryParameters().getFirst("ts");
+            String sig = uriInfo.getQueryParameters().getFirst("sig");
+
+            IdentityProviderModel config = provider.getConfig();
+            if (state == null || ts == null || sig == null || legacyUser == null) {
+                return callback.error(config, "missingCallbackParameters");
+            }
+
+            String secret = config.getConfig().get(CONFIG_SHARED_SECRET);
+            String expectedMessage = legacyUser + "|" + (legacyEmail == null ? "" : legacyEmail) + "|" + state + "|" + ts;
+            String expectedSig = LegacySsoUtil.hmacSha256Hex(secret, expectedMessage);
+            if (!LegacySsoUtil.constantTimeEquals(expectedSig, sig)) {
+                return callback.error(config, "invalidLegacySsoSignature");
+            }
+
+            long tsSeconds;
+            try {
+                tsSeconds = Long.parseLong(ts);
+            } catch (NumberFormatException e) {
+                return callback.error(config, "invalidLegacySsoTimestamp");
+            }
+            long nowSeconds = Instant.now().getEpochSecond();
+            if (Math.abs(nowSeconds - tsSeconds) &gt; MAX_CLOCK_SKEW_SECONDS) {
+                return callback.error(config, "expiredLegacySsoCallback");
+            }
+
+            AuthenticationSessionModel authSession = this.callback.getAndVerifyAuthenticationSession(state);
+            if (authSession == null) {
+                return callback.error(config, "invalidLegacySsoState");
+            }
+            // "session" is AbstractIdentityProvider's own protected field; Endpoint, as a nested class
+            // of MeridianLegacySsoIdentityProvider, can reach it through a provider instance.
+            provider.session.getContext().setAuthenticationSession(authSession);
+            provider.session.getContext().setRealm(realm);
+
+            BrokeredIdentityContext context = new BrokeredIdentityContext(legacyUser, config);
+            context.setIdp(provider);
+            context.setUsername(legacyUser);
+            context.setEmail(legacyEmail);
+            context.setFirstName(legacyFirstName);
+            context.setLastName(legacyLastName);
+            context.setBrokerUserId(legacyUser);
+            context.setAuthenticationSession(authSession);
+
+            return this.callback.authenticated(context);
+        }
+    }
+}</code></pre>
+
+<pre id="file-src-main-java-com-riversidehealth-keycloak-hipaaconsent-riversidehipaaacknowledgmentrequiredaction-java" data-filename="src/main/java/com/riversidehealth/keycloak/hipaaconsent/RiversideHipaaAcknowledgmentRequiredAction.java"><code>package com.riversidehealth.keycloak.hipaaconsent;
+
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import org.keycloak.Config;
+import org.keycloak.authentication.RequiredActionContext;
+import org.keycloak.authentication.RequiredActionFactory;
+import org.keycloak.authentication.RequiredActionProvider;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.UserModel;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * A custom Keycloak Required Action that forces a one-time HIPAA patient-data-handling
+ * acknowledgment onto Riverside Health clinicians before their login session is allowed to complete.
+ *
+ * &lt;p&gt;This is the mechanism underneath chapter 25's built-in required-action configuration: chapter 25
+ * configured and ordered &lt;em&gt;built-in&lt;/em&gt; actions (Configure OTP, Update Password, Verify Email);
+ * this class is a brand-new one, discovered the same way (a {@code *Factory} registered in
+ * {@code META-INF/services/org.keycloak.authentication.RequiredActionFactory}, scanned from
+ * {@code /opt/keycloak/providers}) but with code this course wrote rather than code Keycloak ships.&lt;/p&gt;
+ *
+ * &lt;p&gt;&lt;strong&gt;Required action vs. authenticator, the distinction chapter 39 flags from the other
+ * side:&lt;/strong&gt; a required action (this class) runs &lt;em&gt;after&lt;/em&gt; the credential check has already
+ * succeeded -- it can never cause a correct password/OTP to be rejected, it can only insert a
+ * mandatory extra step between "authentication succeeded" and "session handed to the application."
+ * A custom authenticator (chapter 39) runs &lt;em&gt;during&lt;/em&gt; the credential check itself and can refuse
+ * to let authentication succeed at all. Both can block a login from completing, but at genuinely
+ * different points in the timeline -- confusing the two is the single most common beginner mistake
+ * with Keycloak's authentication flow model (chapter 25's "common mistakes" section already flagged
+ * the built-in-action version of this same confusion).&lt;/p&gt;
+ *
+ * &lt;p&gt;Follows the exact shape of Keycloak's own built-in
+ * {@code org.keycloak.authentication.requiredactions.TermsAndConditions} (decompiled from the running
+ * 26.8.2 image's {@code keycloak-services} jar as this chapter's reference, not copied from any
+ * external source -- Keycloak's built-in class is itself the same one-class-implements-both-interfaces
+ * pattern used here): one class implements both {@link RequiredActionProvider} (the per-invocation
+ * behavior) and {@link RequiredActionFactory} (the registration/discovery metadata), with
+ * {@code create(session)} simply returning {@code this} since this provider is stateless.&lt;/p&gt;
+ */
+public class RiversideHipaaAcknowledgmentRequiredAction implements RequiredActionProvider, RequiredActionFactory {
+
+    public static final String PROVIDER_ID = "riverside-hipaa-ack";
+
+    /** User attribute recording when (epoch seconds) the acknowledgment was accepted. */
+    static final String ACKNOWLEDGED_AT_ATTRIBUTE = "riversideHipaaAckAt";
+
+    private static final String TEMPLATE = "riverside-hipaa-consent.ftl";
+    private static final String FORM_FIELD_CANCEL = "cancel";
+
+    @Override
+    public void evaluateTriggers(RequiredActionContext context) {
+        // Deliberately a no-op: this lab assigns the action to one specific test user via the Admin
+        // REST API (the same per-user assignment chapter 22 did for priya.patel's CONFIGURE_TOTP),
+        // not as a realm-wide default-for-every-new-user action. A real Riverside Health deployment
+        // could instead check something like "has this clinician ever acknowledged the current policy
+        // version" here and call context.getUser().addRequiredAction(PROVIDER_ID) automatically --
+        // left out of this lab to keep the one mechanism being taught (the required action itself)
+        // separate from a second, independent policy decision (who gets it assigned, and when).
+    }
+
+    @Override
+    public void requiredActionChallenge(RequiredActionContext context) {
+        Response challenge = context.form()
+                .setAttribute("user", context.getUser())
+                .createForm(TEMPLATE);
+        context.challenge(challenge);
+    }
+
+    @Override
+    public void processAction(RequiredActionContext context) {
+        MultivaluedMap&lt;String, String&gt; formData = context.getHttpRequest().getDecodedFormParameters();
+        if (formData.containsKey(FORM_FIELD_CANCEL)) {
+            context.failure("riversideHipaaAckDeclined");
+            return;
+        }
+        UserModel user = context.getUser();
+        user.setAttribute(ACKNOWLEDGED_AT_ATTRIBUTE, List.of(Long.toString(Instant.now().getEpochSecond())));
+        context.success();
+    }
+
+    @Override
+    public String getDisplayText() {
+        return "Riverside Health – HIPAA Data Handling Acknowledgment";
+    }
+
+    @Override
+    public RequiredActionProvider create(KeycloakSession session) {
+        return this;
+    }
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public void init(Config.Scope config) {
+        // no-op: this provider needs no server-wide configuration.
+    }
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {
+        // no-op
+    }
+
+    @Override
+    public void close() {
+        // no-op: stateless, nothing to release.
+    }
+}</code></pre>
+
+<pre id="file-src-main-resources-meta-inf-services-org-keycloak-authentication-requiredactionfactory" data-filename="src/main/resources/META-INF/services/org.keycloak.authentication.RequiredActionFactory"><code>com.riversidehealth.keycloak.hipaaconsent.RiversideHipaaAcknowledgmentRequiredAction</code></pre>
+
+<pre id="file-src-main-resources-meta-inf-services-org-keycloak-broker-provider-identityproviderfactory" data-filename="src/main/resources/META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory"><code>com.meridiantrust.keycloak.legacysso.MeridianLegacySsoIdentityProviderFactory</code></pre>
+
+<pre id="file-src-main-resources-theme-resources-templates-riverside-hipaa-consent-ftl" data-filename="src/main/resources/theme-resources/templates/riverside-hipaa-consent.ftl"><code>&lt;#--
+  Riverside Health's one-time HIPAA data-handling acknowledgment page, rendered by
+  RiversideHipaaAcknowledgmentRequiredAction's requiredActionChallenge().
+
+  Deployed as a THEME RESOURCE, not a whole custom theme: Keycloak's built-in "classpath" Theme
+  Resource Provider (org.keycloak.theme.ClasspathThemeResourceProviderFactory, confirmed live for
+  26.8.2 via javap against the running image's keycloak-services jar) automatically scans every
+  provider jar's classpath for a theme-resources/templates/ directory and merges whatever it finds
+  into whichever theme is currently active -- no META-INF/services registration needed for this part,
+  and no need to fork/replace the realm's whole login theme just to add one new page. Modeled
+  structurally on Keycloak's own built-in terms.ftl (decompiled from the running image's bundled
+  keycloak-themes jar as a reference for the correct &lt;#import&gt;/layout macro usage -- the TEXT here is
+  original to this course).
+--&gt;
+&lt;#import "template.ftl" as layout&gt;
+&lt;@layout.registrationLayout displayMessage=false; section&gt;
+    &lt;#if section = "header"&gt;
+        HIPAA Data Handling Acknowledgment
+    &lt;#elseif section = "form"&gt;
+    &lt;div id="kc-hipaa-ack-text"&gt;
+        &lt;p&gt;
+            &lt;#if user?? &amp;&amp; user.firstName??&gt;Hello ${user.firstName}, &lt;#else&gt;Hello, &lt;/#if&gt;
+            before you can continue, Riverside Health requires every clinician to acknowledge the
+            following for this login session:
+        &lt;/p&gt;
+        &lt;ul&gt;
+            &lt;li&gt;Patient records accessed through this session are covered by HIPAA and Riverside
+                Health's internal data-handling policy.&lt;/li&gt;
+            &lt;li&gt;Access to a patient's record must be for a legitimate treatment, payment, or
+                operations purpose &amp;mdash; not out of curiosity, even for a public figure or a
+                coworker.&lt;/li&gt;
+            &lt;li&gt;This session may be reviewed as part of Riverside Health's routine HIPAA audit
+                trail (chapter 11's compliance chapter, chapter 28's event-auditing chapter).&lt;/li&gt;
+        &lt;/ul&gt;
+        &lt;p&gt;You must acknowledge this notice before your login can complete. This is a Required
+            Action (chapter 25) &amp;mdash; it runs after your password/OTP has already been verified,
+            not as part of verifying them.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;form class="form-actions" action="${url.loginAction}" method="POST"&gt;
+        &lt;input class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonLargeClass!}"
+               name="submitAction" id="kc-accept" type="submit" value="I Acknowledge"/&gt;
+        &lt;input class="${properties.kcButtonClass!} ${properties.kcButtonDefaultClass!} ${properties.kcButtonLargeClass!}"
+               name="cancel" id="kc-decline" type="submit" value="Decline"/&gt;
+    &lt;/form&gt;
+    &lt;div class="clearfix"&gt;&lt;/div&gt;
+    &lt;/#if&gt;
+&lt;/@layout.registrationLayout&gt;</code></pre>
+
+<pre id="file-toy-legacy-idp-legacy_sso_server-py" data-filename="toy-legacy-idp/legacy_sso_server.py"><code>#!/usr/bin/env python3
+"""A tiny, deliberately minimal stand-in for Cascade Savings Bank's "Cascade SSO" legacy proprietary
+single-sign-on system -- a toy protocol invented for chapter 40 of the IAM &amp; Keycloak Mastery course,
+NOT a real named vendor product. It exists purely so the chapter's custom Identity Provider SPI
+(MeridianLegacySsoIdentityProvider) has something real to redirect to and get a real callback from.
+
+Protocol (teaching-grade, not production-grade -- see the chapter's "common mistakes" section):
+
+  GET /legacy-sso/authorize?client_id=...&amp;redirect_uri=...&amp;state=...
+      Serves a plain HTML login form. The redirect_uri and state are carried through as hidden form
+      fields so they survive the POST below.
+
+  POST /legacy-sso/authorize  (same path)
+      Body: username, password, client_id, redirect_uri, state.
+      On a correct username/password match against this server's own in-memory user table (standing
+      in for Cascade's real, un-migrated legacy user store -- this is exactly the kind of system an
+      acquired institution keeps running after an acquisition, chapter 11's compliance chapter and
+      chapter 9's threat-landscape chapter both flag "acquired-and-unaudited" systems like this one as
+      a real risk category), responds with a 302 redirect to:
+          {redirect_uri}?legacy_user=...&amp;legacy_email=...&amp;legacy_first_name=...&amp;legacy_last_name=...
+              &amp;state=...&amp;ts=&lt;unix-seconds&gt;&amp;sig=&lt;hex HMAC-SHA256&gt;
+      sig is HMAC-SHA256, keyed with a shared secret given to this process on the command line, over
+      the exact string "{legacy_user}|{legacy_email}|{state}|{ts}" -- the same message format and
+      algorithm MeridianLegacySsoIdentityProvider's Endpoint.callback() verifies on the Keycloak side.
+      On a wrong username/password, re-renders the login form with an error message instead.
+
+  GET /health
+      Plain 200 OK, used by the lab's own readiness check before the browser-side round trip starts.
+
+Run:
+  python3 legacy_sso_server.py --port 18141 --secret &lt;shared-secret&gt;
+
+Deliberately standard-library only (http.server, hmac, hashlib) -- no pip install needed, matching
+this course's "Python 3.12 is available" baseline and keeping the lab's toy IdP auditable in one file.
+"""
+import argparse
+import hashlib
+import hmac
+import html
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlencode, urlparse, parse_qs
+
+# Cascade Savings Bank's own (toy, plaintext-for-teaching-clarity) legacy user table. A real 20-
+# year-old proprietary SSO system's credential storage is exactly the kind of thing an acquiring
+# bank's IAM specialist has to assess and eventually retire -- this plaintext dict is standing in for
+# that same real-world "inherited, not-ideal, but still authoritative" legacy credential store chapter
+# 33's CSV-backed staff directory already modeled for a different org.
+CASCADE_USERS = {
+    "jmartinez": {
+        "password": "CascadeP@ss1",
+        "email": "j.martinez@cascadesavings.example",
+        "first_name": "Javier",
+        "last_name": "Martinez",
+    },
+    "rwong": {
+        "password": "CascadeP@ss2",
+        "email": "r.wong@cascadesavings.example",
+        "first_name": "Rachel",
+        "last_name": "Wong",
+    },
+}
+
+SECRET = None  # set from --secret at startup
+
+
+def sign(legacy_user, legacy_email, state, ts):
+    message = f"{legacy_user}|{legacy_email}|{state}|{ts}".encode("utf-8")
+    return hmac.new(SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+LOGIN_FORM_TEMPLATE = """&lt;!doctype html&gt;
+&lt;html&gt;&lt;head&gt;&lt;title&gt;Cascade SSO (toy) &amp;ndash; Sign in&lt;/title&gt;&lt;/head&gt;
+&lt;body style="font-family: sans-serif; max-width: 420px; margin: 60px auto;"&gt;
+&lt;h2&gt;Cascade SSO &lt;small&gt;(toy stand-in, chapter 40 lab)&lt;/small&gt;&lt;/h2&gt;
+{error}
+&lt;form method="POST" action="/legacy-sso/authorize"&gt;
+  &lt;input type="hidden" name="client_id" value="{client_id}"&gt;
+  &lt;input type="hidden" name="redirect_uri" value="{redirect_uri}"&gt;
+  &lt;input type="hidden" name="state" value="{state}"&gt;
+  &lt;p&gt;&lt;label&gt;Username&lt;br&gt;&lt;input type="text" name="username" autofocus&gt;&lt;/label&gt;&lt;/p&gt;
+  &lt;p&gt;&lt;label&gt;Password&lt;br&gt;&lt;input type="password" name="password"&gt;&lt;/label&gt;&lt;/p&gt;
+  &lt;p&gt;&lt;button type="submit"&gt;Sign in to Cascade SSO&lt;/button&gt;&lt;/p&gt;
+&lt;/form&gt;
+&lt;/body&gt;&lt;/html&gt;
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ToyCascadeSSO/1.0"
+
+    def log_message(self, fmt, *args):
+        print("[toy-legacy-idp] " + (fmt % args))
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            self._respond(200, b"ok", "text/plain")
+            return
+        if parsed.path == "/legacy-sso/authorize":
+            qs = parse_qs(parsed.query)
+            client_id = html.escape(qs.get("client_id", [""])[0])
+            redirect_uri = html.escape(qs.get("redirect_uri", [""])[0])
+            state = html.escape(qs.get("state", [""])[0])
+            body = LOGIN_FORM_TEMPLATE.format(
+                error="", client_id=client_id, redirect_uri=redirect_uri, state=state)
+            self._respond(200, body.encode("utf-8"), "text/html")
+            return
+        self._respond(404, b"not found", "text/plain")
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/legacy-sso/authorize":
+            self._respond(404, b"not found", "text/plain")
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        form = parse_qs(body)
+        username = form.get("username", [""])[0]
+        password = form.get("password", [""])[0]
+        client_id = form.get("client_id", [""])[0]
+        redirect_uri = form.get("redirect_uri", [""])[0]
+        state = form.get("state", [""])[0]
+
+        user = CASCADE_USERS.get(username)
+        if user is None or user["password"] != password:
+            error_html = '&lt;p style="color:red"&gt;Incorrect Cascade username or password.&lt;/p&gt;'
+            page = LOGIN_FORM_TEMPLATE.format(
+                error=error_html,
+                client_id=html.escape(client_id),
+                redirect_uri=html.escape(redirect_uri),
+                state=html.escape(state))
+            self._respond(200, page.encode("utf-8"), "text/html")
+            return
+
+        ts = str(int(time.time()))
+        sig = sign(username, user["email"], state, ts)
+        params = {
+            "legacy_user": username,
+            "legacy_email": user["email"],
+            "legacy_first_name": user["first_name"],
+            "legacy_last_name": user["last_name"],
+            "state": state,
+            "ts": ts,
+            "sig": sig,
+        }
+        location = redirect_uri + ("&amp;" if "?" in redirect_uri else "?") + urlencode(params)
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def _respond(self, status, body_bytes, content_type):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body_bytes)))
+        self.end_headers()
+        self.wfile.write(body_bytes)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Toy Cascade SSO legacy IdP stand-in")
+    parser.add_argument("--port", type=int, default=18141)
+    parser.add_argument("--secret", required=True)
+    parser.add_argument("--host", default="0.0.0.0")
+    args = parser.parse_args()
+
+    global SECRET
+    SECRET = args.secret
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"[toy-legacy-idp] Cascade SSO (toy) listening on http://{args.host}:{args.port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()</code></pre>
+
+          <p><strong>Then build the jar and bring the stack up</strong> from inside <code>ch40-lab</code>:</p>
+<pre><code>mvn clean package
 docker compose -p ch40kc up -d</code></pre>
           <p>Real output, both providers discovered at build time:</p>
 <pre><code>WARN  [org.keycloak.services] (build-11) KC-SERVICES0047: riverside-hipaa-ack
