@@ -15,6 +15,24 @@ this as a maintenance/extension phase, not a build-in-progress one: the standing
 the end of the Final QA entry (Vercel not yet connected, chat-widget and progress export/import both
 still deferred per CLAUDE.md §12) are the only known remaining work, and none of them block v1.0.
 
+**Post-v1.0 fix (2026-11-12, user-reported): the copy button could paste broken commands.** Many
+transcript blocks mix a `$ command` / `>>> expr` prompt with that command's own literal output in one
+block, for on-page readability (e.g. chapter 13's PKCE walkthrough). The copy button built earlier this
+session copied the whole block verbatim — a user who clicked Copy there and pasted into a real terminal
+got the `$`/output lines fed to the shell as if they were commands too (`$: command not found`, and the
+literal output values treated as command names). Root cause found from the user's own pasted terminal
+transcript, not just inferred. Fix: `assets/js/book.js`'s `extractCopyText()` now runs before copying
+(for plain transcript blocks only — never for a `data-filename` file block, which must stay byte-exact)
+— strips the `$ `/`>>> ` prompt, keeps backslash-continuation lines and comments, drops bare output
+lines. A block with no prompt at all (pure command, or pure output) is returned completely unchanged.
+Deliberately matches on `"$ "` (dollar + a real space) specifically, never bare `$NAME` — confirmed this
+matters for real: the capstone's own `seed-realm.sh` script (inlined as a file block) uses `$KC` as a
+shell variable alias on dozens of lines, which a looser match would have corrupted. Verified
+programmatically, not just by eyeballing the regex: extracted and ran the real function against all 66
+affected blocks site-wide (9 chapters: 13, 15, 24, 29, 33, 34, 35, 39, 42), inspected every one's
+output for leftover prompts/output lines (zero found), and spot-checked that non-prompt blocks (the
+~535 majority) pass through byte-identical.
+
 **Self-contained-labs retrofit (user-requested, off-queue, ahead of the Final QA pass) — in progress,
 started 2026-11-12.** The user will only ever share this site's deployed Vercel link, never this GitHub
 repo — but every lab chapter currently tells the reader to `cd labs/<folder>` or references a file like

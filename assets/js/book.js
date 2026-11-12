@@ -142,6 +142,57 @@
      Plain command blocks get a floating "Copy" button; a <pre data-filename="...">
      gets a header bar naming the file, with the button in it, so the markup for a
      lab's file listing never needs anything beyond that one attribute. */
+
+  /* Many transcript blocks (no data-filename -- those are real files, copied verbatim,
+     never touched here) mix a "$ command" / ">>> expr" prompt with its own literal
+     output in one block, for readability on the page. Copying the raw text and pasting
+     it into a real shell tries to execute the output lines too. This extracts only the
+     actual input a reader typed: strips the prompt, keeps backslash-continuation lines
+     and comments, and drops bare output lines. A block with no prompt line at all (a
+     pure command, or a pure output transcript) is returned unchanged. The prompt is
+     "$" followed by a literal space -- never bare "$NAME", so a real shell variable
+     reference at the start of a line (e.g. a file's own "$KC create ...") is never
+     mistaken for a prompt in the first place; file blocks are excluded before this
+     function is ever called anyway, as a second, independent safeguard. */
+  function extractCopyText(raw) {
+    var lines = raw.split("\n");
+    var hasPrompt = lines.some(function (l) {
+      return /^\s*\$ /.test(l) || /^\s*>>> /.test(l);
+    });
+    if (!hasPrompt) return raw;
+
+    var kept = [];
+    var continuing = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (continuing) {
+        kept.push(line);
+        continuing = /\\\s*$/.test(line);
+        continue;
+      }
+      if (/^\s*\$ /.test(line)) {
+        var strippedDollar = line.replace(/^\s*\$ /, "");
+        kept.push(strippedDollar);
+        continuing = /\\\s*$/.test(strippedDollar);
+        continue;
+      }
+      if (/^\s*>>> /.test(line)) {
+        kept.push(line.replace(/^\s*>>> /, ""));
+        continue;
+      }
+      if (/^\s*\.\.\. /.test(line)) { // Python REPL continuation prompt
+        kept.push(line.replace(/^\s*\.\.\. /, ""));
+        continue;
+      }
+      if (/^\s*#/.test(line) || line.trim() === "") {
+        kept.push(line); // comments and blank lines are safe to paste, and useful to keep
+        continue;
+      }
+      // anything else on an unprefixed line is the command's own real output -- drop it
+    }
+    return kept.join("\n");
+  }
+
   function copyText(text, btn) {
     var original = btn.textContent;
     function showCopied() {
@@ -190,7 +241,8 @@
       btn.setAttribute("aria-label", filename ? "Copy " + filename + " to clipboard" : "Copy command to clipboard");
       btn.addEventListener("click", function () {
         var codeEl = pre.querySelector("code") || pre;
-        copyText(codeEl.textContent, btn);
+        var raw = codeEl.textContent;
+        copyText(filename ? raw : extractCopyText(raw), btn);
       });
 
       if (filename) {
