@@ -241,10 +241,52 @@ discrepancies — done as the first sub-item, see below.
     47. Self-containment (no reliance on this repo's own folders) confirmed for every single lab chapter
     and the capstone, with no exceptions.
 
+- **"In Keycloak" callout spot-check — DONE.** Found all 26 callouts across the 19 Parts I-III chapters
+  (00-18) — the ones CLAUDE.md §4 rule 2 calls out specifically, since they're forward-pointers written
+  before Keycloak is ever installed (chapter 20), so they carried the most risk of a claim nobody ever
+  checked against a real instance. No browser tool exists in this session, so verification used the
+  same two methods this whole build has used throughout: (1) cross-referencing each callout's "full
+  depth lands in chapter N" pointer against that later chapter — all 26 point at chapters already
+  independently re-verified live in this same Final QA pass (21, 22, 23, 24, 27, 28, 29, 30, 31, 32, 36,
+  37), so if the later chapter's own claim held up live (it did, see above), the earlier forward-pointer
+  is validated by extension; (2) for the handful of specific UI-path/field-name claims not already
+  covered by a lab chapter's own re-run (the "Capability config" tab name for the device-flow toggle,
+  the "Service accounts roles" toggle, the PKCE "Code Challenge Method" field, the Account Console path,
+  required-action display names like "Configure OTP", realm key/`kid` fields, brute-force-detection
+  fields, events-enabled fields), spun up one fresh throwaway Keycloak 26.8.2 instance and confirmed each
+  one directly via the real Admin REST API/kcadm (the actual mechanism every admin-console screen is a
+  UI layer over) plus one live web search cross-referencing Red Hat's own build of Keycloak docs for the
+  "Capability config" section name specifically. **Zero discrepancies found** — every checked claim held
+  up exactly as written. Two callouts (chapter 10's "no built-in access-review/IGA feature," chapter 12's
+  "no PAM/IGA module") are negative/market-positioning claims about Keycloak's product category, not a
+  clickable screen — out of scope for an admin-console check by their own nature, not skipped.
+
+- **`tools/check_links.py`, `validate_quiz.py`, `validate_glossary.py` — built.** CLAUDE.md §3/§7 has
+  named these three since the very first session, but they were never actually built — every link/quiz/
+  glossary check across the whole project ran as an ad-hoc scratch script instead. Turned this session's
+  working scratch logic into three real, reusable, documented tools in `tools/` (each takes no
+  arguments, runs from the repo root, non-zero exit on failure). Ran all three against the current site
+  as their own first real test: `check_links.py` — 67 pages, 196 external links, zero broken internal
+  links; `validate_quiz.py` — 56 pools, 962 questions, zero issues; `validate_glossary.py` — 672 terms,
+  51 nav chapters, zero issues. All three passed cleanly.
+- **README.md updated to reflect a complete, built course** (previously written as if the shell barely
+  existed — "once the labs are built," "once the shell exists," "living, in-progress project"). Added
+  the exams/capstone/self-contained-labs facts, fixed the project-structure tree (`exams/`, `capstone/`,
+  `capstone.html`, `exams.html`, the real `tools/` scripts), and pointed the quick-start section at each
+  chapter's own self-contained lab instructions instead of a separate `labs/README.md` prerequisite.
+  Verified every link in the README resolves.
+
+**Final QA pass (queue item 21) — COMPLETE, 2026-11-12.** Diagram contrast audit, full link check, full
+quiz/glossary validation, every lab re-run from a clean Docker state, every "In Keycloak" callout
+spot-checked, the three validator tools built, and this README update — all done, all documented above.
+**This closes CLAUDE.md §8's Final QA gate. The course is content-complete at v1.0**: all 50 chapters,
+the capstone, the 5 exams, the 3 case studies, every lab self-contained, zero known open content bugs.
+Standing open items not part of this gate (unchanged, not touched this session): Vercel deployment not
+yet connected; the chat-widget feature remains deferred per CLAUDE.md §12; progress export/import
+remains deferred per the same section.
+
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
-detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out
-CLAUDE.md §8's Final QA gate and v1.0. The brief that built chapters 49-50 is preserved below for
-reference.
+detail. The brief that built chapters 49-50 is preserved below for reference.
 
 - **Ch 49 — Becoming an IAM Specialist** (`chapters/49-becoming-an-iam-specialist.html`, slug
   `becoming-an-iam-specialist`, already placeholdered in `nav-data.js`). Skills matrix (vendor-neutral
@@ -567,10 +609,12 @@ a template/build gate, not a content-mastery one.
 20. ~~Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.~~ — done
     2026-11-12, see Done below. **Final QA pass (item 21) is next and last.**
 
-### Final
-21. Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
+### Final — DONE
+21. ~~Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
     clean Docker state, every "In Keycloak" callout spot-checked against a live admin console. README.md
-    update to reflect final chapter count and lab list.
+    update to reflect final chapter count and lab list.~~ — done 2026-11-12, see the "Final QA pass" entry
+    above for full detail. **→ Final QA gate reached, awaiting approval** (gates are never self-approved
+    per CLAUDE.md §8 — say "approve Final QA gate" when ready).
 
 ## Gates
 
@@ -580,7 +624,7 @@ a template/build gate, not a content-mastery one.
 - **GATE-4: approved 2026-11-10**, no feedback given (approved as built). See summary below.
 - **GATE-5: approved 2026-11-11** ("approve GATE-5"), no feedback given (approved as built). See summary
   below.
-- Final QA gate: not reached
+- Final QA gate: reached 2026-11-12, awaiting approval
 
 ### GATE-1 review summary
 

@@ -7,16 +7,23 @@ chapter shows how Keycloak implements it, and every Keycloak chapter recalls whi
 instance of.
 
 Like [sde-prep](../sde-prep), this is a small, static HTML "book": chapters with diagrams, a searchable
-glossary, graded quizzes, hands-on labs against a real local Keycloak instance, and three running case
-studies (a SaaS company, a hospital network, a bank) that carry through the whole course. No backend, no
-build step, no npm — just HTML, CSS, and vanilla JavaScript, so it works offline and opens straight from
-the filesystem or any static host. (The hands-on labs need Docker and a JDK locally — see
-[`labs/README.md`](labs/README.md) once the labs are built.)
+glossary, graded quizzes, hands-on labs against a real local Keycloak instance, five milestone exams,
+three running case studies (a SaaS company, a hospital network, a bank) that carry through the whole
+course, and a real, running multi-app capstone build. No backend, no build step, no npm — just HTML,
+CSS, and vanilla JavaScript, so it works offline and opens straight from the filesystem or any static
+host.
+
+**Every lab is fully self-contained on the page itself** — every file a lab needs (compose files,
+Java/React/Spring source, configs) is pasted inline with a copy button and a "files you'll need"
+checklist, so following a lab never requires cloning this repository. The only local requirements are
+Docker, a JDK, Node, and `curl` (chapter 0 covers environment setup) — nothing from this repo's own
+`labs/`/`capstone/` folders is ever assumed.
 
 ## What's inside
 
-This is one course in eleven parts, 50 chapters plus a capstone — see [`CLAUDE.md`](CLAUDE.md) for the
-full curriculum table and content standards.
+This is one course in eleven parts — 50 chapters, a capstone, five milestone exams, and three
+full case-study write-ups — see [`CLAUDE.md`](CLAUDE.md) for the full curriculum table and content
+standards.
 
 | Part | Focus |
 |---|---|
@@ -33,10 +40,11 @@ full curriculum table and content standards.
 | X | Case Studies & Capstone: multi-tenant SaaS, healthcare (HIPAA), fintech (PCI-DSS), a full capstone build |
 | XI | Career & Reference: the IAM specialist role, interview question bank, master glossary & cheat sheets |
 
-This is a living, in-progress project — see [`BUILD_STATUS.md`](BUILD_STATUS.md) for exactly what's
-built, what's next, and any open questions.
+All 50 chapters, the capstone, the 5 exams, and the 3 case studies are built and verified — see
+[`BUILD_STATUS.md`](BUILD_STATUS.md) for the full build log, every real bug found and fixed along the
+way, and the current Final QA pass.
 
-## Quick start (once the shell exists)
+## Quick start
 
 Because quiz scores and reading progress are saved with `localStorage`, serve the site over HTTP
 rather than double-clicking files:
@@ -45,8 +53,9 @@ rather than double-clicking files:
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`. For the hands-on labs, each lab's own instructions bring up a local
-Keycloak via Docker Compose — the deployed site stays static; only your own machine runs Keycloak.
+Then open `http://localhost:8000`. For the hands-on labs, each chapter's own lab section gives you
+every file you need directly on the page — create them in a new local folder and follow that chapter's
+own commands; the deployed site stays static, and only your own machine ever runs Keycloak.
 
 ## How progress and quizzes work
 
@@ -59,17 +68,21 @@ page's site data resets that page's progress.
 
 ```
 keycloak/
-├── index.html              course home
-├── roadmap.html            phase-by-phase timeline with progress tracking
-├── glossary.html           searchable master glossary (IAM + Keycloak terms)
+├── index.html              course home (visual roadmap)
+├── roadmap.html            phase-by-phase pace tracker with progress tracking
+├── glossary.html           searchable master glossary (670+ IAM + Keycloak terms)
 ├── quizzes.html            score dashboard
-├── labs.html               hands-on lab index (Docker Compose Keycloak setups)
+├── labs.html               hands-on lab overview
 ├── case-studies.html       case study index
-├── chapters/               the 50 numbered chapters
-├── labs/                   supporting code for hands-on exercises (docker-compose, sample apps, SPI source)
+├── capstone.html           the real, running multi-app capstone build
+├── exams.html              the 5 milestone exams index
+├── exams/                  exam-foundations/protocols/keycloak-core/integration/final
+├── chapters/               the 50 numbered chapters — every lab is fully self-contained on its own page
+├── labs/                   this repo's own copy of each lab's source (not needed to follow a lab — see above)
+├── capstone/               this repo's own copy of the capstone's source (same note)
 ├── case-studies/           the 3 running case studies, full write-ups
 ├── assets/css, assets/js   the site's own design system and quiz engine (built fresh for this project)
-├── tools/                  validator scripts (link checker, quiz/glossary checks)
+├── tools/                  check_links.py, validate_quiz.py, validate_glossary.py
 ├── reference/              seed material, including the original single-file README (see its own header)
 ├── CLAUDE.md               the build orchestration brief this project follows
 └── BUILD_STATUS.md         build progress tracker and task queue
