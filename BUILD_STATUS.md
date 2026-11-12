@@ -162,6 +162,85 @@ discrepancies — done as the first sub-item, see below.
     hardcoded color in a non-diagram context) — scoped this pass to diagrams specifically, per the
     user's report; flag if anything else surfaces during the rest of the Final QA pass.
 
+- **Full link check — DONE.** Internal links: scripted check across all 67 HTML files found zero real
+  broken links (a handful of regex false-positives from matching `href="..."` patterns inside inline
+  `<script>` JS template strings and `data:,` favicon placeholders, not actual links). External links:
+  196 unique URLs across all deep-dive sections, 195/196 returned 200 on first curl; the 196th
+  (`fidoalliance.org/fido2/`) returned 403 to a bare curl request but 200 with realistic browser
+  headers (`Accept`/`Accept-Language`) — a WAF rule against minimal requests, not a dead link.
+
+- **Full quiz/glossary/nav validation — DONE.** All data files pass `node --check`. Quiz pools: 56
+  pools, 962 questions, 0 duplicate ids, 0 invalid `answerIndex` values, 0 missing required fields.
+  Glossary: 672 terms, 0 duplicate terms, 0 orphaned terms (empty `chapters` array), 0 dangling chapter
+  references (every slug in every term's `chapters` array resolves to a real `nav-data.js` entry). Nav:
+  51 chapters (0-50), 0 duplicate slugs, all 51 marked `built:true`.
+
+- **Every lab re-run from a clean Docker state — DONE, 8 parallel agents + 1 follow-up.** Per CLAUDE.md
+  §8. Each agent extracted every file purely from its chapter's own self-contained HTML page (not this
+  repo's `labs/`/`capstone/` folders) — this doubled as the acceptance test for the whole
+  self-contained-labs retrofit, and **confirmed clean for every chapter**: no lab needed anything this
+  repo's own folders provided that wasn't also on the page itself. Chapters 13-15 (curl-only against
+  Duende's public demo server, outside the Docker-based scope) were separately spot-checked live by the
+  coordinator — discovery document still resolves, `grant_types_supported` unchanged, the `m2m` client's
+  `client_credentials` grant still returns a real 200 token exactly as chapter 13-14 describe.
+  **Real, confirmed bugs found and fixed** (each independently re-verified by the coordinator before
+  fixing, not taken on an agent's word):
+  - **capstone `billing-api/pom.xml`**: a literal `--` inside an XML comment made Maven refuse to parse
+    the POM at all (`Non-parseable POM`) — fixed in both the real source file and its inlined copy in
+    `capstone.html`. Confirmed via a sitewide scan that no other `pom.xml` (real or inlined) carries the
+    same defect.
+  - **ch23**: a group-membership `kcadm` command hardcoded UUIDs from one specific authoring run (fails
+    on every other instance, since ids are freshly generated per run) — now captures ids via a lookup
+    first, the same pattern chapters 27/31 already use.
+  - **ch24**: the "client roles" section created a role under `northwind-dashboard` before that client
+    was even registered (a document-order bug), and referenced a client id that didn't match the one the
+    later registration command actually produced. Reordered the sections and fixed the id.
+  - **ch26**: the "before any i18n change" query claimed only `internationalizationEnabled` would show
+    in the response; the theme fields set earlier in the same chapter are actually already present by
+    that point too — corrected the claimed response and the explanation.
+  - **ch27**: the full-export command used `docker compose run --rm`, which deletes the exported files
+    the instant the container exits — before a reader could ever open the file the chapter claims to
+    have "confirmed directly." Added the missing host volume mount.
+  - **ch28**: misattributed a real login failure ("Account is not fully set up") to a missing
+    first/last name — `priya.patel`'s name was already set back in chapter 22. The real, confirmed cause
+    is chapter 22's own `CONFIGURE_TOTP` required action, still pending and un-completable on a
+    non-interactive grant. Corrected the lab narrative, the event-timeline diagram, the pitfall bullet,
+    a takeaway, and the self-check model answer (5 separate passages, all built on the same wrong
+    premise).
+  - **ch29**: two minor transcript errors — the real `error_description` after an admin revokes a
+    session is `"Invalid refresh token"`, not `"Session not active"` (4 occurrences fixed); and
+    `revokeRefreshToken` does print explicitly as `false` on a fresh realm rather than staying absent
+    the way chapter 26's theme fields genuinely do.
+  - **ch37**: the shown `create users` commands omit `email`, which trips the realm's declarative User
+    Profile completeness check on a direct-grant login ("Account is not fully set up") — added it.
+  - **ch39**: the lab narrated attaching the `tenant_id` protocol mapper to a client but never showed
+    the actual command, and never mentioned that `claim.name` must be set explicitly in that command or
+    the mapper registers with no error and then silently never adds the claim to any token. Added the
+    real command and the gotcha as a common-mistakes bullet.
+  - **ch40 — the largest single fix**: claimed declining the HIPAA required action produces "a real
+    400, a real login-error page." A live re-run under the chapter's own correct client/redirect setup
+    (confirmed identical to the one its own Accept path already validates) showed this is wrong: it's a
+    real `302` redirect straight back to the client's `redirect_uri`, carrying an ordinary OAuth
+    `error=access_denied`/`error_description=riversideHipaaAckDeclined` response — not a page at all.
+    Three connected passages were all built on the wrong premise (the main claim, a "Try it" callout
+    claiming the custom error string "doesn't show up" when it actually rides verbatim on the redirect,
+    and a common-mistakes bullet presenting a different context's behavior — no client/redirect in
+    play, e.g. Account Console — as if it were this lab's own result) — all three corrected together,
+    plus a genuinely useful real lesson added: an event-error string passed to `context.failure(...)`
+    is effectively public once it crosses an OAuth redirect, so it should stay a short, generic code.
+  - **ch46**: softened an overclaim that every client in a design-decision table was "confirmed live in
+    this course's own labs" — `northwind-cli` (the device-flow client) was named there but never
+    actually built; chapter 14's real device-flow lab used Duende's own generic `device` client instead,
+    since Keycloak doesn't enter the course until chapter 20.
+  - **ch48**: corrected which chapter actually created a real `meridian-trust` realm (chapter 36 — not
+    chapter 20, which created `northwind-apps`) and which chapters' labs genuinely ran against it versus
+    using `northwind-apps` as their concrete lab example while discussing Meridian only as a case-study
+    tie-in (the established, legitimate pattern every chapter uses — not every org gets a literal lab
+    per chapter).
+  - Chapters confirmed with **zero discrepancies**: 20, 21, 22, 25, 30, 31, 32, 33, 34, 35, 36, 41, 42,
+    47. Self-containment (no reliance on this repo's own folders) confirmed for every single lab chapter
+    and the capstone, with no exceptions.
+
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
 detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out
 CLAUDE.md §8's Final QA gate and v1.0. The brief that built chapters 49-50 is preserved below for
