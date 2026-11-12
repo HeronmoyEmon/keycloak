@@ -66,7 +66,8 @@
         cover); Maven Central, queried live to pin exact dependency coordinates; the real jars inside
         the running <code>quay.io/keycloak/keycloak:26.8.2</code> image, inspected directly; and this
         chapter's own lab, run against a real, disposable Keycloak 26.8.2 + PostgreSQL 17 Docker
-        Compose stack this chapter owns (<code>labs/custom-spis/</code>).</p>
+        Compose stack this chapter owns — every file needed to reproduce it, including the full
+        source for all three providers, is given in full later in this chapter.</p>
       </section>
 
       <section class="slide" data-slide="concept-recall" data-title="What concept is this?">
@@ -310,7 +311,8 @@
     }
 
     public boolean requiresUser() { return false; }  // decision depends only on the clock
-    // action(), configuredFor(), setRequiredActions(), close() -- see labs/custom-spis/ for the rest
+    // action(), configuredFor(), setRequiredActions(), close() -- the complete class is given
+    // in full in this chapter's lab slides below
 }</code></pre>
         <p><code>requiresUser()</code> returns <code>false</code> deliberately: this authenticator's
         decision depends only on the wall clock, never on which user is logging in, so it doesn't need
@@ -484,6 +486,764 @@
         </figure>
       </section>
 
+      <section class="slide" data-slide="lab-files-setup" data-title="Lab: create the project">
+        <h2>Lab: create the project — a real, self-contained Maven project</h2>
+        <p>Everything below is the actual, complete project this chapter's lab built and ran — nothing
+        paraphrased, nothing left in a repository you'd need to clone. Create the folder, create the
+        files below exactly as shown, and you have the same project this chapter's own lab used.</p>
+
+        <div class="callout callout--files-needed">
+          <div class="callout-label">Files you'll need for this lab</div>
+          <ul class="files-needed-list">
+            <li><a href="#file-pom-xml"><code>pom.xml</code></a> — the Maven build file, pinned to Keycloak 26.8.2's own dependency jars</li>
+            <li><a href="#file-custom-spis-docker-compose-yml"><code>docker-compose.yml</code></a> — this chapter's own isolated Keycloak + PostgreSQL stack (project <code>ch39kc</code>, port 18139)</li>
+            <li><a href="#file-business-hours-authenticator-factory-java"><code>BusinessHoursAuthenticatorFactory.java</code></a> — Meridian Trust's Authenticator factory</li>
+            <li><a href="#file-business-hours-authenticator-java"><code>BusinessHoursAuthenticator.java</code></a> — Meridian Trust's Authenticator provider</li>
+            <li><a href="#file-tenant-id-protocol-mapper-java"><code>TenantIdProtocolMapper.java</code></a> — Northwind Apps' Protocol Mapper</li>
+            <li><a href="#file-failed-login-audit-listener-factory-java"><code>FailedLoginAuditEventListenerProviderFactory.java</code></a> — Riverside Health's Event Listener factory</li>
+            <li><a href="#file-failed-login-audit-listener-java"><code>FailedLoginAuditEventListenerProvider.java</code></a> — Riverside Health's Event Listener provider</li>
+            <li><a href="#file-services-authenticatorfactory"><code>META-INF/services/org.keycloak.authentication.AuthenticatorFactory</code></a> — registers the Authenticator factory</li>
+            <li><a href="#file-services-eventlistenerproviderfactory"><code>META-INF/services/org.keycloak.events.EventListenerProviderFactory</code></a> — registers the Event Listener factory</li>
+            <li><a href="#file-services-protocolmapper"><code>META-INF/services/org.keycloak.protocol.ProtocolMapper</code></a> — registers the Protocol Mapper</li>
+          </ul>
+        </div>
+
+        <ol class="lab-steps">
+          <li><p>Make a new, empty folder for this lab and lay out the directory structure Maven and
+          Java's package convention both expect — everything from here on assumes you're inside it:</p>
+<pre><code>mkdir custom-spis-lab
+cd custom-spis-lab
+mkdir -p src/main/java/com/meridiantrust/keycloak/businesshours
+mkdir -p src/main/java/com/northwindapps/keycloak/tenantmapper
+mkdir -p src/main/java/com/riversidehealth/keycloak/loginaudit
+mkdir -p src/main/resources/META-INF/services</code></pre></li>
+
+          <li><p>Create <code>pom.xml</code> in the project root with this exact content:</p>
+<pre id="file-pom-xml" data-filename="pom.xml"><code class="language-xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!--
+  Three independent Keycloak SPI providers, one per case-study org, for chapter 39 (Writing Custom
+  SPIs: Authenticators, Event Listeners, Protocol Mappers) of the IAM &amp; Keycloak Mastery course:
+
+    - com.meridiantrust.keycloak.businesshours   - a custom Authenticator (Meridian Trust)
+    - com.riversidehealth.keycloak.loginaudit     - a custom EventListenerProvider (Riverside Health)
+    - com.northwindapps.keycloak.tenantmapper     - a custom ProtocolMapper (Northwind Apps)
+
+  Built as ONE Maven project producing ONE jar, not three separate modules. Rationale (see the
+  chapter text for the fuller version): all three SPIs are small, have zero dependencies on each
+  other, and share the identical build/deploy mechanics (mvn package, bind-mount into
+  /opt/keycloak/providers, kc.sh build, restart) that chapter 33 already established for a single
+  provider. Three separate Maven modules would mean three separate JARs, three separate
+  docker-compose bind mounts, and three separate "did I rebuild before restarting" failure points for
+  no real isolation benefit, since nothing here needs independent versioning or independent
+  deployment. Each provider still gets its own Java package (one per case-study org) so the source
+  tree itself documents the separation that matters: which org's problem each class solves.
+
+  Dependency coordinates were live-verified against Maven Central and against the actual jars bundled
+  inside the running quay.io/keycloak/keycloak:26.8.2 image before this POM was written, the same
+  method chapter 33 used (see the chapter text for the full trail: a docker run against the image's
+  own /opt/keycloak/lib, cross-checked with repo1.maven.org). Four Keycloak artifacts are needed,
+  all pinned to 26.8.2, all confirmed present on Maven Central at that exact version, and all
+  confirmed to be the exact jars this course's own Keycloak image bundles - no nearest-version
+  substitute needed for any of them:
+
+    - keycloak-server-spi          Provider, ProviderFactory, ConfiguredProvider, ProviderConfigProperty,
+                                    KeycloakSession, RealmModel, UserModel, ProtocolMapperModel,
+                                    UserSessionModel, ClientSessionContext, AuthenticationExecutionModel
+    - keycloak-server-spi-private   Authenticator, AuthenticatorFactory, ConfigurableAuthenticatorFactory,
+                                    AuthenticationFlowContext, AuthenticationFlowError, EventListenerProvider,
+                                    EventListenerProviderFactory, Event, EventType, Errors, EventBuilder,
+                                    ProtocolMapper (the base interface - NOT its OIDC-specific
+                                    subinterfaces, which live one jar over, see below)
+    - keycloak-services             AbstractOIDCProtocolMapper, OIDCAccessTokenMapper, OIDCIDTokenMapper,
+                                    UserInfoTokenMapper, OIDCAttributeMapperHelper - the OIDC-specific
+                                    half of the Protocol Mapper SPI, confirmed NOT present in either
+                                    server-spi jar (a real, confirmed split across jars, worth knowing
+                                    before guessing a dependency list for this SPI from its name alone)
+    - keycloak-core                  AccessToken, IDToken, AccessTokenResponse, JsonWebToken (the token
+                                    representation classes AbstractOIDCProtocolMapper's methods operate
+                                    on; a transitive dependency of keycloak-services, declared explicitly
+                                    here anyway for the same reason chapter 33 declared its two
+                                    dependencies explicitly rather than relying on transitivity)
+
+  All four are scope=provided: the server supplies these exact classes at runtime from its own
+  /opt/keycloak/lib, so this provider's own JAR should contain only this chapter's own classes plus
+  its service-registration files - nothing from Keycloak itself (bundling them instead risks a real
+  classloading conflict, per chapter 33's own "common mistakes" section).
+--&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;groupId&gt;org.iamkeycloakmastery&lt;/groupId&gt;
+  &lt;artifactId&gt;custom-spis&lt;/artifactId&gt;
+  &lt;version&gt;1.0.0&lt;/version&gt;
+  &lt;packaging&gt;jar&lt;/packaging&gt;
+
+  &lt;name&gt;IAM &amp;amp; Keycloak Mastery - Chapter 39 Custom SPIs&lt;/name&gt;
+  &lt;description&gt;
+    A custom Authenticator (Meridian Trust business-hours gate), a custom EventListenerProvider
+    (Riverside Health failed-login audit log), and a custom ProtocolMapper (Northwind Apps tenant_id
+    claim), for chapter 39 of the IAM &amp;amp; Keycloak Mastery course.
+  &lt;/description&gt;
+
+  &lt;properties&gt;
+    &lt;maven.compiler.release&gt;21&lt;/maven.compiler.release&gt;
+    &lt;project.build.sourceEncoding&gt;UTF-8&lt;/project.build.sourceEncoding&gt;
+    &lt;!-- Pinned to the exact Keycloak version this lab's docker-compose.yml runs. --&gt;
+    &lt;keycloak.version&gt;26.8.2&lt;/keycloak.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-server-spi&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-server-spi-private&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-services&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.keycloak&lt;/groupId&gt;
+      &lt;artifactId&gt;keycloak-core&lt;/artifactId&gt;
+      &lt;version&gt;${keycloak.version}&lt;/version&gt;
+      &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;finalName&gt;custom-spis-${project.version}&lt;/finalName&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.13.0&lt;/version&gt;
+      &lt;/plugin&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-jar-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.4.1&lt;/version&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</code></pre>
+          </li>
+
+          <li><p>Create <code>docker-compose.yml</code> in the project root — this chapter's own
+          isolated stack, never an edit to the shared stack chapter 20 established:</p>
+<pre id="file-custom-spis-docker-compose-yml" data-filename="docker-compose.yml"><code class="language-yaml"># Chapter 39's own, isolated Keycloak + PostgreSQL stack -- a standalone compose file, same pattern
+# chapter 33 used, NOT an override of the shared stack chapter 20 established (the one every
+# chapter-20+ chapter uses, which should never be asked to carry a custom provider JAR around
+# permanently) and NOT edited directly either.
+#
+#   mvn clean package
+#   docker compose -p ch39kc up -d
+#
+# Keycloak is published on host port 18139 (http://localhost:18139), per this course's convention
+# of giving each chapter's own isolated lab stack its own project name + port.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - ch39_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    # start-dev, matching every other chapter's lab stack -- no TLS/hostname setup needed for a
+    # local teaching lab. start-dev auto-detects and re-augments for a changed providers/ directory
+    # on its own at each boot; this lab still runs `kc.sh build` explicitly as its own step anyway
+    # (see README.md), both because that is the command a production deployment (started with plain
+    # `start`) genuinely requires, and to make the "re-augment, then restart" mechanism visible.
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18139:8080"
+    volumes:
+      # The built provider JAR, mounted read-only into Keycloak's own providers directory. Build it
+      # first (mvn clean package) -- per chapter 33's own documented gotcha, this bind mount becomes
+      # a silently-empty directory on both sides if the host-side file doesn't exist yet at
+      # container-creation time.
+      - ./target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ch39_pg_data:</code></pre>
+          </li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="lab-files-source" data-title="Lab: the three provider classes, in full">
+        <h2>Lab: the three provider classes and their service registrations, in full</h2>
+        <p>The complete, real source for all three SPIs — the same code the case-study slides above
+        quoted only fragments of. Create each file at the exact path shown (the path <em>is</em> the
+        Java package, so getting it wrong breaks the build).</p>
+
+        <ol class="lab-steps">
+          <li><p>Meridian Trust's Authenticator — create
+          <code>src/main/java/com/meridiantrust/keycloak/businesshours/BusinessHoursAuthenticatorFactory.java</code>:</p>
+<pre id="file-business-hours-authenticator-factory-java" data-filename="src/main/java/com/meridiantrust/keycloak/businesshours/BusinessHoursAuthenticatorFactory.java"><code class="language-java">package com.meridiantrust.keycloak.businesshours;
+
+import org.keycloak.Config;
+import org.keycloak.authentication.Authenticator;
+import org.keycloak.authentication.AuthenticatorFactory;
+import org.keycloak.models.AuthenticationExecutionModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.provider.ProviderConfigProperty;
+
+import java.util.List;
+
+/**
+ * Factory for {@link BusinessHoursAuthenticator}. Discovered once, at server boot, via
+ * {@code META-INF/services/org.keycloak.authentication.AuthenticatorFactory} (the standard Java
+ * {@link java.util.ServiceLoader} convention every Keycloak SPI factory is discovered through --
+ * see chapter 33's own account of this mechanism, which applies identically here).
+ *
+ * &lt;p&gt;Unlike chapter 33's User Storage SPI factory, this one has nothing expensive to load in
+ * {@link #init(Config.Scope)} -- there is no external store to connect to, only a wall-clock check
+ * -- so {@link #create(KeycloakSession)} simply builds a fresh, stateless
+ * {@link BusinessHoursAuthenticator} per call. The two-class Factory/Provider split still exists
+ * here even though this factory does no real setup work, because every Authenticator SPI provider
+ * follows the same shape -- the split is part of the SPI's contract, not an optimization a simple
+ * provider gets to skip.&lt;/p&gt;
+ */
+public class BusinessHoursAuthenticatorFactory implements AuthenticatorFactory {
+
+    public static final String PROVIDER_ID = "meridian-business-hours";
+
+    private static final BusinessHoursAuthenticator SINGLETON = new BusinessHoursAuthenticator();
+
+    private static final List&lt;ProviderConfigProperty&gt; CONFIG_PROPERTIES = List.of(
+            new ProviderConfigProperty(
+                    BusinessHoursAuthenticator.CONFIG_START_HOUR_UTC,
+                    "Window start hour (UTC, 0-23)",
+                    "The first hour (inclusive, UTC, 24-hour clock) during which login is permitted. "
+                            + "Default: " + BusinessHoursAuthenticator.DEFAULT_START_HOUR_UTC + ".",
+                    ProviderConfigProperty.STRING_TYPE,
+                    String.valueOf(BusinessHoursAuthenticator.DEFAULT_START_HOUR_UTC)),
+            new ProviderConfigProperty(
+                    BusinessHoursAuthenticator.CONFIG_END_HOUR_UTC,
+                    "Window end hour (UTC, 0-23)",
+                    "The hour (exclusive, UTC, 24-hour clock) after which login is denied again. "
+                            + "Default: " + BusinessHoursAuthenticator.DEFAULT_END_HOUR_UTC + ".",
+                    ProviderConfigProperty.STRING_TYPE,
+                    String.valueOf(BusinessHoursAuthenticator.DEFAULT_END_HOUR_UTC))
+    );
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public String getDisplayType() {
+        return "Meridian Trust: Business Hours Gate";
+    }
+
+    @Override
+    public String getReferenceCategory() {
+        return "business-hours";
+    }
+
+    @Override
+    public boolean isConfigurable() {
+        return true;
+    }
+
+    @Override
+    public AuthenticationExecutionModel.Requirement[] getRequirementChoices() {
+        return new AuthenticationExecutionModel.Requirement[]{
+                AuthenticationExecutionModel.Requirement.REQUIRED,
+                AuthenticationExecutionModel.Requirement.DISABLED
+        };
+    }
+
+    @Override
+    public boolean isUserSetupAllowed() {
+        return false;
+    }
+
+    @Override
+    public String getHelpText() {
+        return "Denies login entirely outside a configured window of hours (UTC, evaluated against "
+                + "the real server clock) -- Meridian Trust's fraud-aware, business-hours-only login "
+                + "gate for online banking.";
+    }
+
+    @Override
+    public List&lt;ProviderConfigProperty&gt; getConfigProperties() {
+        return CONFIG_PROPERTIES;
+    }
+
+    @Override
+    public Authenticator create(KeycloakSession session) {
+        return SINGLETON;
+    }
+
+    @Override
+    public void init(Config.Scope config) {
+        // Nothing to load -- no external store, no expensive setup. Contrast with chapter 33's
+        // factory, which parses an entire CSV file here because it has real state to build once.
+    }
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {
+        // No-op.
+    }
+
+    @Override
+    public void close() {
+        // No resources to release.
+    }
+}</code></pre>
+          <p>And <code>src/main/java/com/meridiantrust/keycloak/businesshours/BusinessHoursAuthenticator.java</code>:</p>
+<pre id="file-business-hours-authenticator-java" data-filename="src/main/java/com/meridiantrust/keycloak/businesshours/BusinessHoursAuthenticator.java"><code class="language-java">package com.meridiantrust.keycloak.businesshours;
+
+import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.authentication.Authenticator;
+import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.Map;
+
+/**
+ * Meridian Trust's business-hours-only login gate.
+ *
+ * &lt;p&gt;A concrete, testable condition fitting a bank's fraud-aware authentication posture (chapter 9):
+ * block login attempts entirely outside a configured window of hours, evaluated against the real
+ * server clock in UTC. This runs &lt;strong&gt;during&lt;/strong&gt; authentication, before the flow can succeed
+ * or fail -- not an afterthought check following a successful login, and not a required action
+ * (chapter 40 covers that different insertion point: a required action only ever runs after
+ * authentication has already succeeded).&lt;/p&gt;
+ *
+ * &lt;p&gt;{@link #authenticate(AuthenticationFlowContext)} and {@link #action(AuthenticationFlowContext)}
+ * share one implementation on purpose: this authenticator never shows the user a form (it has
+ * nothing to ask them), so {@code action()} -- which only ever runs in response to a form
+ * submission -- is never actually invoked by the framework for this authenticator. It still has to
+ * be implemented to satisfy the {@link Authenticator} interface, and delegating to
+ * {@link #authenticate(AuthenticationFlowContext)} rather than leaving it empty keeps the two
+ * methods from silently diverging if this class is ever extended to show a form later.&lt;/p&gt;
+ */
+public class BusinessHoursAuthenticator implements Authenticator {
+
+    static final String CONFIG_START_HOUR_UTC = "startHourUtc";
+    static final String CONFIG_END_HOUR_UTC = "endHourUtc";
+    static final int DEFAULT_START_HOUR_UTC = 9;
+    static final int DEFAULT_END_HOUR_UTC = 17;
+
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
+        int startHour = readHourConfig(configModel, CONFIG_START_HOUR_UTC, DEFAULT_START_HOUR_UTC);
+        int endHour = readHourConfig(configModel, CONFIG_END_HOUR_UTC, DEFAULT_END_HOUR_UTC);
+
+        int currentHourUtc = ZonedDateTime.now(ZoneOffset.UTC).getHour();
+
+        if (isWithinWindow(currentHourUtc, startHour, endHour)) {
+            context.success();
+            return;
+        }
+
+        // Tag the login event's error field explicitly before failing the flow, so chapter 39's own
+        // event-listener lab (Riverside Health's failed-login audit log) has a real, distinguishable
+        // "access_denied" LOGIN_ERROR event to capture.
+        context.getEvent().detail("meridian_business_hours_window",
+                startHour + ":00-" + endHour + ":00 UTC (current hour: " + currentHourUtc + ")");
+        context.getEvent().error(org.keycloak.events.Errors.ACCESS_DENIED);
+
+        // A real bug hit while building this lab, worth keeping rather than quietly working around:
+        // the single-argument context.failure(AuthenticationFlowError) overload DOES correctly emit
+        // the LOGIN_ERROR event above, but then throws an uncaught AuthenticationFlowException on the
+        // Direct Grant (Resource Owner Password Credentials) code path specifically -- confirmed live
+        // via the server's own stack trace (DefaultAuthenticationFlow.processResult, called from
+        // ResourceOwnerPasswordCredentialsGrantType.process), surfacing to the client as a bare
+        // HTTP 500 "unknown_error" instead of a clean OAuth error. Direct Grant has no browser to
+        // render an HTML challenge page for, and the single-argument overload appears to assume one
+        // exists. The fix: always supply an explicit challenge Response, built here as a small JSON
+        // body rather than via context.form() (which renders an HTML error page meant for the
+        // browser flow, not a REST client) -- confirmed this produces a clean, client-readable error
+        // for Direct Grant instead.
+        Response challenge = Response.status(Response.Status.FORBIDDEN)
+                .type(MediaType.APPLICATION_JSON)
+                .entity("{\"error\":\"access_denied\",\"error_description\":"
+                        + "\"Meridian Trust online banking is only available " + startHour
+                        + ":00-" + endHour + ":00 UTC. Current UTC hour: " + currentHourUtc + ".\"}")
+                .build();
+        context.failure(AuthenticationFlowError.ACCESS_DENIED, challenge);
+    }
+
+    @Override
+    public void action(AuthenticationFlowContext context) {
+        authenticate(context);
+    }
+
+    @Override
+    public boolean requiresUser() {
+        // Deliberately false: the business-hours check depends only on the wall clock, never on
+        // which user is logging in, so this authenticator does not need the flow to have already
+        // resolved a UserModel before it runs.
+        return false;
+    }
+
+    @Override
+    public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
+        return true;
+    }
+
+    @Override
+    public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
+        // No required actions to attach -- this authenticator only ever allows or denies, it never
+        // asks the user to do anything.
+    }
+
+    private static int readHourConfig(AuthenticatorConfigModel configModel, String key, int defaultValue) {
+        if (configModel == null) {
+            return defaultValue;
+        }
+        Map&lt;String, String&gt; config = configModel.getConfig();
+        if (config == null || !config.containsKey(key)) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(config.get(key).trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * True if {@code currentHour} falls in {@code [startHour, endHour)}, UTC, 0-23. Does not handle
+     * a window that wraps past midnight (e.g. start=22, end=4) -- a deliberate scope limit for this
+     * teaching lab, called out here rather than silently mishandled.
+     */
+    static boolean isWithinWindow(int currentHour, int startHour, int endHour) {
+        return currentHour &gt;= startHour &amp;&amp; currentHour &lt; endHour;
+    }
+
+    @Override
+    public void close() {
+        // No resources to release.
+    }
+}</code></pre>
+          </li>
+
+          <li><p>Northwind Apps' Protocol Mapper — create
+          <code>src/main/java/com/northwindapps/keycloak/tenantmapper/TenantIdProtocolMapper.java</code>:</p>
+<pre id="file-tenant-id-protocol-mapper-java" data-filename="src/main/java/com/northwindapps/keycloak/tenantmapper/TenantIdProtocolMapper.java"><code class="language-java">package com.northwindapps.keycloak.tenantmapper;
+
+import org.keycloak.models.ClientSessionContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
+import org.keycloak.protocol.ProtocolMapper;
+import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
+import org.keycloak.protocol.oidc.mappers.OIDCAccessTokenMapper;
+import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
+import org.keycloak.protocol.oidc.mappers.OIDCIDTokenMapper;
+import org.keycloak.protocol.oidc.mappers.UserInfoTokenMapper;
+import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.representations.AccessToken;
+import org.keycloak.representations.IDToken;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Injects a {@code tenant_id} claim, sourced from the authenticating user's own {@code tenant_id}
+ * user attribute, into the access token, ID token, and UserInfo response alike -- Northwind Apps'
+ * B2B multi-tenant SaaS model (chapter 2) made concrete: every one of Northwind's downstream
+ * applications can read which tenant a given customer-facing login belongs to straight out of the
+ * token, without a separate lookup call.
+ *
+ * &lt;p&gt;&lt;strong&gt;A real structural asymmetry worth naming&lt;/strong&gt;: both chapter 39's other two SPIs
+ * (Authenticator, EventListenerProvider) need a separate Factory class, because each models two
+ * genuinely different lifecycle stages (discovered once at boot vs. created per transaction).
+ * {@link ProtocolMapper} does not split that way -- it extends
+ * {@code ProviderFactory&lt;ProtocolMapper&gt;} itself, and {@link AbstractOIDCProtocolMapper#create}
+ * simply hands back {@code this} (confirmed directly by inspecting that method on the real
+ * 26.8.2 jar before writing this class). A protocol mapper is cheap and stateless enough that
+ * Keycloak's own SPI design collapses Factory and Provider into one class here -- this is not a
+ * shortcut this lab took, it is how the real interface is actually shaped.&lt;/p&gt;
+ *
+ * &lt;p&gt;Deliberate simplification for this teaching lab: the source user attribute name
+ * ({@code tenant_id}) is hardcoded rather than exposed as its own admin-configurable property.
+ * Keycloak's own built-in {@code UserAttributeMapper} (chapter 24) already covers the general
+ * "pick any user attribute, map it to any claim name" case with its own config UI; re-deriving that
+ * generic machinery here would duplicate chapter 24's own concept rather than teach this chapter's
+ * actual subject, which is how to write a protocol mapper's token-transformation methods, not how to
+ * build a generic attribute-picker form.&lt;/p&gt;
+ */
+public class TenantIdProtocolMapper extends AbstractOIDCProtocolMapper
+        implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
+
+    public static final String PROVIDER_ID = "northwind-tenant-id-mapper";
+
+    /** The user attribute this mapper reads from -- see the class javadoc's "deliberate simplification" note. */
+    static final String USER_ATTRIBUTE_NAME = "tenant_id";
+
+    private static final List&lt;ProviderConfigProperty&gt; CONFIG_PROPERTIES = new ArrayList&lt;&gt;();
+
+    static {
+        OIDCAttributeMapperHelper.addTokenClaimNameConfig(CONFIG_PROPERTIES);
+        OIDCAttributeMapperHelper.addIncludeInTokensConfig(CONFIG_PROPERTIES, TenantIdProtocolMapper.class);
+        for (ProviderConfigProperty property : CONFIG_PROPERTIES) {
+            if (OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME.equals(property.getName())) {
+                property.setDefaultValue(USER_ATTRIBUTE_NAME);
+            }
+        }
+    }
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public String getDisplayType() {
+        return "Northwind Apps: Tenant ID Claim";
+    }
+
+    @Override
+    public String getDisplayCategory() {
+        return TOKEN_MAPPER_CATEGORY;
+    }
+
+    @Override
+    public String getHelpText() {
+        return "Injects a tenant_id claim into the access token, ID token, and UserInfo response, "
+                + "sourced from the user's own tenant_id attribute -- Northwind Apps' B2B "
+                + "multi-tenant SaaS model, made concrete in a real token.";
+    }
+
+    @Override
+    public List&lt;ProviderConfigProperty&gt; getConfigProperties() {
+        return CONFIG_PROPERTIES;
+    }
+
+    @Override
+    public AccessToken transformAccessToken(AccessToken token, ProtocolMapperModel mappingModel,
+                                             KeycloakSession session, UserSessionModel userSession,
+                                             ClientSessionContext clientSessionCtx) {
+        setTenantClaim(token, mappingModel, userSession);
+        return token;
+    }
+
+    @Override
+    public IDToken transformIDToken(IDToken token, ProtocolMapperModel mappingModel,
+                                     KeycloakSession session, UserSessionModel userSession,
+                                     ClientSessionContext clientSessionCtx) {
+        setTenantClaim(token, mappingModel, userSession);
+        return token;
+    }
+
+    @Override
+    public AccessToken transformUserInfoToken(AccessToken token, ProtocolMapperModel mappingModel,
+                                               KeycloakSession session, UserSessionModel userSession,
+                                               ClientSessionContext clientSessionCtx) {
+        setTenantClaim(token, mappingModel, userSession);
+        return token;
+    }
+
+    private static void setTenantClaim(IDToken token, ProtocolMapperModel mappingModel,
+                                        UserSessionModel userSession) {
+        UserModel user = userSession.getUser();
+        if (user == null) {
+            return;
+        }
+        String tenantId = user.getFirstAttribute(USER_ATTRIBUTE_NAME);
+        if (tenantId == null || tenantId.isEmpty()) {
+            return;
+        }
+        OIDCAttributeMapperHelper.mapClaim(token, mappingModel, tenantId);
+    }
+}</code></pre>
+          </li>
+
+          <li><p>Riverside Health's Event Listener — create
+          <code>src/main/java/com/riversidehealth/keycloak/loginaudit/FailedLoginAuditEventListenerProviderFactory.java</code>:</p>
+<pre id="file-failed-login-audit-listener-factory-java" data-filename="src/main/java/com/riversidehealth/keycloak/loginaudit/FailedLoginAuditEventListenerProviderFactory.java"><code class="language-java">package com.riversidehealth.keycloak.loginaudit;
+
+import org.keycloak.Config;
+import org.keycloak.events.EventListenerProvider;
+import org.keycloak.events.EventListenerProviderFactory;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+
+/**
+ * Factory for {@link FailedLoginAuditEventListenerProvider}. Discovered once, at server boot, via
+ * {@code META-INF/services/org.keycloak.events.EventListenerProviderFactory}.
+ *
+ * &lt;p&gt;{@link #getId()}'s return value ({@code riverside-failed-login-audit}) is the id a realm's
+ * Events config (chapter 28) must list under "Event Listeners" to actually enable this provider for
+ * that realm -- enabling a provider id for a realm is what causes Keycloak to call
+ * {@link #create(KeycloakSession)} for that realm's requests at all; an un-enabled provider sits
+ * registered (visible in {@code serverinfo}) but is never invoked.&lt;/p&gt;
+ */
+public class FailedLoginAuditEventListenerProviderFactory implements EventListenerProviderFactory {
+
+    public static final String PROVIDER_ID = "riverside-failed-login-audit";
+
+    private static final FailedLoginAuditEventListenerProvider SINGLETON =
+            new FailedLoginAuditEventListenerProvider();
+
+    @Override
+    public EventListenerProvider create(KeycloakSession session) {
+        return SINGLETON;
+    }
+
+    @Override
+    public void init(Config.Scope config) {
+        // Nothing to load.
+    }
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {
+        // No-op.
+    }
+
+    @Override
+    public void close() {
+        // No resources to release.
+    }
+
+    @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+}</code></pre>
+          <p>And <code>src/main/java/com/riversidehealth/keycloak/loginaudit/FailedLoginAuditEventListenerProvider.java</code>:</p>
+<pre id="file-failed-login-audit-listener-java" data-filename="src/main/java/com/riversidehealth/keycloak/loginaudit/FailedLoginAuditEventListenerProvider.java"><code class="language-java">package com.riversidehealth.keycloak.loginaudit;
+
+import org.keycloak.events.Event;
+import org.keycloak.events.EventListenerProvider;
+import org.keycloak.events.EventType;
+import org.keycloak.events.admin.AdminEvent;
+
+import java.time.Instant;
+import java.util.Map;
+
+/**
+ * Logs every real {@code LOGIN_ERROR} event, for this provider's configured realm, in a
+ * distinguishable format -- Riverside Health's HIPAA-relevant audit trail (chapter 11) for failed
+ * authentication attempts against clinician/administrative accounts.
+ *
+ * &lt;p&gt;Deliberately scoped narrow for this teaching lab: only {@code LOGIN_ERROR} user events are
+ * handled, not every event type, and admin events ({@link #onEvent(AdminEvent, boolean)}) are left
+ * as a documented no-op rather than implemented, since this chapter's brief is the failed-login
+ * audit trail specifically, not a general-purpose event mirror -- chapter 28 already covers
+ * Keycloak's own built-in event store/listener configuration for the general case.&lt;/p&gt;
+ *
+ * &lt;p&gt;Logging mechanism: plain {@code System.out.println}, on purpose, not a logging framework call.
+ * A real production listener would hook into the organization's actual logging/SIEM pipeline (e.g.
+ * {@code org.jboss.logging.Logger}, or pushing directly to a HIPAA-compliant log aggregator) rather
+ * than writing to stdout -- this lab uses stdout specifically because it is guaranteed to land in
+ * {@code docker compose logs}/{@code docker logs} output regardless of how the server's own logging
+ * framework happens to be configured, which is what this chapter's lab needs to capture a real,
+ * verifiable transcript. That trade-off is named here rather than left implicit.&lt;/p&gt;
+ */
+public class FailedLoginAuditEventListenerProvider implements EventListenerProvider {
+
+    /** A distinguishable prefix, grep-able in container logs, per this chapter's brief. */
+    static final String AUDIT_PREFIX = "RIVERSIDE-HIPAA-LOGIN-AUDIT";
+
+    // No realm filter is implemented here on purpose: Keycloak only ever invokes an event listener
+    // provider's onEvent() for a realm that has that provider's id enabled under that realm's own
+    // Events config (chapter 28) -- the "for this provider's configured realm" scoping in this
+    // class's javadoc is enforced by the realm's own Events settings, not by code in this class.
+    // Confirmed live in this chapter's lab: this listener was enabled only on the riverside-health
+    // realm, and never received an event generated against a different realm in the same server.
+
+    FailedLoginAuditEventListenerProvider() {
+    }
+
+    @Override
+    public void onEvent(Event event) {
+        if (event.getType() != EventType.LOGIN_ERROR) {
+            return;
+        }
+        System.out.println(formatLine(event));
+    }
+
+    @Override
+    public void onEvent(AdminEvent event, boolean includeRepresentation) {
+        // Deliberate no-op -- see class javadoc. Admin events are a different, separate stream
+        // (chapter 28) this chapter's brief does not ask this provider to audit.
+    }
+
+    static String formatLine(Event event) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(AUDIT_PREFIX).append(" | ");
+        sb.append("time=").append(Instant.ofEpochMilli(event.getTime())).append(" | ");
+        sb.append("realm=").append(event.getRealmName()).append(" | ");
+        sb.append("clientId=").append(event.getClientId()).append(" | ");
+        sb.append("userId=").append(event.getUserId() == null ? "(unresolved)" : event.getUserId()).append(" | ");
+        sb.append("ipAddress=").append(event.getIpAddress()).append(" | ");
+        sb.append("error=").append(event.getError());
+        Map&lt;String, String&gt; details = event.getDetails();
+        if (details != null &amp;&amp; !details.isEmpty()) {
+            sb.append(" | details=").append(details);
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public void close() {
+        // No resources to release.
+    }
+}</code></pre>
+          </li>
+
+          <li><p>The three <code>ServiceLoader</code> registration files — each one is a single line
+          naming the matching factory's fully qualified class name, no file extension. Create
+          <code>src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory</code>:</p>
+<pre id="file-services-authenticatorfactory" data-filename="src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory"><code>com.meridiantrust.keycloak.businesshours.BusinessHoursAuthenticatorFactory</code></pre>
+          <p><code>src/main/resources/META-INF/services/org.keycloak.events.EventListenerProviderFactory</code>:</p>
+<pre id="file-services-eventlistenerproviderfactory" data-filename="src/main/resources/META-INF/services/org.keycloak.events.EventListenerProviderFactory"><code>com.riversidehealth.keycloak.loginaudit.FailedLoginAuditEventListenerProviderFactory</code></pre>
+          <p>And <code>src/main/resources/META-INF/services/org.keycloak.protocol.ProtocolMapper</code>
+          (this one names the mapper class itself, not a separate factory — see the "Why one Maven
+          project" and Northwind Apps slides above for why Protocol Mapper's SPI shape is the one
+          exception):</p>
+<pre id="file-services-protocolmapper" data-filename="src/main/resources/META-INF/services/org.keycloak.protocol.ProtocolMapper"><code>com.northwindapps.keycloak.tenantmapper.TenantIdProtocolMapper</code></pre>
+          </li>
+        </ol>
+      </section>
+
       <section class="slide" data-slide="lab-build" data-title="Lab: building the project — a real POM bug, again">
         <h2>Lab: building the project, including a familiar real failure</h2>
         <ol class="lab-steps">
@@ -518,10 +1278,9 @@ character must be &gt; not   (position: START_DOCUMENT seen ...tery course:\n\n
         <ol class="lab-steps">
           <li><p>Bring up this chapter's own isolated stack (project name <code>ch39kc</code>, host
           port 18139 — a standalone compose file, same pattern as chapter 33, never an edit to the
-          shared <code>labs/docker/docker-compose.yml</code>), confirm the JAR mounted as a real file,
-          then re-augment the server:</p>
-          <pre><code>cd labs/custom-spis
-docker compose -p ch39kc up -d
+          shared stack <a href="20-installing-keycloak.html">chapter 20</a> established), confirm the
+          JAR mounted as a real file, then re-augment the server:</p>
+          <pre><code>docker compose -p ch39kc up -d
 docker compose -p ch39kc exec keycloak ls -la /opt/keycloak/providers/
 docker compose -p ch39kc exec keycloak /opt/keycloak/bin/kc.sh build</code></pre>
           <pre><code>WARN  [org.keycloak.services] KC-SERVICES0047: northwind-tenant-id-mapper (...TenantIdProtocolMapper)
