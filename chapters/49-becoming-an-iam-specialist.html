@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Becoming an IAM Specialist — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "becoming-an-iam-specialist";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part XI — Career &amp; Reference</span>
+          <span class="badge minutes">~40 min</span>
+        </div>
+        <h1>49. Becoming an IAM Specialist</h1>
+        <p class="lede">Forty-eight chapters back, chapter 1 asked you to picture a company drowning in ten
+        separate login systems. Since then you've learned the vendor-neutral theory behind fixing that
+        (Parts I-III), operated a real Keycloak instance that fixes it concretely (Parts IV-X), and built a
+        capstone you could actually walk an interviewer through. This chapter turns all of that into a
+        career narrative: what to call yourself, which certifications are real signal and which are noise,
+        and the exact questions an interviewer is likely to ask.</p>
+
+        <h2>Why this matters</h2>
+        <p>Knowing IAM and being hired to do IAM are different skills. A hiring manager scanning a resume
+        wants to see two things in the same person: someone who can explain <em>why</em> an authorization
+        model exists, not just click through a console, and someone who has actually operated a real system
+        under realistic constraints, not just read about one. This chapter is deliberately short on new
+        concepts and long on synthesis — connecting the dots between what you already know so you can
+        present it convincingly, under pressure, in a 45-minute interview loop.</p>
+      </section>
+
+      <section class="slide" data-slide="skills-matrix" data-title="Skills matrix">
+        <h2>The skills matrix: two layers, not one</h2>
+        <p>This course deliberately taught two different kinds of skill, and an interviewer will usually
+        probe both separately: the <strong>vendor-neutral concept</strong> (would still be true if Keycloak
+        didn't exist) and the <strong>concrete implementation skill</strong> (the specific screen, API call,
+        or config field that realizes that concept in Keycloak). A candidate who can only do one half reads
+        as either "theoretical, never actually run anything" or "knows one console, couldn't explain why it
+        works that way to a different platform." The table below is the resume-prep version of the
+        "concept &harr; implementation" bridge every chapter in this course has been building.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Vendor-neutral foundation skills (Parts I-III) paired with their Keycloak-specific implementation skills (Parts IV-X)</caption>
+            <thead><tr><th>Vendor-neutral skill (what/why)</th><th>Keycloak implementation skill (where/how)</th></tr></thead>
+            <tbody>
+              <tr><td>Authentication, authorization &amp; accounting — AAA (ch 3)</td><td>Realm, client &amp; role configuration implementing AuthN/AuthZ (ch 21-24)</td></tr>
+              <tr><td>Directory services &amp; identity stores (ch 4)</td><td>LDAP/AD user federation; custom User Storage SPI (ch 32-33)</td></tr>
+              <tr><td>MFA factors &amp; risk-based auth concepts (ch 5)</td><td>Required Actions, WebAuthn/OTP setup, brute-force &amp; password policy (ch 30)</td></tr>
+              <tr><td>Authorization models: ACL/RBAC/ABAC/PBAC/ReBAC (ch 6)</td><td>Authorization Services, UMA 2.0, ABAC/ReBAC patterns (ch 37-38)</td></tr>
+              <tr><td>SSO &amp; federation concepts, JIT provisioning (ch 7)</td><td>Identity brokering, SSO session behavior (ch 29, 31)</td></tr>
+              <tr><td>Tokens &amp; sessions, conceptually (ch 8)</td><td>JWS/JWE mechanics, session management, revocation (ch 16, 29)</td></tr>
+              <tr><td>OAuth 2.0 / OIDC / SAML protocol mechanics (ch 13-18)</td><td>Client scopes &amp; protocol mappers, securing a real backend &amp; SPA (ch 24, 34-35)</td></tr>
+              <tr><td>IAM threat landscape (ch 9)</td><td>Security hardening checklist, CVE triage, upgrade strategy (ch 45)</td></tr>
+              <tr><td>Compliance frameworks: GDPR/HIPAA/PCI-DSS (ch 11)</td><td>Event/audit logging; Riverside &amp; Meridian case studies grounding compliance in a real config (ch 28, 47-48)</td></tr>
+              <tr><td>IGA concepts: joiner-mover-leaver, separation of duties (ch 10)</td><td>kcadm/Admin REST automation of lifecycle events (ch 27)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>When you describe a project on a resume or in an interview, say both halves out loud: "I
+          configured attribute-based authorization" (implementation) <em>because</em> "role explosion made
+          RBAC unmanageable past a few dozen roles" (the vendor-neutral reason). That sentence alone signals
+          more real competence than either half said on its own.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="career-paths" data-title="Career paths">
+        <h2>Career paths this course prepares you for — and one it doesn't</h2>
+        <p>IAM isn't one job title; it's a family of related roles with different day-to-day work. This
+        course's depth maps unevenly across them — strong on four, a deliberate survey-only on the fifth.</p>
+        <ul>
+          <li><strong>IAM Engineer</strong> — owns day-to-day realm/client administration, writes custom
+          SPIs, keeps federation and brokering running. The most direct match for Parts IV, VI, and VIII.</li>
+          <li><strong>IAM Architect</strong> — designs org-wide identity strategy: multi-tenant/realm
+          models, brokering topology, HA and disaster-recovery posture. Draws on Part II, Part IX, and the
+          capstone's end-to-end design decisions.</li>
+          <li><strong>CIAM Specialist</strong> — owns customer-facing registration, login, and social-login
+          UX at consumer scale (Northwind Apps' world). Draws on chapter 12's market taxonomy and Part VI's
+          brokering/frontend work (ch 31, 35).</li>
+          <li><strong>IGA Analyst</strong> — runs access reviews, enforces separation of duties, owns
+          provisioning/deprovisioning workflows. Draws on Part II's governance concepts and Part V's
+          automation/auditing tooling (ch 27-28).</li>
+          <li><strong>PAM Engineer</strong> — vaults and audits privileged credentials for admin/service
+          accounts, a genuinely different toolset (CyberArk, BeyondTrust) from workforce IAM. This course
+          only <em>surveys</em> PAM as a market category (chapter 12) — it is honestly not a deep-dive path
+          this course prepares you for on its own; treat the certifications slide's PAM entry as "where to
+          go next," not "already covered."</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 380" role="img" aria-labelledby="t1 d1">
+            <title id="t1">Five IAM career paths, each fed by a different mix of this course's Parts</title>
+            <desc id="d1">A box on the left labeled "Your skillset, this course" sends one line each to five
+            boxes stacked in a column on the right: IAM Engineer, IAM Architect, CIAM Specialist, IGA
+            Analyst, and PAM Engineer, the last one marked as only lightly covered by this course.</desc>
+
+            <rect x="20" y="160" width="170" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="105" y="185" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="13">Your skillset</text>
+            <text x="105" y="202" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">(this course)</text>
+
+            <rect x="420" y="20" width="300" height="50" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="570" y="40" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">IAM Engineer</text>
+            <text x="570" y="56" text-anchor="middle" class="diagram-label-muted" font-size="10">runs realms &amp; SPIs day to day</text>
+
+            <rect x="420" y="84" width="300" height="50" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="570" y="104" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">IAM Architect</text>
+            <text x="570" y="120" text-anchor="middle" class="diagram-label-muted" font-size="10">designs org-wide identity strategy</text>
+
+            <rect x="420" y="148" width="300" height="50" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="570" y="168" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">CIAM Specialist</text>
+            <text x="570" y="184" text-anchor="middle" class="diagram-label-muted" font-size="10">owns customer-facing login/signup</text>
+
+            <rect x="420" y="212" width="300" height="50" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="570" y="232" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">IGA Analyst</text>
+            <text x="570" y="248" text-anchor="middle" class="diagram-label-muted" font-size="10">access reviews, separation of duties</text>
+
+            <rect x="420" y="276" width="300" height="50" rx="7" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="570" y="296" text-anchor="middle" class="diagram-label" font-size="12" font-weight="700">PAM Engineer</text>
+            <text x="570" y="312" text-anchor="middle" class="diagram-label-muted" font-size="10">adjacent field — surveyed, not covered in depth</text>
+
+            <line x1="190" y1="190" x2="418" y2="45" class="diagram-stroke"></line>
+            <line x1="190" y1="190" x2="418" y2="109" class="diagram-stroke"></line>
+            <line x1="190" y1="190" x2="418" y2="173" class="diagram-stroke"></line>
+            <line x1="190" y1="190" x2="418" y2="237" class="diagram-stroke"></line>
+            <line x1="190" y1="190" x2="418" y2="301" class="diagram-stroke" stroke-dasharray="4 3"></line>
+          </svg>
+          <figcaption>Figure 49.1 — This course's content maps strongly onto four IAM career paths, and only
+          surveys a fifth (PAM) rather than preparing you for it directly.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="certifications" data-title="Certifications">
+        <h2>Certifications: what's real signal, live-verified</h2>
+        <p>Certification landscapes change, and course material that asserts stale details from memory is
+        exactly the kind of mistake this course has tried hard to avoid everywhere else — so this section
+        was re-verified by live search rather than written from recall. Treat exact fees/formats as
+        time-sensitive; verify again before scheduling anything.</p>
+
+        <ul>
+          <li><strong>CISSP ((ISC)&sup2;)</strong> — Identity and Access Management is <strong>Domain 5 of
+          8</strong> domains (not 10 — an outdated figure that still circulates). CISSP as a whole carries
+          weight mainly for senior/leadership security roles, not as an IAM-entry credential; don't expect
+          it to substitute for hands-on depth.</li>
+          <li><strong>IDPro's CIDPRO</strong> — the closest thing to a vendor-neutral, foundational IAM
+          practitioner certification, launched by the nonprofit IDPro in 2021 specifically to address the
+          shortage of experienced IAM practitioners.</li>
+          <li><strong>CIAM (Identity Management Institute)</strong> — "Certified Identity and Access
+          Manager," a governance- and program-management-focused credential requiring IMI membership plus
+          several years of combined experience and education.
+            <div class="callout callout--pitfall" style="margin-top:0.6em;">
+              <div class="callout-label">Pitfall</div>
+              <p>This acronym collision is a real trap: <strong>CIAM</strong> here is a <em>certification
+              name</em>, completely unrelated to the <strong>CIAM market category</strong> (Customer Identity
+              and Access Management — Northwind Apps' world, covered in chapter 12). Seeing "CIAM" on a job
+              posting or a credential almost never means the same thing twice — read the context.</p>
+            </div>
+          </li>
+          <li><strong>Microsoft SC-300</strong> — "Identity and Access Administrator," validates Entra ID
+          administration specifically (hybrid identity, lifecycle, governance). A strong, practical entry
+          point in any organization already running Microsoft identity infrastructure.</li>
+          <li><strong>Okta certification track</strong> — Professional (no prerequisite) &rarr;
+          Administrator (requires Professional) &rarr; Consultant (requires both), plus a separate
+          Developer credential and a top-tier Technical Architect credential. Only valuable in an
+          Okta-running shop — it is entirely platform-specific, the same way everything in Parts IV-X of
+          this course is Keycloak-specific rather than universal.</li>
+          <li><strong>SailPoint Certified Identity Security Administrator</strong> — genuinely new: launched
+          2026-02-17 alongside a broader recertification program. Worth knowing exists if you're targeting
+          enterprise IGA/governance consulting, where SailPoint is heavily used.</li>
+          <li><strong>CyberArk Defender &rarr; Sentry</strong> — the PAM-specific track (Defender is a
+          prerequisite for Sentry). Named here honestly as <em>adjacent</em> to this course's scope, not
+          core to it — see the career-paths slide's note on the PAM Engineer path.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 640 380" role="img" aria-labelledby="t2 d2">
+            <title id="t2">Certifications grouped into vendor-neutral, vendor-specific, and PAM-specific, with Keycloak marked as having no dedicated credential</title>
+            <desc id="d2">Four stacked boxes. The first lists vendor-neutral certifications: CISSP Domain 5,
+            IDPro CIDPRO, and IMI CIAM. The second lists vendor-specific IAM certifications: Microsoft
+            SC-300, the Okta track, and SailPoint's new Identity Security Administrator exam. The third lists
+            the PAM-specific CyberArk Defender to Sentry track. The fourth, visually distinct, states that
+            Keycloak has no dedicated certification and that a capstone project substitutes for one.</desc>
+
+            <rect x="20" y="16" width="600" height="86" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="40" y="38" class="diagram-label" font-weight="700" font-size="13">Vendor-neutral</text>
+            <text x="40" y="58" class="diagram-label-muted" font-size="11">CISSP — IAM is Domain 5 of 8</text>
+            <text x="40" y="75" class="diagram-label-muted" font-size="11">IDPro CIDPRO &middot; IMI CIAM (program mgmt, not "Customer IAM")</text>
+
+            <rect x="20" y="116" width="600" height="86" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="40" y="138" class="diagram-label" font-weight="700" font-size="13">Vendor-specific IAM</text>
+            <text x="40" y="158" class="diagram-label-muted" font-size="11">Microsoft SC-300 (Entra ID) &middot; Okta Professional/Admin/Consultant/Developer</text>
+            <text x="40" y="175" class="diagram-label-muted" font-size="11">SailPoint Certified Identity Security Administrator (new, 2026-02-17)</text>
+
+            <rect x="20" y="216" width="600" height="58" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="40" y="238" class="diagram-label" font-weight="700" font-size="13">PAM-specific (adjacent field)</text>
+            <text x="40" y="258" class="diagram-label-muted" font-size="11">CyberArk Defender &rarr; Sentry</text>
+
+            <rect x="20" y="292" width="600" height="68" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="40" y="314" class="diagram-label" font-weight="700" font-size="13">Keycloak (this course)</text>
+            <text x="40" y="334" class="diagram-label-muted" font-size="11">No dedicated certification exists &mdash; show a working capstone instead</text>
+          </svg>
+          <figcaption>Figure 49.2 — The certification landscape this course verified live, grouped by scope.
+          Keycloak itself sits outside the whole landscape: there is no vendor badge for it.</figcaption>
+        </figure>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea — no Keycloak certification exists</div>
+          <p>Red Hat's closest credential, <strong>EX362 (Red Hat Certified Specialist in Identity
+          Management)</strong>, certifies a <em>different product</em> — Red Hat Identity Management
+          (RHEL's IdM/FreeIPA directory service) — not Keycloak. There is no vendor-issued way to prove
+          Keycloak competence by exam. That's genuinely useful information, not a gap to paper over: it
+          means the <a href="../capstone.html">capstone</a> you built in this course is not a nice-to-have
+          extra — for Keycloak specifically, it is the closest thing to a credential you have.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="interview-bank" data-title="Interview question bank">
+        <h2>Interview question bank</h2>
+        <p class="lede">Harder and more open-ended than the self-check questions later in this chapter —
+        these are framed the way an actual interviewer would ask them, mixing pure concept recall with
+        scenarios reusing Northwind Apps, Riverside Health, Meridian Trust, and your own capstone. Click a
+        question to reveal a strong model answer; try answering out loud first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Explain the difference between SAML and OIDC to a non-technical hiring manager in two sentences.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Both let one system vouch for a user's identity to another system, but SAML is an older, XML-based standard mostly used by enterprise software, while OIDC is a newer, simpler standard built on top of OAuth 2.0 and JSON, which is why almost every modern mobile and web app uses it instead. In practice: SAML is what your company's HR system probably still uses; OIDC is what "Sign in with Google" uses.</p>
+          </details></li>
+          <li><details>
+            <summary>Authentication and authorization get taught in the first week of every IAM course. Why do interviewers still ask about the difference after everything else?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Because conflating them causes real, shipped bugs — code that checks "is this user logged in" where it meant to check "is this user allowed to see this specific record" is one of the most common access-control vulnerabilities in production systems. The question isn't testing vocabulary; it's testing whether you'll actually separate the two checks when you write code under deadline pressure.</p>
+          </details></li>
+          <li><details>
+            <summary>Northwind Apps wants its B2B customers to log in using their own corporate identity provider instead of creating a Northwind-specific password. Walk through how you'd approach this in Keycloak.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>This is identity brokering (chapter 31): register each customer's IdP (OIDC or SAML) as a broker in the Northwind realm, map their asserted attributes onto Northwind's expected claims (e.g. a tenant_id mapper, per the capstone), and decide the first-login flow — auto-link by email, or force an explicit account-linking step. I'd also flag the operational cost up front: each new customer IdP is a new broker configuration to maintain and a new trust relationship to monitor, not a one-time setup.</p>
+          </details></li>
+          <li><details>
+            <summary>Riverside Health needs step-up authentication before a clinician can open a psychiatric record, even if they're already logged in. How would you design this?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Don't raise the baseline MFA requirement for every login — that punishes every routine action to guard a rare, sensitive one. Instead, design a conditional required action or an authorization-policy check (chapters 6, 30, 37) that triggers only when the specific resource (a psychiatric record) is requested, re-prompting for a second factor at that moment. This also produces a cleaner audit signal: a step-up event is itself evidence that someone deliberately accessed sensitive data, which HIPAA auditors specifically want to see.</p>
+          </details></li>
+          <li><details>
+            <summary>Meridian Trust's fraud team wants risk-based authentication. What Keycloak building blocks would you reach for, and what's genuinely missing out of the box?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Keycloak gives you the mechanics — conditional authentication flow nodes, device/IP-based required actions, brute-force detection (chapters 5, 30) — but it doesn't ship a fraud-scoring engine. Real risk-based auth needs a signal source (device fingerprinting, geovelocity, a fraud model) feeding a decision into one of those flow nodes; Keycloak is the enforcement point, not the risk engine. Say this plainly rather than implying Keycloak alone solves fraud detection.</p>
+          </details></li>
+          <li><details>
+            <summary>What is PKCE, and why does every OAuth client need it now, even confidential clients that have a client secret?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>PKCE (Proof Key for Code Exchange, chapters 13 and 18) binds an authorization code to the specific client that requested it, using a verifier/challenge pair, so a stolen authorization code can't be redeemed by anyone else. It was originally designed for public clients that can't keep a secret, but current best practice (the OAuth Security BCP) recommends it universally, because it closes an authorization-code-interception attack that a client secret alone doesn't fully prevent.</p>
+          </details></li>
+          <li><details>
+            <summary>A junior engineer says "we don't need token expiration — we'll just revoke tokens when we need to." What's wrong with that plan?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Revocation requires every resource server to check a revocation list or introspect every request, which many systems (especially stateless JWT consumers) don't do by default — that's exactly why chapter 8 calls revocation "the hard problem" with bearer tokens. Short expiration is the cheap, structural defense that works even when revocation checking is missing or lagging; the two are complementary, not substitutes for each other.</p>
+          </details></li>
+          <li><details>
+            <summary>Walk me through how your capstone's billing-api confirms a request is actually authorized, end to end.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The caller presents a bearer access token; the resource server validates its signature against Keycloak's JWKS and checks the audience/expiry. For the premium-report endpoint specifically, the service doesn't stop at "is this token valid" — it performs a real UMA 2.0 RPT exchange against Keycloak's token endpoint, asking "is this specific subject authorized for this specific protected resource," and only proceeds on a successful RPT. That second step is what separates coarse-grained "logged in" checks from the fine-grained authorization Part VII covers.</p>
+          </details></li>
+          <li><details>
+            <summary>A client's redirect_uri validation was left wildcarded (<code>https://*.example.com/*</code>) in a production realm. What's the risk, and how would you fix it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A broad wildcard lets an attacker register or compromise any subdomain under that pattern and receive authorization codes or tokens meant for the real app — exactly the open-redirect-adjacent risk chapter 18's security best practices cover. Fix: register exact, fully-qualified redirect URIs per environment (one for prod, one for each staging/preview environment if needed) instead of a pattern, and treat any wildcard as a finding in a security review.</p>
+          </details></li>
+          <li><details>
+            <summary>What's the practical difference between RBAC and ABAC, and when would you reach for ABAC even though RBAC is simpler to operate?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>RBAC (chapter 6) grants permissions through named roles — simple to reason about until the number of roles explodes to cover every combination of department, region, and data sensitivity. ABAC evaluates policy against attributes (department=cardiology, record.sensitivity=psychiatric) at decision time instead of pre-enrolling every combination as a role, which is exactly the shape of Riverside's psychiatric-record problem and why chapters 37-38 cover it as Keycloak's Authorization Services rather than more roles.</p>
+          </details></li>
+          <li><details>
+            <summary>You inherit a Keycloak realm with 40 custom roles and no documentation. How do you start making sense of it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Pull the realm export or use the Admin REST API/kcadm (chapter 27) to script a full role-to-user and role-to-client mapping rather than clicking through the console role by role. Cross-reference composite roles (a role that's really five roles in a trenchcoat is a common source of silent over-privilege) and flag any role with zero members or zero client-role-mappings as a deprovisioning candidate before touching anything live.</p>
+          </details></li>
+          <li><details>
+            <summary>Why would an organization choose to self-host Keycloak instead of paying for a managed product like Okta or Auth0?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Chapter 12's comparison covers this directly: self-hosting Keycloak trades a subscription fee for operational ownership (patching, HA, scaling — Part IX's whole subject) in exchange for no per-user licensing cost, full control over data residency, and an extensible SPI architecture a managed SaaS product can't match. It's the right call when an organization has the operational capacity to run it and a reason — cost at scale, compliance, or a need for deep customization — to want that control; it's the wrong call for a small team that would rather pay to make the operational problem someone else's.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms introduced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>This course deliberately taught two layers — vendor-neutral IAM concepts (Parts I-III) and one vendor's concrete implementation of them (Keycloak, Parts IV-X) — and interviewers probe both separately.</li>
+          <li>A skills matrix that names the concept <em>and</em> points at where you configured it is a more convincing resume tool than either buzzwords or console screenshots alone.</li>
+          <li>IAM career paths split roughly into Engineer, Architect, CIAM Specialist, and IGA Analyst — all four of which this course prepares you for directly.</li>
+          <li>PAM Engineer is a fifth, genuinely adjacent path this course only surveys (chapter 12) — it needs supplemental, vendor-specific study, not a re-read of this course.</li>
+          <li>CISSP's IAM content lives in Domain 5 of 8 domains (not 10, a commonly repeated outdated figure), and the certification as a whole targets senior/leadership roles.</li>
+          <li>"CIAM" is dangerously overloaded: a market category (Customer IAM, chapter 12) and an unrelated certification name (Identity Management Institute's Certified Identity and Access Manager) share the acronym and nothing else.</li>
+          <li>Vendor-specific certifications (SC-300, Okta's track, SailPoint's new 2026-02-17 Identity Security Administrator exam) are worth more in a shop that runs that specific vendor's product than as a general credential.</li>
+          <li>There is no dedicated Keycloak certification — Red Hat's closest credential (EX362) certifies a different product (RHEL IdM/FreeIPA), not Keycloak.</li>
+          <li>A working capstone you can walk an interviewer through, end to end, substitutes for the vendor badge Keycloak doesn't offer.</li>
+          <li>The strongest interview answers in this chapter's question bank connect a vendor-neutral reason to a concrete implementation choice — "I did X because Y," not just "I did X."</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer. Try answering it yourself first — the
+        point is to check your own reasoning against it, not to read the answer first.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>Name one vendor-neutral skill and one Keycloak-specific skill this course taught, and give the chapter number for each.</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Any correctly paired row from the skills matrix works, e.g. "authorization models — ACL/RBAC/ABAC/PBAC/ReBAC (chapter 6)" paired with "Keycloak Authorization Services and UMA 2.0 (chapter 37)." The point of the exercise is pairing a why with a where, not memorizing a specific pair.</p>
+          </details></li>
+          <li><details>
+            <summary>Why is "CIAM" ambiguous in an IAM job posting, and which meaning does this course mostly use?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>"CIAM" names both a market category — Customer Identity and Access Management, managing external customer-facing identities at scale (chapter 12, Northwind Apps' world) — and an unrelated professional certification from the Identity Management Institute. This course's case studies and market-landscape chapter use the market-category meaning almost exclusively; the certification only comes up on this chapter's certifications slide.</p>
+          </details></li>
+          <li><details>
+            <summary>Which professional certification could a reader with zero hands-on Keycloak experience reasonably study for immediately after finishing this course, and why?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>IDPro's CIDPRO is the best fit — it's vendor-neutral and tests exactly the foundational IAM knowledge Parts I-III of this course built (identity lifecycle, AAA, authorization models, federation concepts), without requiring experience on a specific commercial platform this course didn't cover.</p>
+          </details></li>
+          <li><details>
+            <summary>True or false: there is a dedicated "Red Hat Certified Keycloak" certification. If false, what's the closest Red Hat credential, and what does it actually cover?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>False. The closest Red Hat credential is EX362, the Red Hat Certified Specialist in Identity Management — but it certifies Red Hat Identity Management (RHEL's IdM/FreeIPA directory service), a completely different product from Keycloak, not Keycloak itself.</p>
+          </details></li>
+          <li><details>
+            <summary>What does this chapter recommend a reader show an interviewer instead of a Keycloak vendor badge, and why?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A working capstone project the reader can walk through end to end — because no vendor-issued Keycloak certification exists to cite instead, hands-on depth demonstrated live is the only available substitute, and arguably a stronger signal than a multiple-choice exam would have been anyway.</p>
+          </details></li>
+          <li><details>
+            <summary>Which career path did this chapter admit the course does NOT deeply prepare a reader for on its own, and what's missing?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>PAM Engineer. This course only surveys PAM as a market category in chapter 12 (what it is and how it differs from workforce IAM) — it never builds a PAM lab or covers a PAM product's day-to-day operation, so a reader targeting that path specifically needs supplemental, vendor-specific study (e.g. CyberArk's Defender/Sentry track).</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://idpro.org/cidpro/">IDPro — CIDPRO certification program</a></li>
+          <li><a href="https://identitymanagementinstitute.org/">Identity Management Institute — home of the CIAM (Certified Identity and Access Manager) credential</a></li>
+          <li><a href="https://learn.microsoft.com/en-us/certifications/identity-and-access-administrator">Microsoft Learn — SC-300: Identity and Access Administrator certification</a></li>
+          <li><a href="https://www.okta.com/services/certification/">Okta — certification program overview</a></li>
+          <li><a href="https://community.sailpoint.com/blog/Coming-soon-New-certification-exam-for-Administrators">SailPoint Identity University — Certified Identity Security Administrator exam announcement</a></li>
+          <li><a href="https://www.cyberark.com/certification/">CyberArk — certification program (Defender/Sentry)</a></li>
+          <li><a href="https://www.redhat.com/en/services/training/ex362-red-hat-certified-specialist-identity-management-exam">Red Hat — EX362, Red Hat Certified Specialist in Identity Management</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "becoming-an-iam-specialist", 15);
+    SlideDeck.init({ chapterSlug: "becoming-an-iam-specialist" });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Glossary &amp; Cheat Sheets — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/slides.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../"; window.CURRENT_CHAPTER = "master-glossary-and-cheatsheets";</script>
+</head>
+<body>
+<header class="top-bar">
+  <a class="icon-btn roadmap-link" href="../index.html" title="Back to roadmap">&larr; Roadmap</a>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+    <button class="icon-btn outline-toggle" id="outline-toggle" aria-label="Toggle outline">&#9776;</button>
+  </div>
+</header>
+<div class="deck-layout">
+  <nav class="deck-outline" id="deck-outline-panel">
+    <a class="back-to-roadmap" href="../index.html">&larr; Back to roadmap</a>
+    <div class="deck-progress-mini" id="deck-progress-mini"></div>
+    <button type="button" class="mark-all-btn" id="mark-all-btn">Mark whole chapter as read</button>
+    <ol id="slide-outline"></ol>
+  </nav>
+  <main class="deck-main">
+    <div class="deck-position" id="deck-position"></div>
+    <div class="deck-viewport" id="deck-viewport">
+
+      <section class="slide" data-slide="intro" data-title="Why this matters">
+        <div class="chapter-meta">
+          <span class="badge">Part XI — Career &amp; Reference</span>
+          <span class="badge minutes">~30 min</span>
+        </div>
+        <h1>50. Master Glossary &amp; Cheat Sheets</h1>
+        <p class="lede">This is a reference chapter, not a new-concept chapter. By now you've read 49 chapters
+        in chronological order; this one re-sorts the same material by <em>"what do I look up when,"</em>
+        the way a working specialist actually uses reference material — not front to back, but by jumping
+        straight to the one table or diagram that answers the question in front of them. Nothing here is new
+        — every fact below was already established in an earlier chapter; this chapter's job is to pull the
+        facts you'll reach for most often into one place.</p>
+
+        <h2>Why this matters</h2>
+        <p>An interview or a design review doesn't wait for you to re-derive a grant-type comparison from
+        first principles. A specialist who can answer "which grant type for a CLI tool with no browser?" or
+        "what's the difference between a default and optional client scope?" in ten seconds, by pattern-
+        matching against a mental cheat sheet, reads as fluent; one who has to reconstruct the answer from
+        scratch every time reads as still-learning, even with the same underlying knowledge. This chapter
+        builds that mental cheat sheet deliberately, instead of leaving it to accumulate by accident.</p>
+
+        <div class="callout callout--key-idea">
+          <div class="callout-label">Key idea</div>
+          <p>Nothing on this page is authoritative on its own — every cheat sheet here is a compressed pointer
+          back to the chapter that actually taught the material. Treat this chapter as an index into the
+          other 49, not a replacement for them.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="cheat-grants" data-title="Cheat sheet: OAuth grant types">
+        <h2>Cheat sheet: OAuth 2.0 grant types at a glance</h2>
+        <p>First built as a plain reference table in chapter 13 and given full mechanical treatment across
+        chapters 13-14; reproduced here as a lookup table rather than a walkthrough.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>OAuth 2.0 grant types this course covers, and where each is built in full</caption>
+            <thead><tr><th>Grant type</th><th>Use it when</th><th>Client type</th><th>Tokens it returns</th><th>Chapter(s)</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Authorization code + PKCE</strong></td><td>A human logs in through a real browser; the client never sees the user's password</td><td>Public or confidential, browser-capable</td><td>Access, ID, refresh</td><td>13, 35 (SPA lab)</td></tr>
+              <tr><td><strong>Client credentials</strong></td><td>Pure machine-to-machine — the client authenticates as itself, no human involved</td><td>Confidential (has its own secret)</td><td>Access only (no user, so no ID token)</td><td>14, 36 (M2M lab)</td></tr>
+              <tr><td><strong>Device authorization</strong></td><td>A device has no usable browser (CLI, smart-TV app); a human approves on a second device</td><td>Public, no client secret</td><td>Access, ID, refresh (once approved)</td><td>14 (this course's primary real-token lab)</td></tr>
+              <tr><td><strong>Refresh token grant</strong></td><td>Exchanging a still-valid refresh token for a new access token, without re-authenticating</td><td>Whichever client type issued the original tokens</td><td>New access token (and usually a rotated refresh token)</td><td>8, 13</td></tr>
+              <tr><td><strong>UMA ticket-for-RPT exchange</strong></td><td>A resource server has already issued a permission ticket and needs a scoped Requesting Party Token</td><td>Confidential, resource-server-side</td><td>A Requesting Party Token (RPT) — a specialized access token</td><td>37</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — two to recognize, never reach for</div>
+          <p><strong>Resource Owner Password Credentials (ROPC)</strong> and <strong>Implicit</strong> both
+          appear in older material and in some SDKs' defaults, but both are legacy, discouraged grant types
+          per the OAuth 2.0 Security Best Current Practice (chapter 18) — ROPC because it has the client
+          handle the user's raw password directly, Implicit because it returns an access token straight in a
+          URL fragment with no code-exchange step to hide it behind. Recognize them so you can flag them in a
+          review; don't design new integrations around either.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="cheat-realm-structure" data-title="Cheat sheet: realm/client/scope relationships">
+        <h2>Cheat sheet: how a Keycloak realm fits together</h2>
+        <p>This relationship — a realm containing clients, users, groups, and roles, with client scopes as a
+        separate reusable layer clients attach to — is the single structural fact chapters 21-24 spend the
+        most words establishing. Here it is as one picture, grounded in the real <code>northwind-apps</code>
+        realm built across chapters 20-26 and extended in the capstone.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 760 360" role="img" aria-labelledby="t1 d1">
+            <title id="t1">A Keycloak realm's internal structure: clients, users/groups/roles, and client scopes</title>
+            <desc id="d1">A large outer box labeled realm northwind-apps contains three inner groups: a users-and-groups box listing jane.doe in the Engineering group with the tenant-admin role, a roles box listing realm roles tenant-admin and support-agent plus a client-scoped role dashboard-admin, and a clients box listing northwind-dashboard and billing-service-account. Outside the realm box, two client scope boxes, tenant-context and northwind-profile, each bundle one or more protocol mappers and connect with arrows into the clients that attach them, either as a default scope included automatically or an optional scope requested explicitly.</desc>
+
+            <rect x="20" y="20" width="720" height="300" rx="10" class="diagram-fill-surface diagram-stroke"></rect>
+            <text x="380" y="44" text-anchor="middle" class="diagram-label" font-weight="700">Realm: northwind-apps</text>
+
+            <rect x="45" y="65" width="210" height="110" rx="8" class="diagram-fill-accent diagram-stroke"></rect>
+            <text x="150" y="85" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Users &amp; groups</text>
+            <text x="150" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">jane.doe</text>
+            <text x="150" y="124" text-anchor="middle" class="diagram-label-muted" font-size="11">group: Engineering</text>
+            <text x="150" y="140" text-anchor="middle" class="diagram-label-muted" font-size="11">assigned role:</text>
+            <text x="150" y="156" text-anchor="middle" class="diagram-label-muted" font-size="11">tenant-admin</text>
+
+            <rect x="280" y="65" width="210" height="110" rx="8" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="385" y="85" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Roles</text>
+            <text x="385" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">realm role: tenant-admin</text>
+            <text x="385" y="124" text-anchor="middle" class="diagram-label-muted" font-size="11">realm role: support-agent</text>
+            <text x="385" y="144" text-anchor="middle" class="diagram-label-muted" font-size="11">client role: dashboard-admin</text>
+            <text x="385" y="160" text-anchor="middle" class="diagram-label-muted" font-size="10">(scoped to one client only)</text>
+
+            <rect x="515" y="65" width="210" height="110" rx="8" class="diagram-fill-warning diagram-stroke"></rect>
+            <text x="620" y="85" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Clients</text>
+            <text x="620" y="108" text-anchor="middle" class="diagram-label-muted" font-size="11">northwind-dashboard</text>
+            <text x="620" y="124" text-anchor="middle" class="diagram-label-muted" font-size="11">billing-service-account</text>
+            <text x="620" y="144" text-anchor="middle" class="diagram-label-muted" font-size="10">(each is a realm-scoped</text>
+            <text x="620" y="158" text-anchor="middle" class="diagram-label-muted" font-size="10">OAuth/OIDC client record)</text>
+
+            <rect x="45" y="200" width="210" height="100" rx="8" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="150" y="222" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Groups → roles</text>
+            <text x="150" y="245" text-anchor="middle" class="diagram-label-muted" font-size="11">Membership in Engineering</text>
+            <text x="150" y="261" text-anchor="middle" class="diagram-label-muted" font-size="11">carries its mapped role(s)</text>
+            <text x="150" y="277" text-anchor="middle" class="diagram-label-muted" font-size="11">to every member automatically</text>
+            <line x1="150" y1="175" x2="150" y2="198" class="diagram-stroke"></line>
+            <line x1="260" y1="235" x2="278" y2="140" class="diagram-stroke"></line>
+
+            <rect x="135" y="335" width="230" height="22" rx="4" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="250" y="351" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Client scope: tenant-context</text>
+
+            <rect x="415" y="335" width="230" height="22" rx="4" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="530" y="351" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Client scope: northwind-profile</text>
+
+            <line x1="250" y1="333" x2="620" y2="177" class="diagram-stroke" marker-end="url(#arrow-scope1)"></line>
+            <line x1="530" y1="333" x2="620" y2="177" class="diagram-stroke" marker-end="url(#arrow-scope2)"></line>
+            <defs>
+              <marker id="arrow-scope1" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+              <marker id="arrow-scope2" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-accent-strong"></path>
+              </marker>
+            </defs>
+            <text x="310" y="300" text-anchor="middle" class="diagram-label-muted" font-size="10">default scope — always included</text>
+            <text x="585" y="300" text-anchor="middle" class="diagram-label-muted" font-size="10">optional scope — only if requested</text>
+          </svg>
+          <figcaption>Figure 50.1 — A realm's internal pieces (users/groups, roles, clients) plus the separate
+          client-scope layer, reusable across clients as default (always included) or optional (requested
+          explicitly) — grounded in the real northwind-apps realm from chapters 20-26 and the capstone.</figcaption>
+        </figure>
+
+        <div class="callout callout--in-keycloak">
+          <div class="callout-label">In Keycloak</div>
+          <p>Realm roles live under <em>Realm roles</em>; client roles live under a specific client's own
+          <em>Roles</em> tab, in that client's private namespace (chapter 24). Client scopes are a top-level
+          <em>Client scopes</em> list, each one independently attachable to any client as default or optional
+          (chapter 24) — the capstone's <code>tenant-context</code> scope is exactly this pattern, carrying a
+          custom protocol mapper that stamps a <code>tenant_id</code> claim onto every token a client
+          requesting it gets.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="cheat-tokens" data-title="Cheat sheet: token types compared">
+        <h2>Cheat sheet: token types compared</h2>
+        <p>Chapter 8 introduced tokens conceptually; chapters 15-16 gave the OIDC/JWT-specific ones full
+        mechanical depth; chapter 37 added the UMA-specific RPT. Side by side:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Token types used across this course, compared</caption>
+            <thead><tr><th>Token</th><th>Proves</th><th>Audience (<code>aud</code>)</th><th>Typical lifetime</th><th>Where it shows up</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Access token</strong></td><td>Authorization to call a resource server</td><td>The resource server/API</td><td>Short — minutes, by design</td><td>Every protected API call (ch. 8, 34)</td></tr>
+              <tr><td><strong>ID token</strong></td><td>Authentication — who logged in, and when</td><td>The requesting client itself, never an API</td><td>Similar to the access token's session</td><td>OIDC logins only, never sent to an API (ch. 15, 35)</td></tr>
+              <tr><td><strong>Refresh token</strong></td><td>Nothing by itself — it's exchanged for new access/ID tokens</td><td>The authorization server's token endpoint</td><td>Long — hours to days, a direct security/convenience trade-off</td><td>Kept by the client to avoid re-login (ch. 8, 13)</td></tr>
+              <tr><td><strong>Requesting Party Token (RPT)</strong></td><td>A specific, scoped grant computed from a live UMA policy evaluation</td><td>The specific resource server that registered the resource</td><td>Short, like an ordinary access token</td><td>Fine-grained authorization checks after a ticket exchange (ch. 37)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall</div>
+          <p>Sending an ID token to an API in place of an access token is a recurring beginner mistake — its
+          <code>aud</code> claim names the client, not the API, so a correctly implemented resource server
+          should reject it. If an API call with an ID token "works," the resource server isn't validating
+          <code>aud</code>, which is itself a bug worth flagging (chapter 15).</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="cheat-authz-models" data-title="Cheat sheet: authorization models">
+        <h2>Cheat sheet: authorization models compared</h2>
+        <p>Chapter 6 introduced all five models vendor-agnostically; chapter 38 revisited the same spectrum
+        against Keycloak's actual native ceiling. One table covering both:</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Authorization models, their decision basis, and Keycloak's native support for each</caption>
+            <thead><tr><th>Model</th><th>Decision computed from</th><th>Scales well when</th><th>Keycloak native support</th></tr></thead>
+            <tbody>
+              <tr><td><strong>ACL</strong></td><td>A list attached directly to the resource</td><td>Few resources, few subjects</td><td>Not first-class — approximable with per-resource UMA permissions</td></tr>
+              <tr><td><strong>RBAC</strong></td><td>A role assigned to the subject</td><td>Stable, recognizable job functions</td><td>Fully native — realm/client roles, groups (ch. 23)</td></tr>
+              <tr><td><strong>ABAC</strong></td><td>Live attributes of subject, resource, and environment</td><td>Conditions that aren't really "job functions" (shift, department, risk score)</td><td>Fully native — Authorization Services attribute-flavored policies (ch. 37-38)</td></tr>
+              <tr><td><strong>PBAC</strong></td><td>Explicit, centrally managed policy rules (heavily overlaps with ABAC)</td><td>Centralizing many conditional rules outside app code</td><td>Fully native — this is largely what Authorization Services' policy types are (ch. 37-38)</td></tr>
+              <tr><td><strong>ReBAC</strong></td><td>A graph of relationships between subjects and resources</td><td>Fine-grained, frequently changing, relationship-shaped access ("is on the care team for")</td><td>No native relationship-tuple engine — approximable, or reach for a dedicated engine (ch. 38)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Chapter 38 also briefly compared two dedicated, Keycloak-independent policy engines — <strong>OPA</strong>
+        and <strong>Cedar</strong> — for organizations whose authorization needs genuinely outgrow Keycloak's
+        native ABAC/PBAC ceiling, particularly for true ReBAC-shaped problems.</p>
+      </section>
+
+      <section class="slide" data-slide="cheat-saml-oidc" data-title="Cheat sheet: SAML vs. OIDC">
+        <h2>Cheat sheet: SAML vs. OIDC, condensed</h2>
+        <p>Chapter 17 built this mapping in full with a diagram; condensed here as a quick-reference table.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>SAML 2.0 concepts and their OIDC equivalents</caption>
+            <thead><tr><th>SAML 2.0</th><th>OIDC equivalent</th></tr></thead>
+            <tbody>
+              <tr><td><code>&lt;saml:Assertion&gt;</code> (signed XML)</td><td>ID token (signed/optionally encrypted JWT)</td></tr>
+              <tr><td>SAML metadata (<code>EntityDescriptor</code> XML, exchanged once)</td><td>Discovery document (JSON, fetched live over HTTP)</td></tr>
+              <tr><td>Service Provider (SP)</td><td>Relying Party (RP)</td></tr>
+              <tr><td><code>&lt;saml:AttributeStatement&gt;</code></td><td>Claims (ID token + UserInfo response)</td></tr>
+              <tr><td>XML digital signature</td><td>JWS (JSON Web Signature)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Neither protocol is "the deprecated one" — SAML's installed base in long-lived enterprise/
+        government federations is large and not disappearing on a fixed timeline; OIDC is simply the default
+        for new builds, especially mobile/SPA-facing ones, because JSON+JWS is less fiddly to get right than
+        XML+XML signatures.</p>
+      </section>
+
+      <section class="slide" data-slide="cheat-orgs" data-title="Cheat sheet: the three orgs at a glance">
+        <h2>Cheat sheet: Northwind, Riverside, and Meridian at a glance</h2>
+        <p>All three recurred across every one of the preceding 49 chapters. One table, for whenever a
+        scenario question needs "which org fits this shape" answered fast.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>The three running case-study organizations, compared</caption>
+            <thead><tr><th>Org</th><th>Industry</th><th>Primary compliance driver</th><th>Core IAM challenge</th><th>Full write-up</th></tr></thead>
+            <tbody>
+              <tr><td><span class="org-chip northwind">Northwind Apps</span></td><td>B2B SaaS</td><td>Customer contractual/security expectations, not one named regulation</td><td>Multi-tenant isolation at scale — one realm serving many customer tenants without cross-tenant leakage</td><td><a href="../case-studies/cs01-northwind.html">cs01-northwind.html</a></td></tr>
+              <tr><td><span class="org-chip riverside">Riverside Health</span></td><td>Hospital network</td><td>HIPAA (Security &amp; Privacy Rules)</td><td>Two populations (clinician workforce + patient CIAM) on one platform, with minimum-necessary ABAC access</td><td><a href="../case-studies/cs02-riverside.html">cs02-riverside.html</a></td></tr>
+              <tr><td><span class="org-chip meridian">Meridian Trust</span></td><td>Retail bank</td><td>PCI-DSS</td><td>Fraud-aware, step-up authentication for two populations (employees + retail customers) on one realm</td><td><a href="../case-studies/cs03-meridian.html">cs03-meridian.html</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="cheat-kcadm" data-title="Cheat sheet: kcadm quick reference">
+        <h2>Cheat sheet: common kcadm.sh commands</h2>
+        <p>Chapter 27 is the full admin-CLI chapter; here are the commands this course's own labs actually
+        ran most often, as a quick-grab reference rather than a tutorial.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>kcadm.sh commands used repeatedly across this course's labs</caption>
+            <thead><tr><th>Task</th><th>Command shape</th></tr></thead>
+            <tbody>
+              <tr><td>Authenticate the CLI itself</td><td><code>kcadm.sh config credentials --server &lt;url&gt; --realm master --user admin --password &lt;pw&gt;</code></td></tr>
+              <tr><td>Create a realm</td><td><code>kcadm.sh create realms -s realm=&lt;name&gt; -s enabled=true</code></td></tr>
+              <tr><td>Create a realm role</td><td><code>kcadm.sh create roles -r &lt;realm&gt; -s name=&lt;role&gt;</code></td></tr>
+              <tr><td>Create a group</td><td><code>kcadm.sh create groups -r &lt;realm&gt; -s name=&lt;group&gt;</code></td></tr>
+              <tr><td>Create a client</td><td><code>kcadm.sh create clients -r &lt;realm&gt; -f &lt;client.json&gt;</code></td></tr>
+              <tr><td>Read admin events (audit trail)</td><td><code>kcadm.sh get admin-events -r &lt;realm&gt;</code></td></tr>
+              <tr><td>Export a realm's config (no user data)</td><td><code>kcadm.sh create partial-export -r &lt;realm&gt; -o</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout--pitfall">
+          <div class="callout-label">Pitfall — confirmed live, chapter 27</div>
+          <p>A <code>kcadm.sh create</code> call that exits 0 with no printed confirmation at all usually
+          means it succeeded silently, not that it failed — kcadm's success output is minimal by design.
+          Confirm with a follow-up <code>get</code> call rather than assuming silence means failure.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="where-to-look" data-title="Where to look it up">
+        <h2>Where to look it up, after the course ends</h2>
+        <p>The four reference pages below outlive this course's chapter-by-chapter structure — use them as
+        standing tools, not just a study aid during the 50 chapters.</p>
+        <ul>
+          <li><strong><a href="../glossary.html">glossary.html</a></strong> — every term this course defined,
+          searchable, each one pointing back to the chapter(s) that taught it. The fastest path when you
+          half-remember a term but not its exact definition.</li>
+          <li><strong><a href="../quizzes.html">quizzes.html</a></strong> — every chapter's graded quiz pool,
+          retakeable any time, useful as a quick refresh before an interview on a specific Part.</li>
+          <li><strong><a href="../labs.html">labs.html</a></strong> — every hands-on lab's Docker Compose
+          setup, reusable any time you want to re-verify a command against a real, running Keycloak instead
+          of trusting memory.</li>
+          <li><strong><a href="../exams.html">exams.html</a></strong> — the five milestone exams, each a
+          cumulative check spanning multiple Parts; good for a once-a-quarter self-audit of what's stuck.</li>
+        </ul>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 640 220" role="img" aria-labelledby="t2 d2">
+            <title id="t2">This course's four standing reference pages, each pointing back into the 50 chapters</title>
+            <desc id="d2">A central box labeled the 50 chapters connects to four surrounding boxes: glossary.html for terms, quizzes.html for retakeable graded quizzes, labs.html for hands-on Docker labs, and exams.html for cumulative milestone exams. Each surrounding box both draws from and links back into the chapters.</desc>
+            <rect x="240" y="85" width="160" height="50" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
+            <text x="320" y="106" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">The 50</text>
+            <text x="320" y="122" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">chapters</text>
+
+            <rect x="20" y="15" width="140" height="44" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="90" y="42" text-anchor="middle" class="diagram-label" font-size="11">glossary.html</text>
+            <rect x="480" y="15" width="140" height="44" rx="7" class="diagram-fill-info diagram-stroke"></rect>
+            <text x="550" y="42" text-anchor="middle" class="diagram-label" font-size="11">quizzes.html</text>
+            <rect x="20" y="161" width="140" height="44" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="90" y="188" text-anchor="middle" class="diagram-label" font-size="11">labs.html</text>
+            <rect x="480" y="161" width="140" height="44" rx="7" class="diagram-fill-success diagram-stroke"></rect>
+            <text x="550" y="188" text-anchor="middle" class="diagram-label" font-size="11">exams.html</text>
+
+            <line x1="238" y1="100" x2="162" y2="50" class="diagram-stroke"></line>
+            <line x1="402" y1="100" x2="478" y2="50" class="diagram-stroke"></line>
+            <line x1="238" y1="120" x2="162" y2="175" class="diagram-stroke"></line>
+            <line x1="402" y1="120" x2="478" y2="175" class="diagram-stroke"></line>
+          </svg>
+          <figcaption>Figure 50.2 — The course's four standing reference pages, each useful long after
+          chapter 50 itself is finished.</figcaption>
+        </figure>
+      </section>
+
+      <section class="slide" data-slide="glossary" data-title="Glossary">
+        <h2>Glossary terms cross-referenced here</h2>
+        <div id="chapter-glossary-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="takeaways" data-title="Takeaways">
+        <h2>Takeaways</h2>
+        <ul class="takeaways">
+          <li>This chapter introduces no new concepts — it curates and cross-references material from all 49 preceding chapters into scannable cheat sheets.</li>
+          <li>Five OAuth grant types matter for this course: authorization code+PKCE, client credentials, device authorization, the refresh token grant, and the UMA ticket-for-RPT exchange.</li>
+          <li>A realm's structure is: clients, users/groups, and roles live inside it; client scopes are a separate reusable layer attached to clients as default (always included) or optional (requested explicitly).</li>
+          <li>Access tokens prove authorization to an API; ID tokens prove authentication to the client itself; refresh tokens exchange for new tokens; RPTs are UMA's live-policy-computed access token variant.</li>
+          <li>ACL, RBAC, ABAC, PBAC, and ReBAC differ in what the access decision is computed from — Keycloak natively covers RBAC and ABAC/PBAC well, but has no first-class ReBAC engine.</li>
+          <li>SAML and OIDC solve the same federation problem with different wire formats (XML vs. JSON); neither has made the other obsolete.</li>
+          <li>Northwind Apps, Riverside Health, and Meridian Trust map to three different compliance drivers and IAM shapes — contractual/security expectations + multi-tenancy, HIPAA + dual populations, and PCI-DSS + fraud-aware step-up auth, respectively.</li>
+          <li>glossary.html, quizzes.html, labs.html, and exams.html are standing reference tools meant to outlive the linear 50-chapter structure.</li>
+        </ul>
+      </section>
+
+      <section class="slide" data-slide="self-check" data-title="Self-check">
+        <h2>Self-check</h2>
+        <p class="lede">Click a question to reveal a model answer.</p>
+        <ol class="self-check">
+          <li><details>
+            <summary>A colleague asks which OAuth grant type fits a headless CI job that needs to call an internal API with no human present at all. Which one, and why not authorization code?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Client credentials — there's no resource owner or browser involved, which is exactly what this grant type is for. Authorization code requires a human to complete a browser-based login step, which a headless CI job has no way to do.</p>
+          </details></li>
+          <li><details>
+            <summary>What's the practical difference between a default and an optional client scope, and why would a chapter-24-style custom claim mapper normally live on a default scope rather than an optional one?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A default scope is included in every token the client requests automatically; an optional one only appears if the request's scope= parameter names it. A claim like tenant_id that an application always needs belongs on a default scope, so no caller has to remember to ask for it — making it optional would silently break any client that forgot the scope= parameter.</p>
+          </details></li>
+          <li><details>
+            <summary>Someone sends an ID token to a resource server's API instead of an access token, and the API accepts it. What's actually wrong here, and whose bug is it?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It's the resource server's bug, not the client's — an ID token's aud claim names the requesting client, never the API, so a correctly implemented resource server should reject it on audience-validation grounds. The fact that it "worked" means the API isn't checking aud at all, which is a real security gap, not a quirk to work around.</p>
+          </details></li>
+          <li><details>
+            <summary>Riverside Health needs "a nurse can only view charts for patients currently assigned to their shift and department." Which authorization model from the cheat sheet fits best, and why does plain RBAC fall short here?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>ABAC — the decision depends on live attributes (current shift, department, which patients are assigned right now), not a static role assignment. RBAC alone would need a new role for every shift/department/patient-assignment combination, which explodes combinatorially and still can't express "currently assigned" without being re-computed constantly, which is what ABAC does natively at request time.</p>
+          </details></li>
+          <li><details>
+            <summary>A reader finishes all 50 chapters and asks "now what, when I forget something six months from now?" What's the honest answer this chapter gives?</summary>
+            <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>glossary.html, quizzes.html, labs.html, and exams.html are built to outlive the linear chapter structure specifically for this — re-reading a chapter front to back isn't the expected workflow six months later; looking up one term, retaking one quiz, or re-running one lab against a fresh Keycloak instance is.</p>
+          </details></li>
+        </ol>
+      </section>
+
+      <section class="slide" data-slide="quiz" data-title="Quiz">
+        <h2>Quiz</h2>
+        <div class="quiz-block" id="quiz-mount"></div>
+      </section>
+
+      <section class="slide" data-slide="deep-dive" data-title="Deep dive">
+        <h2>Deep dive</h2>
+        <ul>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc6749">RFC 6749 — The OAuth 2.0 Authorization Framework (grant types, §1.3)</a></li>
+          <li><a href="https://openid.net/specs/openid-connect-core-1_0.html">OpenID Connect Core 1.0 specification (ID token, UserInfo)</a></li>
+          <li><a href="https://docs.kantarainitiative.org/uma/wg/rec-oauth-uma-grant-2.0.html">Kantara Initiative — UMA 2.0 Grant for OAuth 2.0 Authorization (RPT exchange)</a></li>
+          <li><a href="https://www.keycloak.org/docs/latest/server_admin/">Keycloak Server Administration Guide (realms, clients, client scopes — the index for Part IV)</a></li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="deck-pager">
+      <button class="pager-btn pager-prev" id="pager-prev" type="button"></button>
+      <button class="pager-btn pager-mark" id="pager-mark" type="button">Mark as read</button>
+      <button class="pager-btn pager-next" id="pager-next" type="button"></button>
+    </div>
+  </main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script src="../assets/js/slides.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("quiz-mount", "master-glossary-and-cheatsheets", 15);
+    SlideDeck.init({ chapterSlug: "master-glossary-and-cheatsheets" });
+  });
+</script>
+</body>
+</html>

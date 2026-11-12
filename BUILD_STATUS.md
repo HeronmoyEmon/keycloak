@@ -8,6 +8,56 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
+**Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
+detail. **Queue item 21, the Final QA pass, is next and last** — closes out CLAUDE.md §8's Final QA gate
+and v1.0. The brief that built chapters 49-50 is preserved below for reference.
+
+- **Ch 49 — Becoming an IAM Specialist** (`chapters/49-becoming-an-iam-specialist.html`, slug
+  `becoming-an-iam-specialist`, already placeholdered in `nav-data.js`). Skills matrix (vendor-neutral
+  IAM concepts from Parts I-III vs. Keycloak-specific skills from Parts IV-X — a table, not a diagram),
+  career paths (IAM engineer/architect, CIAM specialist, IGA analyst, PAM engineer — brief, since this
+  isn't the chapter's main focus), a certifications section, and an interview question bank (mix of
+  concept-recall and scenario questions pulling from all three case-study orgs, since it's a synthesis
+  chapter). CLAUDE.md §2 rule 1 requires live verification here rather than asserted-from-training-data
+  claims — verified live via WebSearch on 2026-11-12, cite what was actually found rather than a stale
+  mental list:
+  - Vendor-neutral: **CISSP** (IAM is Domain 5 of 8 domains — correct the common "10 domains" figure,
+    which is outdated; CISSP itself carries weight mainly for senior/leadership roles, not as an IAM-entry
+    credential), **IDPro CIDPro** (the closest thing to a vendor-neutral IAM-practitioner credential),
+    **CIAM** (Certified Identity and Access Manager, Identity Management Institute — governance/program
+    management focus, easily confused by name with "Customer IAM," which it is not).
+  - Vendor-specific: **Microsoft SC-300** (Identity and Access Administrator — Entra ID), **Okta**
+    certification track (Professional/Administrator/Consultant/Developer), **SailPoint Certified
+    Identity Security Administrator** (newly launched 2026-02-17 — note the recency), **CyberArk
+    Defender/Sentry** (PAM-specific, named honestly as adjacent-not-core to this course's IAM/Keycloak
+    scope).
+  - **Keycloak/Red Hat specifically: no dedicated Keycloak certification exists.** Red Hat's closest
+    credential is the Identity Management specialist exam (EX362, "Red Hat Certified Specialist in
+    Directory Services and Authentication"), which covers Red Hat IdM/FreeIPA, **not** Keycloak — say
+    this plainly rather than implying a Keycloak cert exists or papering over the gap. This is itself a
+    useful, honest data point for a reader: Keycloak expertise is demonstrated by a portfolio/capstone
+    (link back to `capstone.html`), not a vendor badge.
+  - Agent should re-verify these live again before writing (search results shift) and flag anything that
+    no longer checks out, same discipline as every other live-verification chapter.
+- **Ch 50 — Master Glossary & Cheat Sheets** (`chapters/50-master-glossary-and-cheatsheets.html`, slug
+  `master-glossary-and-cheatsheets`). A reference chapter, not a normal topic chapter — organizes
+  existing `GLOSSARY` entries (671+ terms already in `glossary-data.js`, do not duplicate — this chapter
+  curates/cross-references, it doesn't re-define) into a handful of named cheat sheets (e.g. "OAuth grant
+  types at a glance," "Keycloak realm/client/scope relationships," "token types compared," "authorization
+  model comparison ACL/RBAC/ABAC/PBAC/ReBAC"), each as a `table-compare`-eligible table or small diagram
+  pulling from already-established facts (grep existing chapters, don't invent new ones). This chapter is
+  explicitly **the source for `glossary.html`'s final sweep** (queue item 21) — agent should note in its
+  report any glossary term it noticed during research that looks miscategorized, duplicated, or orphaned
+  (no `chapters` entries), for the Final QA pass to act on, rather than fixing `glossary-data.js` itself
+  (shared-file edits stay centralized).
+- Both chapters: lower diagram/quiz minimums are fine with a one-line note, same judgment call as ch00 —
+  these are reference/synthesis chapters, not new-concept chapters. Both still get a 15+ question quiz
+  pool (concept + scenario, cumulative/synthesis-style like the exams rather than narrow recall) and 5+
+  self-check questions with real model answers, per the floor CLAUDE.md §4 sets.
+- Each agent proposes its glossary/quiz additions in its report rather than editing shared files
+  directly (write-collision avoidance, standard practice this build). Central merge sets `built: true`
+  for both in `nav-data.js`, runs the usual tag-stack/link/dup-id checks, and updates this file.
+
 **GATE-1 approved 2026-11-10. GATE-2 approved 2026-11-10. GATE-3 approved 2026-11-10. GATE-4 approved
 2026-11-10** ("proceed" — sent in the first message of a new session, immediately after a CLI restart,
 with no other pending question in play and the GATE-4 summary already the last thing presented in the
@@ -279,8 +329,9 @@ a template/build gate, not a content-mastery one.
     GATE-2/3/4/5 and Final-QA-gate badges (now real links to the matching exam; GATE-1 stays unlinked —
     it's a template/build gate, not a content-mastery one).
 
-### Part XI (career & reference)
-20. Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.
+### Part XI (career & reference) — DONE
+20. ~~Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.~~ — done
+    2026-11-12, see Done below. **Final QA pass (item 21) is next and last.**
 
 ### Final
 21. Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
@@ -604,6 +655,56 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Part XI: chapters 49-50 — Becoming an IAM Specialist / Master Glossary & Cheat Sheets (2026-11-12)
+- Built as 2 parallel fork agents (no lab in either chapter, per CLAUDE.md §5), then centrally merged.
+  Both set `built: true` in `nav-data.js`; full brief is preserved above under the former "Current unit"
+  section this entry replaces.
+- **Ch 49 — Becoming an IAM Specialist**: skills matrix (vendor-neutral concept ↔ Keycloak-specific
+  skill, e.g. chapter 6's authorization models ↔ chapter 37's UMA 2.0), brief career-path section (IAM
+  Engineer/Architect, CIAM Specialist, IGA Analyst, PAM Engineer — the last named honestly as adjacent,
+  only surveyed in ch12, not built in a lab), a certifications section live-verified via WebSearch on
+  2026-11-12 (CISSP — corrected a stale "10 domains" figure to the current 8, IAM is Domain 5; IDPro's
+  CIDPro; the Identity Management Institute's CIAM, explicitly disambiguated from the unrelated
+  "Customer IAM" market category sharing the same acronym; Microsoft SC-300; Okta's
+  Professional/Administrator/Consultant/Developer track; SailPoint's Certified Identity Security
+  Administrator, newly launched 2026-02-17; CyberArk Defender/Sentry), and a genuinely honest finding:
+  **no dedicated Keycloak certification exists** — Red Hat's closest credential (EX362) certifies a
+  different product (RHEL IdM/FreeIPA), not Keycloak, so the chapter frames a real capstone walkthrough
+  as the substitute for the vendor badge Keycloak doesn't offer. 10-slide deck, 2 diagrams, 16-question
+  quiz pool (`becoming-an-iam-specialist`, ids `ch49-01..16`), interview question bank (mix of
+  concept-recall and scenario questions reusing all three orgs + the capstone), 5+ self-check with model
+  answers, 8+ takeaways. 1 new glossary term ("IAM skills matrix" — checked for collisions, none found).
+  All 7 live cert/standards links re-verified 200 by the coordinator.
+- **Ch 50 — Master Glossary & Cheat Sheets**: a reference chapter, not a new-concept one — curates
+  existing material into 6 named cheat sheets (OAuth grant types, realm/client/scope relationships,
+  token types compared, authorization-model comparison, SAML-vs-OIDC quick contrast, the three orgs at a
+  glance) plus a bonus kcadm quick-reference and a "where to look it up" index pointing at
+  `glossary.html`/`quizzes.html`/`labs.html`/`exams.html` for ongoing post-course use — all grounded in
+  grepped facts from chapters 13-14, 17, 20-24, 27, 37-38, 46-48, and the capstone, no invented facts.
+  3 diagrams, 16-question quiz pool (`master-glossary-and-cheatsheets`, ids `mgc-01..16`, deliberately
+  cumulative/scenario-heavy like the exams rather than narrow recall), 5+ self-check, 8+ takeaways.
+  **Zero new glossary terms** (by design — this chapter cross-references, it doesn't redefine); the
+  coordinator extended the `chapters` array of 14 existing terms (Access/Refresh/ID tokens, RPT, Default/
+  Optional client scope, Protocol mapper, ACL/RBAC/ABAC/PBAC/ReBAC, Realm role, Client role) to include
+  this chapter's slug so its glossary-mount isn't empty. No miscategorized/duplicate/orphaned terms were
+  flagged during this pass — the Final QA sweep (queue item 21) starts clean on that front. One flagged
+  false alarm resolved: the agent thought "CIAM" had no glossary term despite chapter 12 defining it;
+  the coordinator confirmed the term does exist (`CIAM (Customer Identity and Access Management)`,
+  already correctly scoped to `what-is-iam`/`iam-market-landscape`) — no action needed.
+- **Central merge verification** (coordinator, independent of agent self-reports): spliced both quiz
+  pools into `quiz-data.js` (`node --check` passed; confirmed 962 unique quiz ids site-wide, zero
+  duplicates, up from 930); added the 1 new glossary term and extended 14 existing terms (672 total
+  terms, zero duplicate names); flipped `built:true` for both chapters in `nav-data.js` (`node --check`
+  passed); ran the tag-stack balance checker against both new chapter files (clean); confirmed all
+  internal links in both chapters resolve on disk; live-curled all 11 external deep-dive links across
+  both chapters (all 200).
+- **Closed a stale cross-reference**: `exams/exam-final.html` (built before these two chapters existed)
+  had explicitly said chapters 49-50 "were not yet built" and deferred their coverage — updated both
+  mentions now that the chapters exist, pointing directly at `chapters/49-...html`/`chapters/50-...html`
+  instead of the stale caveat. Re-verified `exam-final.html` still parses and its links resolve.
+- **Part XI is now fully complete.** Not yet verified in a real browser (no browser tool in this
+  session) — standing caveat, same as every other chapter this build.
 
 ### Exams: exam-foundations/protocols/keycloak-core/integration/final + exams.html (2026-11-12)
 - **Gap found and closed**: CLAUDE.md §3 specified an `exams/` directory that was never scheduled into

@@ -110,8 +110,8 @@ window.COURSE_NAV = [
   { number: 48, slug: "case-study-meridian", title: "Case Study: Meridian Trust", part: "Part X — Case Studies & Capstone", minutes: 60, hasLab: true, built: true,
     blurb: "A PCI-DSS banking app with fraud-aware authentication, full write-up." },
 
-  { number: 49, slug: "becoming-an-iam-specialist", title: "Becoming an IAM Specialist", part: "Part XI — Career & Reference", minutes: 40, hasLab: false, built: false,
+  { number: 49, slug: "becoming-an-iam-specialist", title: "Becoming an IAM Specialist", part: "Part XI — Career & Reference", minutes: 40, hasLab: false, built: true,
     blurb: "Skills matrix, career paths, certifications, an interview question bank." },
-  { number: 50, slug: "master-glossary-and-cheatsheets", title: "Master Glossary & Cheat Sheets", part: "Part XI — Career & Reference", minutes: 30, hasLab: false, built: false,
+  { number: 50, slug: "master-glossary-and-cheatsheets", title: "Master Glossary & Cheat Sheets", part: "Part XI — Career & Reference", minutes: 30, hasLab: false, built: true,
     blurb: "The reference chapter feeding glossary.html." }
 ];
