@@ -1,10 +1,8 @@
-# The capstone's own, isolated Keycloak + PostgreSQL stack -- same pattern as
-# labs/custom-spis/docker-compose.yml and labs/authorization-services/docker-compose.yml, NOT an
-# override of labs/docker/docker-compose.yml (the shared stack used by chapters 20-30+) and NOT
-# sharing a project name/port with any other lab stack.
+# The capstone's own, isolated Keycloak + PostgreSQL stack -- same pattern as chapter 39's and
+# chapter 37's own isolated stacks, NOT an override of the shared stack chapter 20 gives you
+# (used by chapters 20-30+) and NOT sharing a project name/port with any other lab stack.
 #
-#   cd capstone
-#   mvn -q -f billing-api/pom.xml clean package   # build the billing API jar first
+#   mvn -q -f ../custom-spis-lab/pom.xml clean package   # rebuild the custom SPI jar fresh
 #   docker compose -p capstonekc up -d
 #
 # Keycloak is published on host port 18200 (http://localhost:18200), per this course's convention
@@ -38,12 +36,14 @@ services:
     ports:
       - "18200:8080"
     volumes:
-      # The already-built custom SPI jar from chapter 39's lab (rebuilt fresh before this unit --
-      # see BUILD_STATUS.md), mounted read-only. Only its TenantIdProtocolMapper is actually wired
-      # into this realm; the other two providers in the jar (chapter 39's own event listener and
-      # authenticator) are simply unused here, not disabled -- Keycloak registers every provider it
-      # finds but nothing references them unless a client scope/flow actually uses them.
-      - ../labs/custom-spis/target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
+      # The already-built custom SPI jar from chapter 39's lab, mounted read-only. Only its
+      # TenantIdProtocolMapper is actually wired into this realm; the other two providers in the
+      # jar (chapter 39's own event listener and authenticator) are simply unused here, not
+      # disabled -- Keycloak registers every provider it finds but nothing references them unless
+      # a client scope/flow actually uses them. This path assumes you built chapter 39's lab in a
+      # sibling folder named custom-spis-lab (chapter 39's own instructions use exactly this name)
+      # -- adjust the path if you used a different folder name or location.
+      - ../custom-spis-lab/target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
     depends_on:
       postgres:
         condition: service_healthy

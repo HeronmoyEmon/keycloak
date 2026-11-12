@@ -6,7 +6,7 @@ import "./App.css";
 // Northwind Apps' customer dashboard -- the capstone's real build of the "northwind-spa" client
 // chapter 24 named but never built. react-oidc-context's useAuth() drives the real
 // authorization-code + PKCE round trip against the capstone's Keycloak instance; once signed in,
-// this calls the real billing-api (capstone/billing-api, adapted from chapter 34's lab) using the
+// this calls the real billing-api (this capstone's own, adapted from chapter 34's lab) using the
 // access token react-oidc-context already holds -- no separate login for the API, the same token
 // that got this page past Keycloak is the same bearer token billing-api validates.
 function App() {

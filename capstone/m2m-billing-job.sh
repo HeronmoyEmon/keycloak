@@ -7,7 +7,7 @@ set -euo pipefail
 
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18200}"
 BILLING_API_URL="${BILLING_API_URL:-http://localhost:8081}"
-CLIENT_SECRET="${BILLING_SERVICE_ACCOUNT_SECRET:?Set BILLING_SERVICE_ACCOUNT_SECRET first (see README.md)}"
+CLIENT_SECRET="${BILLING_SERVICE_ACCOUNT_SECRET:?Set BILLING_SERVICE_ACCOUNT_SECRET first (the secret seed-realm.sh printed in step 2)}"
 
 echo "== requesting a client-credentials token for billing-service-account =="
 TOKEN=$(curl -s -X POST "$KEYCLOAK_URL/realms/northwind-apps/protocol/openid-connect/token" \

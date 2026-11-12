@@ -2,8 +2,9 @@
 # Reconstructs the full northwind-apps realm for the capstone's own isolated stack (project
 # capstonekc, port 18200), as established across chapters 20-39 plus the UMA-protected resource
 # this capstone adds on top. This is exactly what was actually run, in order, against a real
-# running Keycloak -- including the fixes for two real bugs hit live (see capstone/README.md for
-# the full write-up of both). Idempotent-ish: re-running against an already-seeded realm will hit
+# running Keycloak -- including the fixes for two real bugs hit live (see capstone.html's "Real
+# bugs found while building this" section for the full write-up of both). Idempotent-ish:
+# re-running against an already-seeded realm will hit
 # "already exists" errors on the create steps; tear down and re-up the stack for a clean reseed.
 set -euo pipefail
 
@@ -150,7 +151,7 @@ $KC create "clients/$CID/authz/resource-server/permission/scope" -r northwind-ap
   -s name="view-premium-invoice-report" -s "resources=[\"$RID\"]" -s "scopes=[\"$SID\"]" \
   -s "policies=[\"$PID\"]" -s decisionStrategy=UNANIMOUS
 
-echo "== secrets (for README.md / app config -- these are fresh per seed run, never commit them) =="
+echo "== secrets (for the app config in the next steps -- these are fresh per seed run, never commit them) =="
 for cid in billing-service-account billing-direct-grant billing-api northwind-dashboard; do
   ID=$($KC get clients -r northwind-apps -q clientId=$cid --fields id --format csv --noquotes)
   SECRET=$($KC get "clients/$ID/client-secret" -r northwind-apps --fields value --format csv --noquotes)

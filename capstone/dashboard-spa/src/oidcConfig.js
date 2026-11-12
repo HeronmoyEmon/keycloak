@@ -1,9 +1,9 @@
 // OIDC / PKCE configuration for react-oidc-context's AuthProvider, adapted from chapter 35's
 // patient-portal lab for the capstone: this points at the capstone's own isolated Keycloak
-// instance (capstone/docker-compose.yml, project capstonekc, host port 18200), realm
-// northwind-apps, the real public client "northwind-spa" -- named but never built with real
-// running code until this capstone (chapter 24 named it only as a forward pointer; chapter 35's
-// own concrete lab built "patient-portal" against Riverside Health instead).
+// instance (project capstonekc, host port 18200), realm northwind-apps, the real public client
+// "northwind-spa" -- named but never built with real running code until this capstone (chapter
+// 24 named it only as a forward pointer; chapter 35's own concrete lab built "patient-portal"
+// against Riverside Health instead).
 export const oidcConfig = {
   authority: "http://localhost:18200/realms/northwind-apps",
   client_id: "northwind-spa",

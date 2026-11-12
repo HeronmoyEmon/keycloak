@@ -74,10 +74,35 @@ need" menu before the first step, and commands that start from an empty folder, 
   reviewed and kept. Process note: the ch39 agent committed on its own initiative (not instructed to);
   reviewed its commit message (no attribution-line violation) and its diff independently before
   accepting it rather than re-doing the work.
-- **Wave 3 (capstone) — not started.** Biggest, most interconnected (compose file, seed script,
-  `billing-api` ~8 files, `dashboard-spa` ~15 files) — dedicated single pass, not parallelized.
-- Tracked here so a new session can resume cleanly if this gets interrupted: whichever wave isn't yet
-  marked done above is the one to pick up.
+- **Wave 3 (capstone) — DONE, committed.** The biggest single piece: `capstone.html`'s "How to run
+  it" section went from one paragraph deferring entirely to `capstone/README.md` to a 5-step,
+  fully self-contained walkthrough inlining all 19 real files (infra: `docker-compose.yml`,
+  `seed-realm.sh`, `m2m-billing-job.sh`; `billing-api`: 7 Maven/Spring files; `dashboard-spa`: 9
+  React/Vite files), grouped files-needed menus per component, real `mkdir -p` nested-package
+  steps, and the exact real command sequence preserved from the README. **The one genuine
+  cross-lab dependency** (the compose file mounts chapter 39's built SPI jar) is handled honestly
+  rather than hidden: the reader is told to build chapter 39's self-contained lab in a sibling
+  folder named `custom-spis-lab` (matching chapter 39's own instructions) so the relative mount
+  path resolves — a real dependency between two labs, stated plainly, not a repo-path shortcut.
+  The agent also found and fixed 7 real pre-existing bugs in the source files while preparing to
+  inline them (a leftover wrong page title from the file this was adapted from; several stale
+  `labs/`/`capstone/README.md` comments inside the source files themselves, which would otherwise
+  have shipped onto the live page verbatim). Coordinator independently re-verified: tag balance
+  OK; all 19 files-needed anchors match a real `id` (19/19); all 19 inlined files byte-exact
+  against the (now-fixed) real source on disk (scripted check); the `custom-spis-lab` folder-name
+  cross-reference confirmed accurate against chapter 39's own text; zero remaining
+  `capstone/`/`labs/` references anywhere on the page. **Found and fixed one more real bug during
+  this verification pass** that the agent correctly left alone (out of its stated scope): the
+  real `docker-compose.yml`'s own header comment said to run `mvn -q -f billing-api/pom.xml clean
+  package # build the billing API jar first` before `docker compose up` — wrong on two counts
+  (the mount is the custom-SPI jar, not billing-api's, and building billing-api isn't needed until
+  step 3). Fixed in both the live source file and its inlined copy in `capstone.html` to the
+  correct `mvn -q -f ../custom-spis-lab/pom.xml clean package`, matching the real, previously
+  human-verified README sequence. Re-verified byte-match held after this fix.
+- **Self-contained-labs retrofit is now COMPLETE** (chapter 20 reference + wave 1's 12 lightweight
+  chapters + wave 2's 8 heavy chapters + wave 3's capstone = all 28 `hasLab:true` chapters plus the
+  capstone; chapters 13-15 needed no change, already self-contained against a public demo server).
+  **Queue item 21, the Final QA pass, is next and last** — see below.
 
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
 detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out

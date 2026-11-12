@@ -12,9 +12,11 @@
   the dev machine (java version reports OpenJDK 21.0.13).
 
   Reader facing port note: this app's own server.port defaults to 8081 in
-  src/main/resources/application.properties, deliberately NOT 8080, since this chapter's
-  Keycloak instance (labs/docker/docker-compose.yml, unmodified) already occupies 8080 and 9000,
-  and a reader following this chapter runs both side by side.
+  src/main/resources/application.properties, matching chapter 34's original lab convention (where
+  that chapter's own Keycloak instance already occupies 8080 and 9000). In the capstone itself,
+  Keycloak instead runs on port 18200 (its own isolated stack), so 8081 no longer avoids a clash
+  with Keycloak specifically -- it's kept anyway so this file matches chapter 34's proven original
+  exactly, rather than introducing an unnecessary difference.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

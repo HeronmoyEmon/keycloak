@@ -38,8 +38,9 @@
       <code>northwind-apps</code> realm (chapter 20), its roles and groups (chapter 23), identity
       brokering (chapter 31), the <code>billing-api</code> Spring Boot resource server (chapter 34), UMA
       2.0 authorization (chapter 37), and the <code>TenantIdProtocolMapper</code> custom SPI (chapter
-      39). This page is the walkthrough; <code>capstone/README.md</code> is the exact, reproducible
-      command sequence.</p>
+      39). This page is both the walkthrough and the exact, reproducible command sequence — every
+      file below is the real one this capstone's own stack ran, with a copy button, not a pointer to a
+      repository you'd need to clone.</p>
 
     <div class="callout callout--key-idea">
       <div class="callout-label">Key idea</div>
@@ -128,10 +129,1151 @@
     </div>
 
     <h2>How to run it</h2>
-    <p>Full, exact, reproducible commands are in <code>capstone/README.md</code>. In short: bring up
-      <code>capstone/docker-compose.yml</code>, run <code>capstone/seed-realm.sh</code>, build and run
-      <code>capstone/billing-api</code>, build and run <code>capstone/dashboard-spa</code>, then run
-      <code>capstone/m2m-billing-job.sh</code>.</p>
+
+    <p>Everything below is the real, complete set of files and commands this capstone's own stack
+      actually ran — nothing paraphrased and nothing left in a repository you'd need to clone. Five
+      steps: start the stack, seed the realm, build/run <code>billing-api</code>, build/run the
+      dashboard SPA, then run the M2M job.</p>
+
+    <div class="callout callout--files-needed">
+      <div class="callout-label">Files you'll need for the capstone</div>
+      <p><strong>Infra:</strong></p>
+      <ul class="files-needed-list">
+        <li><a href="#file-capstone-docker-compose-yml"><code>docker-compose.yml</code></a> — the capstone's own isolated Keycloak 26.8.2 + PostgreSQL 17 stack (project <code>capstonekc</code>, host port 18200)</li>
+        <li><a href="#file-seed-realm-sh"><code>seed-realm.sh</code></a> — reconstructs the full <code>northwind-apps</code> realm: roles, groups, users, clients, the <code>tenant-context</code> client scope, and the UMA resource/scope/policy/permission</li>
+        <li><a href="#file-m2m-billing-job-sh"><code>m2m-billing-job.sh</code></a> — a real client-credentials job calling the running <code>billing-api</code>, standing in for chapter 36's nightly reconciliation job</li>
+      </ul>
+      <p><strong><code>billing-api</code></strong> (adapted from chapter 34's lab):</p>
+      <ul class="files-needed-list">
+        <li><a href="#file-billing-api-pom-xml"><code>pom.xml</code></a> — the Maven build file</li>
+        <li><a href="#file-billing-api-application-java"><code>BillingApiApplication.java</code></a> — the Spring Boot entry point</li>
+        <li><a href="#file-billing-controller-java"><code>BillingController.java</code></a> — the four endpoints, including the new UMA-gated <code>/api/invoices/premium-report</code></li>
+        <li><a href="#file-keycloak-realm-role-converter-java"><code>KeycloakRealmRoleConverter.java</code></a> — translates Keycloak's <code>realm_access.roles</code> claim into Spring authorities</li>
+        <li><a href="#file-security-config-java"><code>SecurityConfig.java</code></a> — the resource-server security wiring</li>
+        <li><a href="#file-uma-permission-service-java"><code>UmaPermissionService.java</code></a> — new for the capstone: a real server-side UMA 2.0 Policy Enforcement Point against Keycloak's Protection API</li>
+        <li><a href="#file-billing-api-application-properties"><code>application.properties</code></a> — issuer-uri and the UMA client credentials/resource id (filled in from step 2's output)</li>
+      </ul>
+      <p><strong>Dashboard SPA</strong> (<code>northwind-spa</code>, adapted from chapter 35's lab):</p>
+      <ul class="files-needed-list">
+        <li><a href="#file-dashboard-package-json"><code>package.json</code></a> — the only file <code>npm install</code> actually needs; everything else below is the app's own source</li>
+        <li><a href="#file-dashboard-vite-config-js"><code>vite.config.js</code></a> — the dev server/build config</li>
+        <li><a href="#file-dashboard-eslint-config-js"><code>eslint.config.js</code></a> — lint config (not required to run the app, included for completeness)</li>
+        <li><a href="#file-dashboard-index-html"><code>index.html</code></a> — the app's HTML entry point</li>
+        <li><a href="#file-dashboard-main-jsx"><code>src/main.jsx</code></a> — the React root render, wrapping the app in <code>react-oidc-context</code>'s <code>AuthProvider</code></li>
+        <li><a href="#file-dashboard-app-jsx"><code>src/App.jsx</code></a> — the real authorization-code + PKCE login flow and the two billing-api buttons</li>
+        <li><a href="#file-dashboard-app-css"><code>src/App.css</code></a> / <a href="#file-dashboard-index-css"><code>src/index.css</code></a> — styling</li>
+        <li><a href="#file-dashboard-oidc-config-js"><code>src/oidcConfig.js</code></a> — the OIDC client configuration pointing at <code>northwind-apps</code>/<code>northwind-spa</code></li>
+      </ul>
+    </div>
+
+    <h3>Step 1 — start the stack</h3>
+    <p>Make a new, empty folder for the capstone and move into it. This stack also needs the custom SPI
+      jar <a href="chapters/39-custom-spis.html">chapter 39</a>'s lab built (its
+      <code>TenantIdProtocolMapper</code> is what actually stamps the <code>tenant_id</code> claim) —
+      if you haven't already, follow that chapter now and build it in a folder named
+      <code>custom-spis-lab</code> (chapter 39's own instructions use exactly this name). Create this
+      capstone's folder as a <strong>sibling</strong> of <code>custom-spis-lab</code>, not nested inside
+      it, so the compose file below's relative path lines up:</p>
+<pre><code>mkdir capstone-lab
+cd capstone-lab</code></pre>
+    <p>Create <code>docker-compose.yml</code> with this exact content:</p>
+<pre id="file-capstone-docker-compose-yml" data-filename="docker-compose.yml"><code class="language-yaml"># The capstone's own, isolated Keycloak + PostgreSQL stack -- same pattern as chapter 39's and
+# chapter 37's own isolated stacks, NOT an override of the shared stack chapter 20 gives you
+# (used by chapters 20-30+) and NOT sharing a project name/port with any other lab stack.
+#
+#   mvn -q -f ../custom-spis-lab/pom.xml clean package   # rebuild the custom SPI jar fresh
+#   docker compose -p capstonekc up -d
+#
+# Keycloak is published on host port 18200 (http://localhost:18200), per this course's convention
+# of giving each isolated lab/capstone stack its own project name + port.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - capstone_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18200:8080"
+    volumes:
+      # The already-built custom SPI jar from chapter 39's lab, mounted read-only. Only its
+      # TenantIdProtocolMapper is actually wired into this realm; the other two providers in the
+      # jar (chapter 39's own event listener and authenticator) are simply unused here, not
+      # disabled -- Keycloak registers every provider it finds but nothing references them unless
+      # a client scope/flow actually uses them. This path assumes you built chapter 39's lab in a
+      # sibling folder named custom-spis-lab (chapter 39's own instructions use exactly this name)
+      # -- adjust the path if you used a different folder name or location.
+      - ../custom-spis-lab/target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  capstone_pg_data:</code></pre>
+    <p>Bring it up:</p>
+<pre><code>docker compose -p capstonekc up -d</code></pre>
+    <p>Wait for Keycloak to be ready:</p>
+<pre><code>for i in $(seq 1 40); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18200/realms/master/.well-known/openid-configuration)
+  echo "attempt $i: $code"
+  if [ "$code" = "200" ]; then break; fi
+  sleep 3
+done</code></pre>
+    <p>Admin Console: <code>http://localhost:18200/admin</code> — bootstrap admin
+      <code>admin</code> / <code>admin_lab_password</code>.</p>
+
+    <h3>Step 2 — seed the realm</h3>
+    <p>Create <code>seed-realm.sh</code> (same folder, <code>capstone-lab</code>) with this exact content,
+      then make it executable:</p>
+<pre id="file-seed-realm-sh" data-filename="seed-realm.sh"><code class="language-bash">#!/usr/bin/env bash
+# Reconstructs the full northwind-apps realm for the capstone's own isolated stack (project
+# capstonekc, port 18200), as established across chapters 20-39 plus the UMA-protected resource
+# this capstone adds on top. This is exactly what was actually run, in order, against a real
+# running Keycloak -- including the fixes for two real bugs hit live (see capstone.html's "Real
+# bugs found while building this" section for the full write-up of both). Idempotent-ish:
+# re-running against an already-seeded realm will hit
+# "already exists" errors on the create steps; tear down and re-up the stack for a clean reseed.
+set -euo pipefail
+
+KC="docker compose -p capstonekc exec keycloak /opt/keycloak/bin/kcadm.sh"
+BASE_URL="http://localhost:18200"
+
+$KC config credentials --server http://localhost:8080 --realm master --user admin --password admin_lab_password
+
+echo "== realm =="
+$KC create realms -r northwind-apps 2&gt;/dev/null || true
+$KC create realms -s realm=northwind-apps -s enabled=true \
+  -s ssoSessionIdleTimeout=3600 -s ssoSessionMaxLifespan=28800
+
+echo "== roles (chapters 23, 34) =="
+$KC create roles -r northwind-apps -s name=tenant-admin -s 'description=Full admin access within one customer tenant'
+$KC create roles -r northwind-apps -s name=support-agent -s 'description=Support tooling and tenant-facing queues'
+$KC create roles -r northwind-apps -s name=platform-engineer -s 'description=Platform engineering tooling and infrastructure'
+$KC create roles -r northwind-apps -s name=billing-reader -s 'description=Can view invoice data'
+$KC create roles -r northwind-apps -s name=billing-admin -s 'description=Can create/modify invoice data'
+
+echo "== groups (chapter 23) =="
+$KC create groups -r northwind-apps -s name=Engineering
+$KC create groups -r northwind-apps -s name=Support
+
+echo "== BUG FOUND LIVE: declare tenant_id in the User Profile schema BEFORE setting it on any user =="
+# Keycloak 26's declarative User Profile silently drops any user attribute that isn't part of
+# its schema (no error, no warning -- the attribute just never appears on GET or in a token).
+# tenant_id has to be declared here first, or every later 'attributes.tenant_id=[...]' call
+# below is a no-op.
+curl -s "$BASE_URL/admin/realms/northwind-apps/users/profile" \
+  -H "Authorization: Bearer $($KC config credentials --server http://localhost:8080 --realm master --user admin --password admin_lab_password &gt;/dev/null; true)" &gt;/dev/null || true
+ADMIN_TOKEN=$(curl -s -X POST "$BASE_URL/realms/master/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=admin" --data-urlencode "password=admin_lab_password" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+curl -s "$BASE_URL/admin/realms/northwind-apps/users/profile" -H "Authorization: Bearer $ADMIN_TOKEN" &gt; /tmp/northwind-user-profile.json
+python3 - "$ADMIN_TOKEN" &lt;&lt;'PYEOF'
+import json, sys
+with open("/tmp/northwind-user-profile.json") as f:
+    profile = json.load(f)
+if not any(a["name"] == "tenant_id" for a in profile["attributes"]):
+    profile["attributes"].append({
+        "name": "tenant_id",
+        "displayName": "Tenant ID",
+        "permissions": {"view": ["admin"], "edit": ["admin"]},
+        "multivalued": False,
+    })
+with open("/tmp/northwind-user-profile-updated.json", "w") as f:
+    json.dump(profile, f)
+PYEOF
+curl -s -X PUT "$BASE_URL/admin/realms/northwind-apps/users/profile" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d @/tmp/northwind-user-profile-updated.json &gt; /dev/null
+
+echo "== users (chapters 22, 23, 34) -- email is required: an unverified/emailless user hits VERIFY_PROFILE at login (second real bug found live) =="
+for spec in "jane.doe:Jane:Doe:acme-corp" "priya.patel:Priya:Patel:acme-corp" "amara.reader:Amara:Reader:acme-corp" "devon.admin:Devon:Admin:acme-corp" "priya.sales:Priya:Sales:contoso"; do
+  IFS=: read -r u f l t &lt;&lt;&lt; "$spec"
+  $KC create users -r northwind-apps -s username="$u" -s enabled=true -s firstName="$f" -s lastName="$l" \
+    -s email="${u}@northwindapps.example" -s emailVerified=true
+  $KC set-password -r northwind-apps --username "$u" --new-password 'CapstoneLab1!' --temporary=false
+  USER_ID=$($KC get users -r northwind-apps -q username="$u" --fields id --format csv --noquotes)
+  $KC update "users/$USER_ID" -r northwind-apps -s "attributes={\"tenant_id\":[\"$t\"]}"
+done
+
+echo "== role/group grants =="
+$KC add-roles -r northwind-apps --uusername jane.doe --rolename tenant-admin
+$KC add-roles -r northwind-apps --uusername priya.patel --rolename platform-engineer
+PRIYA_ID=$($KC get users -r northwind-apps -q username=priya.patel --fields id --format csv --noquotes)
+ENGINEERING_GID=$($KC get groups -r northwind-apps --fields id,name --format csv --noquotes | awk -F, '$2=="Engineering"{print $1}')
+$KC update "users/$PRIYA_ID/groups/$ENGINEERING_GID" -r northwind-apps -b '{}'
+$KC add-roles -r northwind-apps --uusername amara.reader --rolename billing-reader
+$KC add-roles -r northwind-apps --uusername devon.admin --rolename billing-admin
+# priya.sales deliberately gets no billing role and no tenant-side role.
+
+echo "== clients =="
+$KC create clients -r northwind-apps \
+  -s clientId=northwind-dashboard -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=true -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=false -s 'redirectUris=["http://localhost:8081/*"]'
+
+$KC create clients -r northwind-apps \
+  -s clientId=northwind-spa -s protocol=openid-connect \
+  -s publicClient=true -s standardFlowEnabled=true -s directAccessGrantsEnabled=false \
+  -s 'redirectUris=["http://localhost:5173/*"]' -s 'webOrigins=["http://localhost:5173"]' \
+  -s 'attributes."pkce.code.challenge.method"=S256'
+
+$KC create clients -r northwind-apps \
+  -s clientId=billing-service-account -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=true
+
+$KC create clients -r northwind-apps \
+  -s clientId=billing-direct-grant -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=true \
+  -s serviceAccountsEnabled=false
+
+$KC create clients -r northwind-apps \
+  -s clientId=billing-api -s protocol=openid-connect \
+  -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=true -s authorizationServicesEnabled=true
+
+$KC add-roles -r northwind-apps --uusername service-account-billing-service-account --rolename billing-admin
+$KC add-roles -r northwind-apps --uusername service-account-billing-api --rolename billing-admin
+
+echo "== tenant-context client scope (chapter 39's TenantIdProtocolMapper) =="
+$KC create client-scopes -r northwind-apps -s name=tenant-context -s protocol=openid-connect
+TCS_ID=$($KC get client-scopes -r northwind-apps --fields id,name --format csv --noquotes | awk -F, '$2=="tenant-context"{print $1}')
+$KC create "client-scopes/$TCS_ID/protocol-mappers/models" -r northwind-apps \
+  -s name=tenant_id -s protocol=openid-connect -s protocolMapper=northwind-tenant-id-mapper \
+  -s 'config."claim.name"=tenant_id' -s 'config."access.token.claim"=true' \
+  -s 'config."id.token.claim"=true' -s 'config."userinfo.token.claim"=true'
+
+DASH_ID=$($KC get clients -r northwind-apps -q clientId=northwind-dashboard --fields id --format csv --noquotes)
+SPA_ID=$($KC get clients -r northwind-apps -q clientId=northwind-spa --fields id --format csv --noquotes)
+$KC update "clients/$DASH_ID/default-client-scopes/$TCS_ID" -r northwind-apps -b '{}'
+$KC update "clients/$SPA_ID/default-client-scopes/$TCS_ID" -r northwind-apps -b '{}'
+
+echo "== billing-api: UMA resource/scope/policy/permission (mirrors chapter 37's proven pattern) =="
+CID=$($KC get clients -r northwind-apps -q clientId=billing-api --fields id --format csv --noquotes)
+
+# BUG FOUND LIVE: a resource URI with a path-segment wildcard ("/api/invoices/*/premium-report")
+# is rejected -- wildcard is only accepted as a trailing "/*" or a "/*.ext" suffix. Use a fixed
+# path instead (billing-api's actual endpoint is a fixed GET /api/invoices/premium-report, not
+# parameterized per invoice id).
+$KC create "clients/$CID/authz/resource-server/resource" -r northwind-apps \
+  -s name="premium-invoice-report" -s displayName="Premium invoice analytics report" \
+  -s 'uris=["/api/invoices/premium-report"]' -s type=urn:northwind:invoice-report
+RID=$($KC get "clients/$CID/authz/resource-server/resource" -r northwind-apps --fields _id,name --format csv --noquotes | grep premium-invoice-report | cut -d, -f1)
+
+$KC create "clients/$CID/authz/resource-server/scope" -r northwind-apps -s name=view
+SID=$($KC get "clients/$CID/authz/resource-server/scope" -r northwind-apps --fields id,name --format csv --noquotes | grep ',view$' | cut -d, -f1)
+
+# GOTCHA (also confirmed by chapter 37): a permission can't reference this resource+scope pair
+# until the resource itself lists the scope.
+$KC update "clients/$CID/authz/resource-server/resource/$RID" -r northwind-apps \
+  -s name="premium-invoice-report" -s type=urn:northwind:invoice-report \
+  -s 'uris=["/api/invoices/premium-report"]' -s "scopes=[{\"id\":\"$SID\"}]"
+
+$KC create "clients/$CID/authz/resource-server/policy/role" -r northwind-apps \
+  -s name="billing-admin-policy" -s 'roles=[{"id":"billing-admin"}]' -s logic=POSITIVE
+PID=$($KC get "clients/$CID/authz/resource-server/policy" -r northwind-apps --fields id,name --format csv --noquotes | grep billing-admin-policy | cut -d, -f1)
+
+$KC create "clients/$CID/authz/resource-server/permission/scope" -r northwind-apps \
+  -s name="view-premium-invoice-report" -s "resources=[\"$RID\"]" -s "scopes=[\"$SID\"]" \
+  -s "policies=[\"$PID\"]" -s decisionStrategy=UNANIMOUS
+
+echo "== secrets (for the app config in the next steps -- these are fresh per seed run, never commit them) =="
+for cid in billing-service-account billing-direct-grant billing-api northwind-dashboard; do
+  ID=$($KC get clients -r northwind-apps -q clientId=$cid --fields id --format csv --noquotes)
+  SECRET=$($KC get "clients/$ID/client-secret" -r northwind-apps --fields value --format csv --noquotes)
+  echo "$cid: $SECRET"
+done
+echo "premium-invoice-report resource id: $RID"
+
+echo "Seed complete."</code></pre>
+<pre><code>chmod +x seed-realm.sh
+./seed-realm.sh</code></pre>
+    <p>This prints each client's secret and the <code>premium-invoice-report</code> resource id at the
+      end — copy them, you need them for steps 3 and 5. <strong>These are fresh per run; never commit
+      real values from your own run anywhere.</strong></p>
+
+    <h3>Step 3 — build and run the billing API</h3>
+    <p>Inside <code>capstone-lab</code>, lay out the Maven/Java package structure and create the 7 files
+      below:</p>
+<pre><code>mkdir -p billing-api/src/main/java/com/northwindapps/billing
+mkdir -p billing-api/src/main/resources
+cd billing-api</code></pre>
+<pre id="file-billing-api-pom-xml" data-filename="pom.xml"><code class="language-xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!--
+  Northwind Apps billing/invoicing API: a real Spring Boot OAuth2 Resource Server validating
+  Keycloak-issued JWTs, built for chapter 34 (Securing a Backend API) of the IAM and Keycloak
+  Mastery course.
+
+  Spring Boot version was live-verified against repo1.maven.org's maven-metadata.xml for
+  org.springframework.boot:spring-boot immediately before this POM was written (2026-11-11):
+  4.1.2 is the newest fully released GA version (4.2.0 exists only as M1/M2/RC1/RC2 as of that
+  check, so 4.2 is not yet GA), pinned here rather than guessed. Spring Boot 4.x's parent POM
+  defaults java.version to 17; this project overrides it to 21, the JDK confirmed available on
+  the dev machine (java version reports OpenJDK 21.0.13).
+
+  Reader facing port note: this app's own server.port defaults to 8081 in
+  src/main/resources/application.properties, matching chapter 34's original lab convention (where
+  that chapter's own Keycloak instance already occupies 8080 and 9000). In the capstone itself,
+  Keycloak instead runs on port 18200 (its own isolated stack), so 8081 no longer avoids a clash
+  with Keycloak specifically -- it's kept anyway so this file matches chapter 34's proven original
+  exactly, rather than introducing an unnecessary difference.
+--&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;parent&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+    &lt;version&gt;4.1.2&lt;/version&gt;
+    &lt;relativePath/&gt;
+  &lt;/parent&gt;
+
+  &lt;groupId&gt;com.northwindapps&lt;/groupId&gt;
+  &lt;artifactId&gt;billing-api&lt;/artifactId&gt;
+  &lt;version&gt;1.0.0&lt;/version&gt;
+  &lt;packaging&gt;jar&lt;/packaging&gt;
+
+  &lt;name&gt;Northwind Apps Billing API&lt;/name&gt;
+  &lt;description&gt;
+    A small Spring Boot OAuth2 Resource Server securing a billing/invoicing API with
+    Keycloak-issued JWTs, for chapter 34 of the IAM &amp;amp; Keycloak Mastery course.
+  &lt;/description&gt;
+
+  &lt;properties&gt;
+    &lt;java.version&gt;21&lt;/java.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-oauth2-resource-server&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+      &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+
+&lt;/project&gt;</code></pre>
+<pre id="file-billing-api-application-java" data-filename="src/main/java/com/northwindapps/billing/BillingApiApplication.java"><code class="language-java">package com.northwindapps.billing;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * Northwind Apps billing/invoicing API -- the chapter 34 lab's Spring Boot OAuth2 Resource
+ * Server. See {@link SecurityConfig} for the JWT validation and authorization wiring, and
+ * {@link BillingController} for the three endpoints this chapter curls at three different
+ * protection levels.
+ */
+@SpringBootApplication
+public class BillingApiApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(BillingApiApplication.class, args);
+    }
+}</code></pre>
+<pre id="file-billing-controller-java" data-filename="src/main/java/com/northwindapps/billing/BillingController.java"><code class="language-java">package com.northwindapps.billing;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Four endpoints at four different protection levels -- the first three exactly as chapter 34's
+ * brief asked for, the fourth new for the capstone:
+ *
+ * &lt;ul&gt;
+ *   &lt;li&gt;{@code GET /api/public/health} -- no token required at all.&lt;/li&gt;
+ *   &lt;li&gt;{@code GET /api/invoices} -- any caller holding the realm role {@code billing-reader}
+ *       or {@code billing-admin} (enforced in {@link SecurityConfig}'s filter chain, before this
+ *       method body ever runs).&lt;/li&gt;
+ *   &lt;li&gt;{@code POST /api/invoices} -- only a caller holding {@code billing-admin}, enforced here
+ *       with method-level {@code @PreAuthorize} instead of the filter chain, to show both
+ *       enforcement styles for real in the same small app.&lt;/li&gt;
+ *   &lt;li&gt;{@code GET /api/invoices/premium-report} -- gated not by a Spring role check but by a
+ *       real server-side UMA 2.0 decision from Keycloak itself ({@link UmaPermissionService}),
+ *       demonstrating resource-level authorization a static role check can't express as cleanly:
+ *       this app asks Keycloak, per request, "is this specific caller allowed this specific
+ *       scope on this specific resource" rather than baking the rule into its own code.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Invoice data is an in-memory stand-in (no database) -- this app's subject is the
+ * security boundary in front of the API, not the billing domain behind it.
+ */
+@RestController
+@RequestMapping("/api")
+public class BillingController {
+
+    private final List&lt;Map&lt;String, Object&gt;&gt; invoices = new java.util.concurrent.CopyOnWriteArrayList&lt;&gt;(List.of(
+            Map.of("id", 1001, "customer", "Acme Robotics", "amountUsd", 4200.00, "status", "paid"),
+            Map.of("id", 1002, "customer", "Blue Harbor Logistics", "amountUsd", 980.50, "status", "overdue")
+    ));
+    private final AtomicLong nextId = new AtomicLong(1003);
+    private final UmaPermissionService umaPermissionService;
+
+    public BillingController(UmaPermissionService umaPermissionService) {
+        this.umaPermissionService = umaPermissionService;
+    }
+
+    @GetMapping("/public/health")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; health() {
+        return ResponseEntity.ok(Map.of(
+                "status", "up",
+                "service", "northwind-apps-billing-api",
+                "time", Instant.now().toString()
+        ));
+    }
+
+    @GetMapping("/invoices")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; listInvoices(JwtAuthenticationToken auth) {
+        Jwt jwt = (Jwt) auth.getCredentials();
+        return ResponseEntity.ok(Map.of(
+                "invoices", invoices,
+                "requestedBy", jwt.getClaimAsString("preferred_username") != null
+                        ? jwt.getClaimAsString("preferred_username")
+                        : jwt.getSubject(),
+                "callerAuthorities", auth.getAuthorities().stream().map(Object::toString).toList()
+        ));
+    }
+
+    @PostMapping("/invoices")
+    @PreAuthorize("hasRole('billing-admin')")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; createInvoice(@RequestBody Map&lt;String, Object&gt; body) {
+        long id = nextId.getAndIncrement();
+        Map&lt;String, Object&gt; invoice = Map.of(
+                "id", id,
+                "customer", body.getOrDefault("customer", "Unknown"),
+                "amountUsd", body.getOrDefault("amountUsd", 0.0),
+                "status", "draft"
+        );
+        invoices.add(invoice);
+        return ResponseEntity.status(201).body(invoice);
+    }
+
+    @GetMapping("/invoices/{id}")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; getInvoice(@PathVariable long id) {
+        return invoices.stream()
+                .filter(inv -&gt; ((Number) inv.get("id")).longValue() == id)
+                .findFirst()
+                .&lt;ResponseEntity&lt;Map&lt;String, Object&gt;&gt;&gt;map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Any authenticated caller reaches this method (the filter chain only requires a valid
+     * token, see {@link SecurityConfig}) -- the real access decision happens inside
+     * {@link UmaPermissionService}, against Keycloak's own UMA 2.0 resource/scope/policy/
+     * permission model (the {@code premium-invoice-report} resource, {@code view} scope,
+     * {@code billing-admin-policy}), not against anything hardcoded in this method.
+     */
+    @GetMapping("/invoices/premium-report")
+    public ResponseEntity&lt;Map&lt;String, Object&gt;&gt; premiumReport(
+            @org.springframework.web.bind.annotation.RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader) {
+        String callerToken = authorizationHeader.replaceFirst("(?i)^Bearer ", "");
+        boolean permitted = umaPermissionService.callerMayViewPremiumReport(callerToken);
+        if (!permitted) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "access_denied",
+                    "detail", "Keycloak's UMA policy for the premium-invoice-report resource denied this caller."
+            ));
+        }
+        double total = invoices.stream().mapToDouble(inv -&gt; ((Number) inv.get("amountUsd")).doubleValue()).sum();
+        return ResponseEntity.ok(Map.of(
+                "report", "premium-invoice-analytics",
+                "totalOutstandingAndPaidUsd", total,
+                "invoiceCount", invoices.size(),
+                "grantedVia", "UMA 2.0 RPT from Keycloak Authorization Services"
+        ));
+    }
+}</code></pre>
+<pre id="file-keycloak-realm-role-converter-java" data-filename="src/main/java/com/northwindapps/billing/KeycloakRealmRoleConverter.java"><code class="language-java">package com.northwindapps.billing;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+
+/**
+ * Converts a Keycloak-issued JWT's {@code realm_access.roles} claim into Spring Security
+ * {@link GrantedAuthority} instances, each prefixed {@code ROLE_} so {@code hasRole(...)} and
+ * {@code @PreAuthorize("hasRole(...)")} work the way Spring Security expects.
+ *
+ * &lt;p&gt;This class exists because of a real, well-documented gap -- confirmed the hard way while
+ * building this chapter's lab, not assumed up front: Spring Security's own default JWT-to-
+ * authorities converter ({@code JwtGrantedAuthoritiesConverter}) looks for a {@code scope} or
+ * {@code scp} claim (space-separated OAuth2 scopes), which is the shape a generic OAuth2
+ * authorization server's access token carries. Keycloak's access tokens carry roles in a
+ * differently-shaped, Keycloak-specific claim instead:
+ *
+ * &lt;pre&gt;
+ * "realm_access": { "roles": ["billing-reader", "offline_access", "uma_authorization"] }
+ * &lt;/pre&gt;
+ *
+ * Without this converter, every endpoint protected with {@code hasRole("billing-reader")} or
+ * similar returns 403 for every caller, no matter how correctly that caller's token was issued
+ * and signed -- the token is valid and authenticated, but Spring Security never extracts any
+ * authority named {@code ROLE_billing-reader} from it, because it was never looking at
+ * {@code realm_access} in the first place. This chapter's "common mistakes" section covers the
+ * exact 403 this produces and how it was diagnosed.
+ */
+public class KeycloakRealmRoleConverter implements Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt; {
+
+    private static final String REALM_ACCESS_CLAIM = "realm_access";
+    private static final String ROLES_CLAIM = "roles";
+    private static final String ROLE_AUTHORITY_PREFIX = "ROLE_";
+
+    @Override
+    public Collection&lt;GrantedAuthority&gt; convert(Jwt jwt) {
+        Map&lt;String, Object&gt; realmAccess = jwt.getClaim(REALM_ACCESS_CLAIM);
+        if (realmAccess == null || !(realmAccess.get(ROLES_CLAIM) instanceof List&lt;?&gt; roles)) {
+            return List.of();
+        }
+        return roles.stream()
+                .map(Object::toString)
+                .map(role -&gt; new SimpleGrantedAuthority(ROLE_AUTHORITY_PREFIX + role))
+                .collect(Collectors.toList());
+    }
+}</code></pre>
+<pre id="file-security-config-java" data-filename="src/main/java/com/northwindapps/billing/SecurityConfig.java"><code class="language-java">package com.northwindapps.billing;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * Wires this app up as an OAuth2 Resource Server: every request is authenticated (or rejected)
+ * based solely on a bearer JWT's validity against the realm named in
+ * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri} -- no session, no cookie, no
+ * login form of its own. This is "What concept is this?" territory recalled concretely: chapter
+ * 8 named the bearer-token model and chapter 16 named signature verification against a JWKS;
+ * this class is where Spring Security actually performs both, automatically, once
+ * {@code spring-boot-starter-oauth2-resource-server} is on the classpath and an issuer-uri is
+ * configured -- fetching {@code &lt;issuer-uri&gt;/.well-known/openid-configuration} to learn the
+ * token issuer and jwks_uri, then verifying every incoming token's signature, issuer, and
+ * expiry against that JWKS automatically on every request (see this chapter's validation-flow
+ * diagram).
+ *
+ * &lt;p&gt;The one piece Spring Security does &lt;em&gt;not&lt;/em&gt; do automatically, correctly, out of the
+ * box against a Keycloak-issued token is turn that token's roles into Spring Security
+ * authorities -- see {@link KeycloakRealmRoleConverter}'s javadoc for the real gotcha this
+ * chapter's lab hit and how {@code jwtAuthenticationConverter()} below fixes it.
+ */
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            // This API is a pure resource server: every caller presents a fresh bearer token on
+            // every request, so there is no server-side session to create or maintain.
+            .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // A resource server validating only bearer tokens (never a browser form submission)
+            // has no CSRF-vulnerable session-cookie-based state to protect -- CSRF protection is
+            // a defense for cookie-authenticated, browser-based requests, which this API never
+            // accepts (chapter 18 covers CSRF defenses for flows that genuinely need them).
+            .csrf(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(authorize -&gt; authorize
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/invoices/**").hasAnyRole("billing-reader", "billing-admin")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -&gt; oauth2
+                .jwt(jwt -&gt; jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+            );
+        return http.build();
+    }
+
+    /**
+     * Combines Spring Security's default JWT claim extraction ({@code sub} as the principal
+     * name) with {@link KeycloakRealmRoleConverter}'s realm-role-to-authority mapping, instead
+     * of the default {@code JwtGrantedAuthoritiesConverter} that looks for a {@code scope}/
+     * {@code scp} claim Keycloak's access tokens don't carry in that shape.
+     */
+    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
+        return converter;
+    }
+}</code></pre>
+<pre id="file-uma-permission-service-java" data-filename="src/main/java/com/northwindapps/billing/UmaPermissionService.java"><code class="language-java">package com.northwindapps.billing;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Makes this app a real UMA 2.0 Policy Enforcement Point against Keycloak's own Protection API
+ * and token endpoint -- the exact wire-level round trip chapter 37's lab already proved out with
+ * raw curl, now driven by the resource server itself instead of staying a standalone transcript.
+ *
+ * &lt;p&gt;Two calls, in order, for every protected request:
+ * &lt;ol&gt;
+ *   &lt;li&gt;Using this app's own client-credentials token, ask the Protection API for a permission
+ *       ticket naming the resource + scope the caller is trying to reach.&lt;/li&gt;
+ *   &lt;li&gt;Exchange that ticket for a Requesting Party Token (RPT) at the normal token endpoint,
+ *       using {@code grant_type=urn:ietf:params:oauth:grant-type:uma-ticket} and forwarding the
+ *       caller's own bearer token in the {@code Authorization} header -- that header is how
+ *       Keycloak learns who is actually asking (confirmed live in chapter 37's lab).&lt;/li&gt;
+ * &lt;/ol&gt;
+ * A 200 here means Keycloak's policies (the {@code billing-admin-policy} role policy, in this
+ * app's case) permitted the request; any other status means denied, and this service treats
+ * every non-200 response as a denial rather than trying to distinguish error shapes, since
+ * chapter 37's lab found the denial error body has no documented stable contract.
+ */
+@Service
+public class UmaPermissionService {
+
+    private final RestClient restClient = RestClient.create();
+
+    @Value("${northwind.uma.token-endpoint}")
+    private String tokenEndpoint;
+
+    @Value("${northwind.uma.protection-endpoint}")
+    private String protectionEndpoint;
+
+    @Value("${northwind.uma.client-id}")
+    private String clientId;
+
+    @Value("${northwind.uma.client-secret}")
+    private String clientSecret;
+
+    @Value("${northwind.uma.premium-report-resource-id}")
+    private String premiumReportResourceId;
+
+    public boolean callerMayViewPremiumReport(String callerBearerToken) {
+        String rsToken = fetchResourceServerToken();
+        String ticket = requestPermissionTicket(rsToken, premiumReportResourceId, "view");
+        return exchangeTicketForRpt(callerBearerToken, ticket);
+    }
+
+    private String fetchResourceServerToken() {
+        Map&lt;String, Object&gt; body = restClient.post()
+                .uri(tokenEndpoint)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body("grant_type=client_credentials&amp;client_id=" + clientId + "&amp;client_secret=" + clientSecret)
+                .retrieve()
+                .body(Map.class);
+        return (String) body.get("access_token");
+    }
+
+    private String requestPermissionTicket(String rsToken, String resourceId, String scope) {
+        Map&lt;String, Object&gt; body = restClient.post()
+                .uri(protectionEndpoint)
+                .header("Authorization", "Bearer " + rsToken)
+                .header("Content-Type", "application/json")
+                .body(List.of(Map.of("resource_id", resourceId, "resource_scopes", List.of(scope))))
+                .retrieve()
+                .body(Map.class);
+        return (String) body.get("ticket");
+    }
+
+    private boolean exchangeTicketForRpt(String callerBearerToken, String ticket) {
+        try {
+            restClient.post()
+                    .uri(tokenEndpoint)
+                    .header("Authorization", "Bearer " + callerBearerToken)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .body("grant_type=urn:ietf:params:oauth:grant-type:uma-ticket"
+                            + "&amp;ticket=" + ticket
+                            + "&amp;client_id=" + clientId
+                            + "&amp;client_secret=" + clientSecret)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (HttpClientErrorException e) {
+            // Keycloak returns 403 access_denied for a denied UMA exchange (chapter 37's finding,
+            // reconfirmed here) -- any 4xx here is a real denial, not an application error.
+            return false;
+        }
+    }
+}</code></pre>
+<pre id="file-billing-api-application-properties" data-filename="src/main/resources/application.properties"><code># Capstone billing API -- adapted from chapter 34's lab, pointed at the capstone's own isolated
+# Keycloak stack (project capstonekc, host port 18200) instead of chapter 34's shared stack on 8080.
+server.port=8081
+
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:18200/realms/northwind-apps
+
+logging.level.org.springframework.security=INFO
+
+# New for the capstone: this app's own confidential client credentials, used server-side (never
+# sent to a browser) so the app can act as its own UMA 2.0 resource server / Policy Enforcement
+# Point against Keycloak's Protection API and token endpoint, per chapter 37's proven pattern --
+# see UmaPermissionService for where these are actually used.
+northwind.uma.token-endpoint=http://localhost:18200/realms/northwind-apps/protocol/openid-connect/token
+northwind.uma.protection-endpoint=http://localhost:18200/realms/northwind-apps/authz/protection/permission
+northwind.uma.client-id=billing-api
+northwind.uma.client-secret=${BILLING_API_CLIENT_SECRET:}
+northwind.uma.premium-report-resource-id=${PREMIUM_REPORT_RESOURCE_ID:}</code></pre>
+    <p>Build and run it, using the <code>billing-api</code> secret and
+      <code>premium-invoice-report</code> resource id step 2 printed:</p>
+<pre><code>mvn -q clean package -DskipTests
+BILLING_API_CLIENT_SECRET='&lt;paste the billing-api secret from step 2&gt;' \
+PREMIUM_REPORT_RESOURCE_ID='&lt;paste the resource id from step 2&gt;' \
+java -jar target/billing-api-1.0.0.jar</code></pre>
+    <p>It listens on <code>http://localhost:8081</code>. Confirm:
+      <code>curl http://localhost:8081/api/public/health</code>.</p>
+
+    <h3>Step 4 — build and run the dashboard SPA</h3>
+    <p>Back in <code>capstone-lab</code> (a new terminal, since <code>billing-api</code> is still
+      running), lay out the dashboard project and create the 9 files below:</p>
+<pre><code>cd ..
+mkdir -p dashboard-spa/src
+cd dashboard-spa</code></pre>
+<pre id="file-dashboard-package-json" data-filename="package.json"><code class="language-json">{
+  "name": "react-spa",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "oidc-client-ts": "^3.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-oidc-context": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "vite": "^6.3.5"
+  }
+}</code></pre>
+<pre id="file-dashboard-vite-config-js" data-filename="vite.config.js"><code class="language-javascript">import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})</code></pre>
+<pre id="file-dashboard-eslint-config-js" data-filename="eslint.config.js"><code class="language-javascript">import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+
+export default [
+  { ignores: ['dist'] },
+  {
+    files: ['**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
+    },
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+    },
+  },
+]</code></pre>
+<pre id="file-dashboard-index-html" data-filename="index.html"><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+  &lt;head&gt;
+    &lt;meta charset="UTF-8" /&gt;
+    &lt;link rel="icon" href="data:," /&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0" /&gt;
+    &lt;title&gt;Northwind Apps Dashboard&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id="root"&gt;&lt;/div&gt;
+    &lt;script type="module" src="/src/main.jsx"&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+<pre id="file-dashboard-main-jsx" data-filename="src/main.jsx"><code class="language-jsx">import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { AuthProvider } from "react-oidc-context";
+import "./index.css";
+import App from "./App.jsx";
+import { oidcConfig } from "./oidcConfig.js";
+
+createRoot(document.getElementById("root")).render(
+  &lt;StrictMode&gt;
+    &lt;AuthProvider {...oidcConfig}&gt;
+      &lt;App /&gt;
+    &lt;/AuthProvider&gt;
+  &lt;/StrictMode&gt;,
+);</code></pre>
+<pre id="file-dashboard-app-jsx" data-filename="src/App.jsx"><code class="language-jsx">import { useState } from "react";
+import { useAuth } from "react-oidc-context";
+import { billingApiBaseUrl } from "./oidcConfig";
+import "./App.css";
+
+// Northwind Apps' customer dashboard -- the capstone's real build of the "northwind-spa" client
+// chapter 24 named but never built. react-oidc-context's useAuth() drives the real
+// authorization-code + PKCE round trip against the capstone's Keycloak instance; once signed in,
+// this calls the real billing-api (this capstone's own, adapted from chapter 34's lab) using the
+// access token react-oidc-context already holds -- no separate login for the API, the same token
+// that got this page past Keycloak is the same bearer token billing-api validates.
+function App() {
+  const auth = useAuth();
+  const [reportResult, setReportResult] = useState(null);
+  const [invoicesResult, setInvoicesResult] = useState(null);
+
+  async function callBillingApi(path, setResult) {
+    setResult({ loading: true });
+    try {
+      const res = await fetch(`${billingApiBaseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${auth.user.access_token}` },
+      });
+      const body = await res.json();
+      setResult({ status: res.status, body });
+    } catch (err) {
+      setResult({ error: err.message });
+    }
+  }
+
+  if (auth.isLoading) {
+    return &lt;p className="status"&gt;Loading Northwind Apps dashboard session...&lt;/p&gt;;
+  }
+
+  if (auth.error) {
+    return (
+      &lt;div className="card card--error"&gt;
+        &lt;h1&gt;Northwind Apps Dashboard&lt;/h1&gt;
+        &lt;p className="status status--error"&gt;Authentication error: {auth.error.message}&lt;/p&gt;
+        &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Try signing in again&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  if (auth.isAuthenticated) {
+    const { profile } = auth.user;
+    return (
+      &lt;div className="card card--authenticated"&gt;
+        &lt;h1&gt;Northwind Apps Dashboard&lt;/h1&gt;
+        &lt;p className="status status--ok"&gt;
+          Signed in as &lt;strong&gt;{profile.preferred_username ?? profile.sub}&lt;/strong&gt;
+        &lt;/p&gt;
+        &lt;dl className="claims"&gt;
+          &lt;dt&gt;sub&lt;/dt&gt;
+          &lt;dd&gt;{profile.sub}&lt;/dd&gt;
+          &lt;dt&gt;tenant_id (custom claim, chapter 39's SPI)&lt;/dt&gt;
+          &lt;dd&gt;{profile.tenant_id ?? "(not present on this token)"}&lt;/dd&gt;
+          &lt;dt&gt;realm roles&lt;/dt&gt;
+          &lt;dd&gt;{(auth.user.profile?.realm_access?.roles ?? []).join(", ") || "(none)"}&lt;/dd&gt;
+          &lt;dt&gt;exp&lt;/dt&gt;
+          &lt;dd&gt;{new Date(profile.exp * 1000).toLocaleString()}&lt;/dd&gt;
+        &lt;/dl&gt;
+
+        &lt;div className="billing-actions"&gt;
+          &lt;button onClick={() =&gt; callBillingApi("/api/invoices", setInvoicesResult)}&gt;
+            GET /api/invoices (needs billing-reader or billing-admin)
+          &lt;/button&gt;
+          &lt;button onClick={() =&gt; callBillingApi("/api/invoices/premium-report", setReportResult)}&gt;
+            GET /api/invoices/premium-report (real UMA 2.0 check, needs billing-admin)
+          &lt;/button&gt;
+        &lt;/div&gt;
+
+        {invoicesResult &amp;&amp; (
+          &lt;pre className="result"&gt;
+            invoices: HTTP {invoicesResult.status}{"\n"}
+            {JSON.stringify(invoicesResult.body, null, 2)}
+          &lt;/pre&gt;
+        )}
+        {reportResult &amp;&amp; (
+          &lt;pre className="result"&gt;
+            premium-report: HTTP {reportResult.status}{"\n"}
+            {JSON.stringify(reportResult.body, null, 2)}
+          &lt;/pre&gt;
+        )}
+
+        &lt;button onClick={() =&gt; auth.removeUser()}&gt;Sign out&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className="card"&gt;
+      &lt;h1&gt;Northwind Apps Dashboard&lt;/h1&gt;
+      &lt;p className="status"&gt;You are not signed in.&lt;/p&gt;
+      &lt;button onClick={() =&gt; auth.signinRedirect()}&gt;Sign in with Keycloak&lt;/button&gt;
+    &lt;/div&gt;
+  );
+}
+
+export default App;</code></pre>
+<pre id="file-dashboard-app-css" data-filename="src/App.css"><code class="language-css">#root {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: left;
+}
+
+.card {
+  padding: 1.5em 2em;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+}
+
+.card--authenticated {
+  border-color: #2f9e44;
+}
+
+.card--error {
+  border-color: #e03131;
+}
+
+.status {
+  font-size: 1.05em;
+}
+
+.status--ok {
+  color: #2f9e44;
+}
+
+.status--error {
+  color: #e03131;
+}
+
+.claims {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25em 1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  margin: 1em 0;
+}
+
+.claims dt {
+  font-weight: 700;
+}
+
+.claims dd {
+  margin: 0;
+  word-break: break-all;
+}</code></pre>
+<pre id="file-dashboard-index-css" data-filename="src/index.css"><code class="language-css">:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}</code></pre>
+<pre id="file-dashboard-oidc-config-js" data-filename="src/oidcConfig.js"><code class="language-javascript">// OIDC / PKCE configuration for react-oidc-context's AuthProvider, adapted from chapter 35's
+// patient-portal lab for the capstone: this points at the capstone's own isolated Keycloak
+// instance (project capstonekc, host port 18200), realm northwind-apps, the real public client
+// "northwind-spa" -- named but never built with real running code until this capstone (chapter
+// 24 named it only as a forward pointer; chapter 35's own concrete lab built "patient-portal"
+// against Riverside Health instead).
+export const oidcConfig = {
+  authority: "http://localhost:18200/realms/northwind-apps",
+  client_id: "northwind-spa",
+  redirect_uri: "http://localhost:5173/",
+  post_logout_redirect_uri: "http://localhost:5173/",
+  // PUBLIC client -- no secret in this object. Client authentication: Off + PKCE required is
+  // the only correct combination for a browser-based SPA (chapter 24/35).
+  scope: "openid profile email",
+  onSigninCallback: () =&gt; {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  },
+};
+
+export const billingApiBaseUrl = "http://localhost:8081";</code></pre>
+    <p>Install and run it:</p>
+<pre><code>npm install
+npm run dev -- --port 5173</code></pre>
+    <p>Open <code>http://localhost:5173/</code> in a browser, sign in as <code>jane.doe</code> /
+      <code>CapstoneLab1!</code> (or any of the users step 2 created — see the table below), and use
+      the two buttons to call the billing API with the real access token <code>react-oidc-context</code>
+      holds.</p>
+
+    <h3>Step 5 — run the M2M job</h3>
+    <p>Back in <code>capstone-lab</code>, create <code>m2m-billing-job.sh</code> with this exact content:</p>
+<pre id="file-m2m-billing-job-sh" data-filename="m2m-billing-job.sh"><code class="language-bash">#!/usr/bin/env bash
+# A real service-to-service job: billing-service-account (client_credentials, holds billing-admin
+# via its service account) calls the running billing-api with no human and no browser involved,
+# standing in for a nightly billing-reconciliation job -- chapter 36's pattern, wired into the
+# capstone's actual running stack.
+set -euo pipefail
+
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18200}"
+BILLING_API_URL="${BILLING_API_URL:-http://localhost:8081}"
+CLIENT_SECRET="${BILLING_SERVICE_ACCOUNT_SECRET:?Set BILLING_SERVICE_ACCOUNT_SECRET first (the secret seed-realm.sh printed in step 2)}"
+
+echo "== requesting a client-credentials token for billing-service-account =="
+TOKEN=$(curl -s -X POST "$KEYCLOAK_URL/realms/northwind-apps/protocol/openid-connect/token" \
+  --data-urlencode "grant_type=client_credentials" \
+  --data-urlencode "client_id=billing-service-account" \
+  --data-urlencode "client_secret=$CLIENT_SECRET" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+echo "token acquired (${#TOKEN} chars)"
+
+echo "== GET $BILLING_API_URL/api/invoices as the service account =="
+curl -s -w "\nHTTP %{http_code}\n" "$BILLING_API_URL/api/invoices" -H "Authorization: Bearer $TOKEN"
+
+echo "== GET $BILLING_API_URL/api/invoices/premium-report as the service account (holds billing-admin, so this is a real UMA-permitted call) =="
+curl -s -w "\nHTTP %{http_code}\n" "$BILLING_API_URL/api/invoices/premium-report" -H "Authorization: Bearer $TOKEN"</code></pre>
+    <p>Make it executable and run it, using the <code>billing-service-account</code> secret step 2
+      printed:</p>
+<pre><code>chmod +x m2m-billing-job.sh
+BILLING_SERVICE_ACCOUNT_SECRET='&lt;paste the billing-service-account secret from step 2&gt;' \
+./m2m-billing-job.sh</code></pre>
+
+    <h3>Users <code>seed-realm.sh</code> creates</h3>
+    <p>Password <code>CapstoneLab1!</code> for all five:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Username</th><th>Realm role(s)</th><th>Group</th><th><code>tenant_id</code></th></tr></thead>
+        <tbody>
+          <tr><td><code>jane.doe</code></td><td><code>tenant-admin</code></td><td>—</td><td><code>acme-corp</code></td></tr>
+          <tr><td><code>priya.patel</code></td><td><code>platform-engineer</code></td><td>Engineering</td><td><code>acme-corp</code></td></tr>
+          <tr><td><code>amara.reader</code></td><td><code>billing-reader</code></td><td>—</td><td><code>acme-corp</code></td></tr>
+          <tr><td><code>devon.admin</code></td><td><code>billing-admin</code></td><td>—</td><td><code>acme-corp</code></td></tr>
+          <tr><td><code>priya.sales</code></td><td>(none)</td><td>—</td><td><code>contoso</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Tear everything down when you're done:</p>
+<pre><code>docker compose -p capstonekc down -v</code></pre>
 
     <h2>Real, verified results — not narrated</h2>
     <p>Every number below is actual output captured from this capstone's own running stack on
@@ -166,8 +1308,9 @@
       <p><strong>2.</strong> Keycloak 26's declarative User Profile silently drops any user attribute
         not declared in its schema — no error, no warning, the attribute just never appears, and a
         protocol mapper reading it never fires. <code>tenant_id</code> had to be added to the realm's
-        User Profile schema before it would actually persist and ride in a token. Full write-up in
-        <code>capstone/README.md</code>.</p>
+        User Profile schema before it would actually persist and ride in a token — the exact fix is
+        the "declare <code>tenant_id</code> in the User Profile schema" step inlined in
+        <code>seed-realm.sh</code> below, under "How to run it."</p>
     </div>
 
     <h2>How to defend this in an interview</h2>
