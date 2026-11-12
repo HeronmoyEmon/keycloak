@@ -153,7 +153,20 @@
         "</div>";
     }).join("");
 
-    var gateHtml = part.gate ? '<span class="gate-badge">' + escapeHtml(part.gate) + "</span>" : "";
+    var gateExamHref = {
+      "GATE-2": "exams/exam-foundations.html",
+      "GATE-3": "exams/exam-protocols.html",
+      "GATE-4": "exams/exam-keycloak-core.html",
+      "GATE-5": "exams/exam-integration.html",
+      "Final QA gate": "exams/exam-final.html"
+    }[part.gate];
+    var gateHtml = "";
+    if (part.gate && gateExamHref) {
+      gateHtml = '<a class="gate-badge" href="' + gateExamHref + '" title="Take the matching exam">' +
+        escapeHtml(part.gate) + "</a>";
+    } else if (part.gate) {
+      gateHtml = '<span class="gate-badge">' + escapeHtml(part.gate) + "</span>";
+    }
 
     return (
       '<div class="part-card" data-part-index="' + partIndex + '">' +

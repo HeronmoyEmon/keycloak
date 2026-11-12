@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam: Integration — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <p><a href="../roadmap.html">&larr; Roadmap</a></p>
+    <h1>Exam: Integration (GATE-5)</h1>
+    <p class="lede">This is the fourth of five milestone exams, cumulative over <strong>Part V, Part VI,
+      and Part VII — chapters 27 through 38</strong>: Admin REST API &amp; <code>kcadm</code> CLI, Events,
+      Auditing &amp; Monitoring, Sessions Deep Dive, Password Policies, Brute-Force Protection &amp; MFA
+      Config, Identity Brokering, User Federation (LDAP/AD), the Custom User Storage SPI, Securing a Real
+      Backend API, Securing a Real Frontend SPA, Service-to-Service Auth, Keycloak Authorization Services
+      (UMA 2.0), and Fine-Grained Access Patterns. It lines up with <strong>GATE-5</strong>: by this point
+      you should be able to secure a real backend, a real frontend, and a real service account against
+      Keycloak, and configure fine-grained authorization on top of all three.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Budget about 45-60 minutes for the graded section and another 20-30 minutes to actually write out
+        (not just think through) the five essay answers before revealing the model answers. A reasonable
+        self-assessed passing bar here is 16/20 on the graded section — below that, go back to whichever
+        chapter the questions you missed came from before moving on to Part VIII. This is a self-check,
+        not a gatekeeper: nobody is grading it but you.</p>
+    </div>
+
+    <h2>Graded section — 20 questions</h2>
+    <p>Questions are shuffled on every attempt, and so are each question's answer options. Your best score
+      is tracked in this browser's local storage, same as every chapter quiz.</p>
+    <div class="quiz-block" id="exam-quiz-mount"></div>
+
+    <h2>Essay section — defend your answer to an interviewer</h2>
+    <p class="lede">Click a question to reveal a model answer. Write your own answer out loud or on paper
+      first — these are deliberately open-ended, the kind an interviewer would ask as a follow-up to
+      "tell me about a time you designed an authorization model," not a multiple-choice fact check.</p>
+    <ol class="self-check">
+      <li><details>
+        <summary>A teammate proposes adding three new roles — <code>can-view-report-a</code>,
+          <code>can-view-report-b</code>, <code>can-view-report-c</code> — every time a new report type
+          ships. When would you push back and reach for UMA 2.0's resource/scope/policy/permission model
+          instead, and what would you actually say to justify the extra setup cost?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>I'd push
+          back as soon as the pattern repeats a third time, because it signals the real shape of the
+          problem is "is this specific resource shared with this specific caller," which a growing pile of
+          per-resource roles approximates badly and UMA expresses directly: one resource per report, one
+          shared <code>view</code> scope, and policies that reference roles or attributes rather than a
+          role per resource. The justification to a skeptical lead is operational, not academic — chapter
+          37's lab showed a permission's policy set can be changed live through the Admin REST API without
+          touching or redeploying the app, where a baked-in role check requires a code change and a
+          release every time the resource list grows. The extra setup (one resource-server client,
+          Authorization Services turned on, a policy and permission per rule) pays for itself exactly when
+          the number of distinct protected things stops being small and fixed.</p>
+      </details></li>
+      <li><details>
+        <summary>Walk through the trade-off between Keycloak's native ABAC (attribute-based policies
+          inside Authorization Services) and standing up a dedicated ReBAC engine like OpenFGA, using
+          Meridian Trust's "a manager may approve a transaction only if they manage the branch that owns
+          the account" rule as the concrete example.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Keycloak's
+          native ABAC can check attributes that are true of the caller or the request right now — role
+          membership, a <code>managed_branches</code> attribute on the user, a request-time context value —
+          but it has no way to traverse a relationship chain at evaluation time. Meridian's actual rule is a
+          two-hop relationship — manager → branch → account — which a single attribute check only
+          approximates (e.g. "is this account's branch in my managed_branches list," which still requires
+          that list to be kept correct and complete out of band). A ReBAC store like OpenFGA models
+          <code>manager_of</code> and <code>owns</code> as first-class, queryable relationship tuples and
+          answers "can this user reach this resource via any chain of relationships" as a native query,
+          including transitive chains Keycloak's ABAC would need hand-written logic to approximate. The
+          trade-off is operational: ABAC needs nothing beyond the realm already running; a ReBAC store is a
+          new system to deploy, keep in sync, and make highly available, which only earns its cost once
+          the relationship model is genuinely graph-shaped rather than a one- or two-attribute lookup.</p>
+      </details></li>
+      <li><details>
+        <summary>Northwind Apps uses identity brokering for its enterprise customers (chapter 31); Meridian
+          Trust uses LDAP federation for its own workforce (chapter 32). Explain why each org picked the
+          mechanism it did, and describe a scenario where picking the wrong one of the two would be a real
+          mistake.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Brokering
+          fits Northwind because Acme Corp's employees already authenticate against an identity provider
+          Northwind has no operational relationship with — Northwind delegates the login event and never
+          touches Acme's directory. Federation fits Meridian because Meridian's own workforce already lives
+          in a directory Meridian itself operates and trusts as authoritative — there's a real
+          directory to bind against, not a separate IdP to redirect to. Picking federation for Northwind's
+          case would be a mistake, because Northwind has no network path to or administrative relationship
+          with Acme's internal directory to bind against — there is nothing to federate with, only an IdP
+          willing to assert a login result. Picking brokering for Meridian's case would be a mistake in the
+          other direction: it would mean giving up Keycloak's live LDAP bind-per-login check (chapter 32's
+          proof that authentication is checked fresh against the directory every time, never a stale synced
+          copy) for a redirect-based flow the workforce's own directory was never built to be an external
+          IdP for.</p>
+      </details></li>
+      <li><details>
+        <summary>Riverside Health's patient portal is a React SPA using authorization code + PKCE with no
+          client secret at all. Defend that design decision to a developer who wants to "just add a client
+          secret, it's more secure."</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A secret
+          embedded in a browser bundle isn't a secret — anyone who opens devtools, views the page source, or
+          intercepts the bundle over an unencrypted hop can read it, so a "confidential" client secret
+          shipped to a public client buys nothing but the false appearance of an extra protection. PKCE
+          exists specifically to secure the authorization code exchange for exactly this class of client: a
+          dynamically generated code_verifier, never sent until the final token request, proves to the
+          authorization server that the app completing the exchange is the same one that started the flow,
+          without needing any pre-shared secret at all. The actually secure configuration is "client
+          authentication: off" plus "PKCE required," which is what chapter 24 and chapter 35's lab both
+          configure — adding a secret on top changes nothing except giving a false sense that one more
+          box being checked made the app safer.</p>
+      </details></li>
+      <li><details>
+        <summary>A Meridian Trust employee's laptop, still logged into the teller console, is reported
+          stolen mid-shift. Walk through exactly what you'd check and do, in order, and why checking the
+          API's response code alone isn't enough.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>First,
+          enumerate that user's active sessions via the Admin REST API to find the specific session tied to
+          the stolen device, rather than guessing — a user can hold more than one session (e.g. a second
+          device that should stay logged in). Second, revoke only that specific session, not every session
+          for the user, to avoid needlessly logging the employee out everywhere else. Third — and this is
+          the step that's easy to skip — re-list that user's sessions afterward to confirm the targeted
+          session is actually gone. A <code>204 No Content</code> from the revocation call only confirms
+          the server accepted the request as well-formed; it is not, by itself, proof the session's
+          underlying state was actually terminated the way you intended, especially across a clustered
+          deployment where propagation isn't guaranteed to be instantaneous. Treating the API response and
+          the verified end state as two separate steps is the actual lesson chapter 29's runbook teaches.</p>
+      </details></li>
+    </ol>
+
+    <p class="lede">Next: <a href="../chapters/39-custom-spis.html">Part VIII — Extending Keycloak</a>
+      (writing custom SPIs), or back to the <a href="../roadmap.html">roadmap</a> to see what's built.</p>
+
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("exam-quiz-mount", "exam-integration", 20);
+  });
+</script>
+</body>
+</html>

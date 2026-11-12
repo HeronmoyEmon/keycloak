@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam: Keycloak Core Administration — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Exam: Keycloak Core Administration</h1>
+    <p class="lede">This is the GATE-4 milestone exam — "the first milestone where the reader can
+      actually run and administer a Keycloak realm" (CLAUDE.md §8). It covers Part IV, chapters 19-26:</p>
+    <ul>
+      <li>19 — Keycloak Architecture &amp; Deployment Options</li>
+      <li>20 — Installing &amp; Running Keycloak</li>
+      <li>21 — Realms &amp; Realm Settings</li>
+      <li>22 — Users &amp; Credentials Management</li>
+      <li>23 — Roles &amp; Groups</li>
+      <li>24 — Clients, Client Scopes &amp; Protocol Mappers</li>
+      <li>25 — Authentication Flows &amp; Required Actions</li>
+      <li>26 — Themes, Branding &amp; Localization</li>
+    </ul>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Suggested time budget: 35-45 minutes for the 20 graded questions, another 20-30 minutes to
+        write out real answers to the 5 essay questions before revealing the model answers. Suggested
+        passing bar: 16/20 (80%) on the graded section <em>and</em> a genuine attempt at every essay
+        question — this is a self-check to find gaps before they show up in a real admin console or a
+        real interview, not a gatekeeper that blocks you from Part V.</p>
+    </div>
+
+    <h2>Graded section — 20 questions</h2>
+    <p>Every question below assumes the <code>northwind-apps</code> realm exactly as chapters 19-26's
+      own labs actually built it: roles <code>tenant-admin</code>/<code>support-agent</code>/
+      <code>platform-engineer</code> (deliberately non-composite), users <code>jane.doe</code> and
+      <code>priya.patel</code>, the confidential client <code>northwind-dashboard</code>, and the
+      default browser authentication flow as captured and then cloned in chapter 25.</p>
+    <div class="quiz-block" id="exam-quiz-mount"></div>
+
+    <h2>Essay section — 5 questions</h2>
+    <p class="lede">Write out a real answer before clicking to reveal the model answer. These are the
+      kind of questions an interviewer asks to see if you actually understand the mechanism, not just
+      whether you memorized a menu path.</p>
+    <ol class="self-check">
+      <li><details>
+        <summary>A protocol mapper on <code>northwind-dashboard</code> is configured correctly — right
+          mapper type, right token claim name — but the claim never shows up in any issued token. Walk
+          an interviewer through your diagnosis, in order.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Chapter
+          24's own "if you see this" pitfall is exactly this scenario, and the mapper configuration is
+          the <em>last</em> thing to check, not the first. First: is the source attribute actually
+          populated on the user or client you tested with — a mapper reading a user attribute that was
+          never set has nothing to map. Second: is the client scope carrying this mapper actually
+          attached to the client as a default (or at minimum requested-and-granted optional) scope — a
+          mapper sitting in an unattached scope never runs for that client at all. Third: is the token
+          type you're inspecting one the mapper is actually configured to populate (access token vs. ID
+          token vs. userinfo — these are independent checkboxes on the same mapper). Only after all
+          three come back clean does the mapper's own configuration (claim name spelling, JSON type)
+          become the suspect.</p>
+      </details></li>
+      <li><details>
+        <summary>Why does chapter 23 deliberately keep <code>tenant-admin</code>, <code>support-agent</code>,
+          and <code>platform-engineer</code> as three independent, non-composite roles instead of nesting
+          them under one composite role for convenience?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A
+          composite role grants everything underneath it in one assignment, which is convenient right up
+          until someone moves teams. If <code>platform-engineer</code> quietly included
+          <code>support-agent</code> as an associated role, moving Priya from Support to platform
+          engineering by granting <code>platform-engineer</code> would leave her holding
+          <code>support-agent</code>'s access forever, nested invisibly inside the new role — nobody
+          would ever see it on her direct role list to think to remove it. Keeping the three roles
+          independent means a mover's access is exactly the union of roles explicitly, visibly assigned
+          to them at any moment, which is what makes a clean offboard-the-old-role step on a role change
+          actually work.</p>
+      </details></li>
+      <li><details>
+        <summary>An admin adds a "Condition - user role" REQUIRED execution (role: tenant-admin) next to
+          an existing "Condition - user configured OTP" REQUIRED execution in the browser flow, expecting
+          this to mean "every tenant-admin must do OTP." It doesn't work as expected. Explain the actual
+          resulting behavior and why.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Two
+          REQUIRED conditions inside the same conditional subflow both have to pass for anything inside
+          that subflow to even be considered, and "user has OTP configured" is itself one of those
+          conditions. So the actual behavior is "OTP only for tenant-admins who have <em>already</em>
+          enrolled OTP" — which silently excludes every tenant-admin who hasn't enrolled yet, the exact
+          opposite of forcing enrollment. Getting "require OTP for every tenant-admin, enrolling them on
+          the spot if they haven't yet" requires a different structure: the role condition alone gating
+          entry into a subflow that then requires OTP Form regardless of prior enrollment status (which
+          triggers Keycloak's OTP-enrollment required action for anyone without a credential yet), not
+          stacking the enrollment-status condition on top of the role condition.</p>
+      </details></li>
+      <li><details>
+        <summary>Chapter 21 sets Access Token Lifespan to a short value and SSO Session Max to a much
+          longer one on <code>northwind-apps</code>. Explain to an interviewer why shortening one of
+          these without touching the other doesn't actually bound the risk you might think it does.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Access
+          Token Lifespan only bounds how long one individual bearer token is valid before it has to be
+          refreshed — it says nothing about how many times refresh can happen. SSO Session Max is the
+          separate, absolute ceiling on the underlying session that silent refreshes ride on top of. A
+          user can refresh a 10-minute access token every 10 minutes, unattended, for the entire 8 hours
+          SSO Session Max allows, with every individual token perfectly valid the whole time. Shortening
+          only the access token lifespan without also bounding the session max makes stolen-token replay
+          windows shorter but does nothing to bound how long a session (and therefore the refresh
+          privilege that session carries) can be abused for — the two settings answer genuinely
+          different risk questions and neither substitutes for the other.</p>
+      </details></li>
+      <li><details>
+        <summary>Keycloak's Quarkus distribution splits configuration into build-time and runtime. Why
+          does this matter operationally, and what's the concrete failure mode of treating
+          <code>start-dev</code> as a production-ready mode because it "already works"?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Build-
+          time options (like which features are compiled in) get baked into an optimized server image
+          via <code>kc build</code>, which lets Quarkus pre-compile far more aggressively than a server
+          that has to stay flexible about what might be enabled later — but it means changing a build-
+          time option requires rebuilding, not just restarting. <code>start-dev</code> is explicitly a
+          development convenience: it auto-enables an in-memory H2 database and relaxes settings that a
+          real deployment should never run with. The concrete failure mode chapter 19 names directly:
+          running <code>start-dev</code> in production because it was the fastest way to get a demo
+          working, then forgetting to switch to a real database vendor and proper production mode before
+          real traffic arrives — silently losing all realm data on restart, since the default dev
+          database never persisted anything durable in the first place.</p>
+      </details></li>
+    </ol>
+
+    <p class="lede">Back to the <a href="../roadmap.html">roadmap</a>, or forward into Part V
+      (Keycloak Operations — chapters 27-30) once you're comfortable with this exam's results.</p>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("exam-quiz-mount", "exam-keycloak-core", 20);
+  });
+</script>
+</body>
+</html>

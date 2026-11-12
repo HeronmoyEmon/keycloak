@@ -257,13 +257,33 @@ visuals/examples where it helps, not just re-chunk existing prose.
     2026-11-12, see Current unit above / Done below for full detail. No gate sits here per CLAUDE.md
     §8 — the capstone is the next and last item before Part XI.
 18. ~~Capstone project spec and build~~ — done 2026-11-12, see Current unit / Done below. **Part X is
-    now fully complete.** Part XI (chapters 49-50) is next; the Final QA gate follows that.
+    now fully complete.**
+
+### Exams (gap found 2026-11-12, user approved adding it now)
+CLAUDE.md §3 specifies an `exams/` directory (`exam-foundations.html`, `exam-protocols.html`,
+`exam-keycloak-core.html`, `exam-integration.html`, `exam-final.html`) and §4 references "exam-prep
+chapters" as if they already existed — but no exam page was ever drafted into this queue at any Part
+boundary across the whole build. Flagged to the user before closing out Part XI/Final QA; they chose
+"add them now" over dropping the feature or deferring it to CLAUDE.md §12. Maps 1:1 onto the four
+content gates plus the final gate: `exam-foundations` ↔ GATE-2 (Part I), `exam-protocols` ↔ GATE-3
+(Part III), `exam-keycloak-core` ↔ GATE-4 (Part IV), `exam-integration` ↔ GATE-5 (Parts VI-VII),
+`exam-final` ↔ the Final QA gate (comprehensive, Parts VIII-XI + cumulative). GATE-1 has no exam — it's
+a template/build gate, not a content-mastery one.
+19. ~~`exams/exam-foundations.html`, `exams/exam-protocols.html`, `exams/exam-keycloak-core.html`,
+    `exams/exam-integration.html`, `exams/exam-final.html` + an `exams.html` index page~~ — **done
+    2026-11-12.** Built as 5 parallel fork agents, one per exam, each grounding its graded questions in
+    the actual chapters it covers (grepped for real realm/client/user facts rather than inventing them)
+    and proposing its quiz pool in its report for central merge — see Done below for full detail.
+    `exams.html` built centrally (predictable, lightweight — same shell-page template as `labs.html`/
+    `case-studies.html`), linked from `index.html`'s quick-links nav and from `roadmap.html`'s
+    GATE-2/3/4/5 and Final-QA-gate badges (now real links to the matching exam; GATE-1 stays unlinked —
+    it's a template/build gate, not a content-mastery one).
 
 ### Part XI (career & reference)
-19. Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.
+20. Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.
 
 ### Final
-20. Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
+21. Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
     clean Docker state, every "In Keycloak" callout spot-checked against a live admin console. README.md
     update to reflect final chapter count and lab list.
 
@@ -584,6 +604,54 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### Exams: exam-foundations/protocols/keycloak-core/integration/final + exams.html (2026-11-12)
+- **Gap found and closed**: CLAUDE.md §3 specified an `exams/` directory that was never scheduled into
+  this queue across the whole build. Flagged to the user before closing Part XI/Final QA; they chose to
+  add it now (see queue item 19's note) rather than drop or defer the feature.
+- Built as 5 parallel fork agents, one per exam, each scoped to a cumulative chapter range matching one
+  of the course's named gates (see the queue item 19 note for the exact mapping) and instructed to
+  ground questions in real, grepped chapter/lab facts rather than inventing them, and to propose its
+  quiz pool in its report rather than editing `quiz-data.js` directly (avoiding a 5-way write conflict).
+  Each page: an intro (scope, time budget, suggested passing bar, explicitly framed as self-check not
+  gatekeeper), a graded cumulative quiz section (20 questions for the first four exams, 25 for
+  `exam-final`), and a 5-question essay section (6 for `exam-final`) in the same click-to-reveal
+  `<details>` pattern every chapter's self-check already uses — "defend your answer to an interviewer,"
+  with full model answers, not blank thinking prompts.
+- **exam-foundations** (chapters 0-9, GATE-2): 20 questions, 60% scenario, tied to all three orgs.
+- **exam-protocols** (chapters 10-18, GATE-3): 20 questions, 65% scenario, mixing governance (SoD,
+  compliance-framework mapping) with real protocol mechanics (PKCE, mix-up attacks, JWKS/`kid` rotation,
+  a live-verified redirect_uri validation gap from chapter 13).
+- **exam-keycloak-core** (chapters 19-26, GATE-4): 20 questions grounded in the real `northwind-apps`
+  realm chapters 19-26 actually built (kcadm commands, protocol-mapper troubleshooting order, the
+  `conditional-user-role` authenticator, the four realm-level theme settings).
+- **exam-integration** (chapters 27-38, GATE-5): 20 questions deliberately spread across all 12
+  chapters with no cluster (admin API/CLI, events/auditing, sessions, brute-force policy, brokering,
+  LDAP federation, custom SPI, backend/frontend security, M2M, UMA 2.0, ABAC/ReBAC/OPA).
+- **exam-final** (chapters 39-48 + the capstone + a cumulative course-wide review, Final QA gate): 25
+  questions — ~10 on chapters 39-45, ~9 synthesis questions bridging a Part I-III concept to its later
+  Keycloak implementation, ~6 grounded directly in the real, running capstone build (both documented
+  bugs, the UMA permission matrix, the `tenant_id` claim). Confirmed chapters 49/50 don't exist yet and
+  said so explicitly rather than guessing at their content.
+- **`exams.html`**: new index page (coordinator-built — predictable, static content, no agent needed),
+  one `.part-card` per exam naming its scope and matching gate. Added an "Exams" entry to `index.html`'s
+  quick-links nav, and made `roadmap.html`'s GATE-2/3/4/5 and "Final QA gate" badges real links to the
+  matching exam page (GATE-1 stays a plain, unlinked badge — verified the link-building logic for all
+  five gate values, including the null/no-gate case, by extracting and running it directly in Node).
+- **Independent verification done by the coordinator**: all 5 exam quiz pools (105 questions total)
+  checked in Node for duplicate ids, 4-option/in-bounds-`answerIndex` validity, and zero collisions
+  against any of the site's other 49 quiz pools after merge (930 questions site-wide). All 5 exam HTML
+  files plus `exams.html`/`index.html`/`roadmap.html` parsed with a proper tag-stack checker (zero
+  mismatches) and every internal link resolves to a real file. Confirmed each exam's script order
+  deliberately omits `slides.js` (these are one-shot exam pages, not slide decks) and that each
+  `QuizEngine.renderQuiz` call's slug matches its own pool exactly.
+- **One process note**: the `exam-final` agent's first report described its quiz pool as "in the report
+  body above" without actually including it — asked it to resend the full JSON in a follow-up message
+  (`SendMessage` to the same agent), which it did correctly on request. Worth watching for on future
+  large-report agents.
+- **What's NOT yet verified**: no browser tool in this environment — nobody has visually rendered any
+  of the 5 exam pages, `exams.html`, or clicked through a live quiz attempt. Same standing limitation as
+  every prior unit.
 
 ### The capstone: Northwind Apps end-to-end multi-app platform — Part X COMPLETE (2026-11-12)
 See "The capstone — COMPLETE" under Current unit above for full detail (what was built, the two real

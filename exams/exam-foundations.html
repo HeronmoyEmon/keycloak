@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam: Foundations (Chapters 0-9) — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Exam: Foundations</h1>
+    <p class="lede">The first content-mastery checkpoint, matching GATE-2 — confirms the vendor-agnostic
+      IAM concepts from Part 0 and Part I are solid before Part II (governance) and Part III (protocols)
+      start building on top of them. This exam covers chapters 0-9:</p>
+    <ol>
+      <li>00 — How to Use This Course</li>
+      <li>01 — What Is IAM?</li>
+      <li>02 — Identity Fundamentals (introduces <span class="org-chip northwind">Northwind Apps</span>,
+        <span class="org-chip riverside">Riverside Health</span>, and
+        <span class="org-chip meridian">Meridian Trust</span>)</li>
+      <li>03 — AuthN vs. AuthZ vs. Accounting</li>
+      <li>04 — Directory Services &amp; Identity Stores</li>
+      <li>05 — Authentication Factors &amp; MFA</li>
+      <li>06 — Authorization Models</li>
+      <li>07 — SSO &amp; Federation Concepts</li>
+      <li>08 — Tokens &amp; Sessions, Conceptually</li>
+      <li>09 — IAM Threat Landscape</li>
+    </ol>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Budget about 35-45 minutes for the graded section below and another 20 minutes to actually write
+        out (not just think through) the essay section. A reasonable passing bar is <strong>16/20 or
+        better</strong> on the graded section before moving on to Part II — but nothing on this site
+        enforces that. This is a self-check, not a gatekeeper: your score isn't recorded anywhere beyond
+        your own browser, and nothing here blocks you from continuing regardless of how you do.</p>
+    </div>
+
+    <h2>Graded section — 20 questions</h2>
+    <p>These questions deliberately cross chapters rather than restating any single chapter's own quiz —
+      several require combining a concept from one chapter with a scenario from another, often using one
+      of the three running organizations.</p>
+    <div class="quiz-block" id="exam-quiz-mount"></div>
+
+    <h2>Essay section — defend your answer to an interviewer</h2>
+    <p class="lede">Five harder, synthesis-heavy questions. Click to reveal a model answer, but write your
+      own answer out first — an interviewer won't show you theirs before you give one.</p>
+    <ol class="self-check">
+      <li><details>
+        <summary>An interviewer says: "Our last vendor called their product an 'authentication system,'
+        but it also handled account lockout policies and logged every access attempt. Was their
+        terminology accurate?" How do you answer, precisely, using chapter 3's model?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Not fully —
+        what they built is better described as an AAA system, not just authentication. Account lockout
+        policy enforcement is still part of authentication (deciding whether a login attempt succeeds),
+        but logging every access attempt is accounting, a third, independent pillar: the real-time
+        recording of what happened, separate from both proving identity (authentication) and deciding
+        permissions (authorization). Calling the whole thing "authentication" undersells what it does and
+        risks someone assuming it has no audit trail at all, when accounting is explicitly what produces
+        one.</p>
+      </details></li>
+      <li><details>
+        <summary>Riverside Health's clinician directory stores each doctor's department as an attribute.
+        A new hospital policy says "only doctors in the Cardiology department may view cardiology patient
+        records." Using chapters 4 and 6 together, explain what kind of authorization model this actually
+        requires, and why a directory attribute alone doesn't automatically give you that model for
+        free.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>This is an
+        ABAC (attribute-based access control) requirement: the access decision depends on comparing an
+        attribute of the subject (the doctor's department) against an attribute of the resource (the
+        record's associated department) at request time. A directory (chapter 4) is just where that
+        attribute lives and how it's queried — storing "department: Cardiology" on a directory entry
+        doesn't itself enforce anything. A separate authorization layer has to actually read that
+        attribute and evaluate the rule on every access request; the directory is a data source for the
+        policy, not the policy engine itself.</p>
+      </details></li>
+      <li><details>
+        <summary>Meridian Trust's security team reports a spike in failed logins against retail customer
+        accounts, almost all using previously-breached password lists found on the open web, not
+        passwords generated specifically for Meridian. Using chapter 9's vocabulary, name the attack
+        precisely, and explain in one sentence why "make customers choose stronger passwords" is the
+        wrong primary fix.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>This is
+        credential stuffing, not brute-forcing — the attacker already has real, previously valid
+        username/password pairs leaked from some other, unrelated breach, and is testing whether the same
+        person reused that password at Meridian. Stronger password rules don't help, because the problem
+        isn't a weak password — the passwords being tried are often perfectly strong; the fix has to
+        target reused-password detection and risk-based or multi-factor authentication, not password
+        complexity policy.</p>
+      </details></li>
+      <li><details>
+        <summary>Explain, in terms an engineer who has never heard the words "bearer token" would
+        understand, why a stolen access token is dangerous even if the thief never learns the user's
+        password — and why this matters specifically for Northwind Apps, a company whose customers embed
+        its API inside their own browser-based applications.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A bearer
+        token's defining property, per chapter 8, is that whoever holds it can use it — there's no second
+        check tying it back to the original owner, the way a password-plus-device combination might be.
+        If a thief steals the token itself (say, by exploiting a bug in one customer's browser-based
+        integration — exactly the realistic path for Northwind, whose customers run their own frontend
+        code against Northwind's API), the thief can act as that user for as long as the token stays
+        valid, without ever needing the password at all. The password was never the thing protecting that
+        session once the token existed; the token itself became the credential that mattered.</p>
+      </details></li>
+      <li><details>
+        <summary>A colleague argues: "Zero Trust means we don't trust our own employees." Using chapter 6,
+        correct this misconception precisely, and illustrate with a one-sentence example involving
+        Meridian Trust's internal banking staff.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Zero Trust
+        isn't about distrusting people personally — it's the principle that no request should be
+        implicitly trusted just because of where it came from (inside the corporate network, from an
+        already-authenticated session, from a previously-verified device), and that every access decision
+        should be re-evaluated against current context and least-privilege scope instead. For Meridian's
+        staff, that means a teller who successfully logged into the corporate network this morning still
+        has every subsequent action — viewing one specific customer's account, approving one specific
+        transfer — checked on its own terms, not waved through just because the login earlier in the day
+        succeeded.</p>
+      </details></li>
+    </ol>
+
+    <p class="lede">Where to go next: back to the <a href="../roadmap.html">roadmap</a> to continue into
+      Part II (Identity Governance &amp; Compliance), which builds directly on the AAA, directory, and
+      authorization-model vocabulary this exam just checked.</p>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("exam-quiz-mount", "exam-foundations", 20);
+  });
+</script>
+</body>
+</html>

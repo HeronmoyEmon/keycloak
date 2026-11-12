@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam: Protocols — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <nav class="top-quicklinks">
+    <a href="../roadmap.html">Study pace</a>
+    <a href="../glossary.html">Glossary</a>
+    <a href="../quizzes.html">Quizzes</a>
+    <a href="../labs.html">Labs</a>
+  </nav>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Exam: Protocols</h1>
+    <p class="lede">This is the second of five milestone exams, covering everything cumulative since
+      the foundations exam — <strong>Part II (Identity Governance &amp; Compliance, chapters 10-12)</strong>
+      and <strong>Part III (Protocols Deep Dive, chapters 13-18)</strong>: identity governance and
+      administration, compliance frameworks, the IAM market landscape, OAuth 2.0 core and extended
+      grants, OpenID Connect, JWT/applied crypto, SAML 2.0, and OAuth/OIDC security best practices.
+      It lines up with <strong>GATE-3</strong> in this course's own build plan: "protocols complete —
+      Keycloak chapters will assume this depth, not re-teach it." Keycloak itself doesn't appear until
+      chapter 20, so this is the last checkpoint that tests protocol mechanics on their own terms,
+      before any admin-console shortcut exists to lean on instead.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">How to use this exam</div>
+      <p>Suggested time budget: 45-60 minutes for the 20 graded questions below, plus another 15-20
+        minutes to actually write out (not just think through) answers to the 5 essay questions — the
+        writing is where a shaky understanding usually shows itself. A reasonable passing bar to aim for
+        is 16/20 (80%) on the graded section with no essay question left blank. This is a self-check,
+        not a gatekeeper: nothing on this site is locked behind it, and retaking it costs nothing.</p>
+    </div>
+
+    <h2>Chapters covered</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Chapter</th><th>Title</th></tr></thead>
+        <tbody>
+          <tr><td>10</td><td><a href="../chapters/10-identity-governance.html">Identity governance &amp; administration</a></td></tr>
+          <tr><td>11</td><td><a href="../chapters/11-compliance-for-iam.html">Compliance for IAM</a></td></tr>
+          <tr><td>12</td><td><a href="../chapters/12-iam-market-landscape.html">The IAM market landscape</a></td></tr>
+          <tr><td>13</td><td><a href="../chapters/13-oauth2-core.html">OAuth 2.0 core</a></td></tr>
+          <tr><td>14</td><td><a href="../chapters/14-oauth2-extended.html">OAuth 2.0 extended</a></td></tr>
+          <tr><td>15</td><td><a href="../chapters/15-openid-connect.html">OpenID Connect</a></td></tr>
+          <tr><td>16</td><td><a href="../chapters/16-jwt-and-crypto.html">JWT &amp; applied crypto</a></td></tr>
+          <tr><td>17</td><td><a href="../chapters/17-saml2.html">SAML 2.0</a></td></tr>
+          <tr><td>18</td><td><a href="../chapters/18-oauth-oidc-security.html">OAuth/OIDC security best practices</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Graded section — 20 questions</h2>
+    <div class="quiz-block" id="exam-quiz-mount"></div>
+
+    <h2>Essay section — defend your answer to an interviewer</h2>
+    <p class="lede">These have no scoring. Write (or at least say out loud) a real answer before
+      revealing the model answer — the point is to catch a gap between "I recognize this" and "I can
+      explain this cold, under question, to someone evaluating me."</p>
+    <ol class="self-check">
+      <li><details>
+        <summary>An interviewer asks you to defend, in under a minute, why PKCE matters even for a
+          confidential client that already has a client secret. What do you say?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A client
+          secret protects one specific step: proving to the authorization server, at the token endpoint,
+          that the caller really is the registered client. It does nothing to protect the authorization
+          code itself on its way to that exchange — a code can leak through a referrer header, a
+          misconfigured proxy or log aggregator, or a malicious app on a shared device registering the
+          same redirect scheme a native confidential client uses. PKCE closes exactly that separate gap:
+          whoever intercepts the code still can't redeem it without the original <code>code_verifier</code>,
+          which never left the legitimate client. That's why RFC 9700 §2.1.1 recommends PKCE for
+          confidential clients too, not just mandates it for public ones.</p>
+      </details></li>
+      <li><details>
+        <summary>Walk through exactly why an authorization server enforcing only a "starts with" or
+          same-domain redirect_uri check is dangerous, using the specific live finding this course turned
+          up as your example.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>RFC 6749
+          §3.1.2.3 requires exact, byte-for-byte string comparison against a registered redirect URI, not
+          a prefix or domain check — and chapter 13's own live testing against a public demo OAuth server
+          found exactly this gap in practice: a request with <code>redirect_uri=https://evil.example.com/
+          callback</code>, never registered for that client, still got a valid authorization code
+          delivered to it. A loose check lets an attacker register or simply supply a look-alike URI — a
+          different path on the same domain, a subdomain they control, anything that passes a weaker
+          comparison — and receive the authorization code meant for the real application. Whoever
+          receives that code can exchange it for tokens issued on behalf of whatever user just
+          authenticated, which is a full login hijack, not a theoretical edge case.</p>
+      </details></li>
+      <li><details>
+        <summary>An interviewer asks: "If the token is already signed, why do you also need a client
+          secret?" What's the difference between a client proving who it is, and a token proving who
+          issued it?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>These are
+          two separate trust relationships, not redundant layers of the same one. A client secret (or
+          equivalent client authentication) proves, to the authorization server, that the application
+          calling the token endpoint really is the registered client it claims to be — a one-time check
+          at issuance time. A token's signature proves something different, to a different party, later:
+          that the token a resource server just received genuinely came from the authorization server
+          that issued it and hasn't been altered since, independent of who happens to be presenting it.
+          Losing either check creates a different failure: a stolen client secret lets an attacker request
+          new tokens; a broken signature check lets an attacker forge or tamper with tokens that already
+          exist.</p>
+      </details></li>
+      <li><details>
+        <summary>Defend the decision to use an opaque reference token instead of a self-contained JWT for
+          a session where immediate server-side revocation really matters — for example, Meridian Trust's
+          online banking session after a customer reports a stolen device.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>A
+          self-contained JWT carries its own claims and signature with no server-side record behind it —
+          revoking it can mark it revoked in a list somewhere, but a verifier that only checks signature
+          and <code>exp</code> (as chapter 14's own lab found happening against a real demo server) will
+          keep accepting it until it naturally expires. A reference token is the opposite: it's an opaque
+          string the server looks up in its own store on every introspection call, so deleting that
+          record on revocation means the very next check reports <code>active: false</code> immediately —
+          there's an actual record to delete. For a stolen-device response, where the whole point is an
+          immediate cutoff rather than "eventually, once it expires," that server-side lookup is the
+          feature, not overhead to avoid.</p>
+      </details></li>
+      <li><details>
+        <summary>An interviewer who knows SAML well but has never used OIDC asks you to explain OIDC's
+          split between the ID token and the UserInfo endpoint using only SAML terms they already know —
+          and why OIDC bothers splitting it into two pieces at all.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The ID
+          token is the closest thing to a SAML assertion: a signed statement, delivered directly to the
+          client at the same moment the token exchange happens, saying who just authenticated. The
+          UserInfo endpoint has no direct SAML equivalent — it's a separate, callable API, reachable later
+          and independently of the original token issuance, that returns additional profile claims when
+          presented with a valid access token. OIDC splits these because it treats "who authenticated"
+          (small, time-sensitive, needed immediately) as a different concern from "what do we know about
+          this person's profile" (potentially larger, refreshable, not always needed on every request) —
+          SAML's single assertion has to carry everything at once because it has no equivalent of a
+          separate, re-callable profile endpoint built into the core protocol.</p>
+      </details></li>
+    </ol>
+
+    <p class="lede">Done, or want more practice first? <a href="../roadmap.html">Back to the
+      roadmap</a> — Part IV, where Keycloak itself finally enters the course, starts at chapter 19.</p>
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("exam-quiz-mount", "exam-protocols", 20);
+  });
+</script>
+</body>
+</html>

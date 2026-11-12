@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exams — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <nav class="top-quicklinks">
+    <a href="roadmap.html">Study pace</a>
+    <a href="glossary.html">Glossary</a>
+    <a href="quizzes.html">Quizzes</a>
+    <a href="labs.html">Labs</a>
+    <a href="case-studies.html">Case studies</a>
+    <a href="capstone.html">Capstone</a>
+  </nav>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>Milestone exams</h1>
+    <p class="lede">Five self-check exams, one per content-mastery gate (CLAUDE.md §8), each with a
+      cumulative graded quiz pool that crosses chapters rather than re-asking any single chapter's own
+      quiz, plus a short essay section framed as "defend your answer to an interviewer." None of these
+      block progress — scores aren't gated or reported anywhere outside your own browser's
+      <code>localStorage</code>, same as every chapter quiz. They exist so you can find out <em>now</em>
+      whether a Part actually stuck, instead of finding out in a real interview.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Take an exam once you've finished the Part(s) it covers and the course has moved past the
+        matching gate — going in cold on content you haven't read yet will just show you what's ahead,
+        not what you've retained.</p>
+    </div>
+
+    <div class="part-card">
+      <h3>Exam: Foundations</h3>
+      <p>Chapters 0-9 (Part 0 + Part I) — matches <strong>GATE-2</strong>. The vendor-agnostic IAM
+        concepts every later chapter assumes: identity lifecycle, AAA, directories, MFA, authorization
+        models, SSO/federation, tokens/sessions, and the threat landscape.</p>
+      <p><a href="exams/exam-foundations.html">Take the exam</a></p>
+    </div>
+
+    <div class="part-card">
+      <h3>Exam: Protocols</h3>
+      <p>Chapters 10-18 (Part II + Part III) — matches <strong>GATE-3</strong>. Governance/compliance
+        fundamentals plus real protocol mechanics: OAuth grant types, PKCE, OIDC vs. SAML, JWT/JWS/JWE,
+        and the BCP security practices. The last checkpoint before Keycloak itself enters the course.</p>
+      <p><a href="exams/exam-protocols.html">Take the exam</a></p>
+    </div>
+
+    <div class="part-card">
+      <h3>Exam: Keycloak Core</h3>
+      <p>Chapters 19-26 (Part IV) — matches <strong>GATE-4</strong>. The first Keycloak-specific exam:
+        realms, clients, client scopes, protocol mappers, authentication flows, and theming, grounded in
+        the real <code>northwind-apps</code> realm these chapters' own labs actually built.</p>
+      <p><a href="exams/exam-keycloak-core.html">Take the exam</a></p>
+    </div>
+
+    <div class="part-card">
+      <h3>Exam: Integration</h3>
+      <p>Chapters 27-38 (Part V + Part VI + Part VII) — matches <strong>GATE-5</strong>. The widest-scope
+        exam: admin API/CLI automation, events/auditing, sessions, password/MFA policy, identity
+        brokering, LDAP federation, a custom User Storage SPI, securing a real backend and frontend,
+        service-to-service auth, UMA 2.0 authorization, and ABAC/ReBAC vs. a dedicated policy engine.</p>
+      <p><a href="exams/exam-integration.html">Take the exam</a></p>
+    </div>
+
+    <div class="part-card">
+      <h3>Exam: Final (comprehensive)</h3>
+      <p>Chapters 39-48 plus the capstone, and a cumulative review across the entire course — matches
+        the <strong>Final QA gate</strong>. The biggest exam: extending Keycloak via custom SPIs,
+        production/scale/hardening, the three case studies, synthesis questions bridging Part I-III
+        concepts to their Keycloak implementation, and several questions grounded directly in the real,
+        running capstone build.</p>
+      <p><a href="exams/exam-final.html">Take the exam</a></p>
+    </div>
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/book.js"></script>
+</body>
+</html>

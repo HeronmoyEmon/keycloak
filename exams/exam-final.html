@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Exam — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="../assets/css/book.css">
+<link rel="stylesheet" href="../assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "../";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+
+    <p><a href="../roadmap.html">&larr; Study pace</a> &middot; <a href="../index.html">Course home</a></p>
+    <h1>Final Exam</h1>
+    <p class="lede">This is the comprehensive exam behind this course's Final QA gate (CLAUDE.md §8) —
+      the last checkpoint before the core curriculum calls itself done. It covers Part VIII through
+      Part XI (chapters 39-48: custom SPIs and identity providers, production/scale/hardening, and the
+      three case studies) plus the real, running <a href="../capstone.html">capstone</a>, and
+      deliberately pulls in cumulative questions connecting Part I-III concepts to their concrete
+      Keycloak implementation elsewhere in the course — the "concept &harr; implementation bridge" rule
+      (CLAUDE.md §2) this whole course has been building toward since chapter 1.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>Budget 60-90 minutes for the 25 graded questions below, plus real thinking time for the 6 essay
+        questions that follow them — those aren't meant to be answered in thirty seconds. There's no
+        hard pass/fail gate enforced by this site; treat 20/25 (80%) as a reasonable bar for "comfortable
+        with this material," and anything below that as a signal to revisit the chapters the missed
+        questions point back to. This is a self-check, not a gatekeeper — but it's built to the standard
+        CLAUDE.md §1 sets for this whole course: <strong>if you can work through this exam comfortably,
+        you can walk into an IAM specialist interview.</strong></p>
+    </div>
+
+    <h2>What this covers</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Part</th><th>Chapters</th></tr></thead>
+        <tbody>
+          <tr><td>Part VIII — Extending Keycloak</td><td>39. Writing Custom SPIs &middot; 40. Custom Identity Providers &amp; Required Actions</td></tr>
+          <tr><td>Part IX — Production, Scale &amp; Hardening</td><td>41. High Availability &amp; Clustering &middot; 42. Keycloak on Kubernetes &middot; 43. Performance Tuning &middot; 44. Backup &amp; Disaster Recovery &middot; 45. Security Hardening &amp; Upgrades</td></tr>
+          <tr><td>Part X — Case Studies &amp; Capstone</td><td>46. Case Study: Northwind Apps &middot; 47. Case Study: Riverside Health &middot; 48. Case Study: Meridian Trust &middot; the real, running <a href="../capstone.html">capstone</a></td></tr>
+          <tr><td>Cumulative review</td><td>Synthesis questions connecting Parts I-III concepts to their Keycloak implementation across Parts IV-X</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Chapters 49 ("Becoming an IAM Specialist") and 50 ("Master Glossary &amp; Cheat Sheets") were not
+      yet built at the time this exam was written, so this exam deliberately does not test their
+      specific content — if you're reading this after they've shipped, that's a known, documented gap
+      in this exam's coverage, not an oversight, and the exams covering those chapters' content directly
+      would need a follow-up revision.</p>
+
+    <h2>Graded section — 25 questions</h2>
+    <p>Each attempt draws and shuffles from this exam's own question pool; your best score is kept.</p>
+    <div class="quiz-block" id="exam-quiz-mount"></div>
+
+    <h2>Essay section — defend your answer</h2>
+    <p class="lede">No scoring here — these are the kind of questions an actual interviewer asks, where
+      the reasoning matters more than a single correct phrase. Answer each one out loud or in writing
+      before revealing the model answer; comparing your own reasoning to it is the point.</p>
+    <ol class="self-check">
+      <li><details>
+        <summary>Walk through defending the capstone build end to end, as if an interviewer just asked "tell me about a real system you built." Cover the architecture, why UMA was used instead of a simpler role check on one endpoint, and what you'd change at real scale.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The capstone integrates already-proven pieces around one org, Northwind Apps, into one real, running stack: a seeded <code>northwind-apps</code> realm, a React SPA authenticating via authorization-code+PKCE, a Spring Boot <code>billing-api</code> resource server validating JWTs against the realm's JWKS, a client-credentials M2M job, and a <code>tenant_id</code> custom claim riding on every token via a protocol mapper SPI. The one new design decision was gating a "premium invoice report" endpoint with a real UMA 2.0 permission check instead of a Spring role check — specifically because a role check is compiled into the app, while the UMA resource/scope/policy/permission model lives in Keycloak and can be changed by an administrator without redeploying anything, and because it demonstrates the shape fine-grained, resource-level authorization needs to take as the number of distinct protected resources grows past what a handful of hardcoded role checks can comfortably express. At real scale, the in-memory invoice list would become a real, tenant-partitioned database with the <code>tenant_id</code> claim enforced in every query rather than just displayed, the single-node Keycloak instance would become a clustered deployment, and the UMA policy set would likely grow from one role policy into a small policy set per resource type.</p>
+      </details></li>
+      <li><details>
+        <summary>A skeptical engineering lead asks why Northwind Apps should pay the operational cost of running Keycloak at all, instead of each team just handling login in their own app. Make the case, using the actual trade-offs this course names rather than a generic "security is good" argument.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>The alternative isn't ten solid independent login systems, it's ten slightly different ones — different password-hashing strength, different lockout behavior, different (or no) audit logging — because each team solves the same problem on its own schedule, at its own level of care. Centralizing doesn't make Northwind automatically secure; it relocates the risk to one configuration surface (Keycloak) that then has to be secured carefully in its own right, as chapter 9's threat landscape and chapter 45's hardening checklist both make concrete. The actual payoff is operational, not just security theater: offboarding one employee, changing a password policy, or auditing "who can log into anything" becomes one action instead of N separate ones across N codebases. For a company the size Northwind Apps is modeled at — thousands of customer tenants, multiple internal teams — that operational win outweighs the real cost of running and securing one more system, which is exactly the trade-off a two-person internal prototype (chapter 1's own named exception) would not make the same way.</p>
+      </details></li>
+      <li><details>
+        <summary>A hiring manager asks you to compare OAuth 2.0, OpenID Connect, and SAML 2.0 in one breath, and to say when you'd actually reach for each. What's your answer?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>OAuth 2.0 (Part III, chapters 13-14) is an authorization framework — it issues access tokens that let a client act on a resource owner's behalf, but it was never designed to answer "who is this person," which is why chapter 9's own case study found real-world misuse of raw OAuth for login. OpenID Connect (chapter 15) is built directly on top of OAuth 2.0 specifically to close that gap: it adds a standardized ID token and a UserInfo endpoint, making it the correct choice whenever the actual need is authentication, not just delegated API access. SAML 2.0 (chapter 17) solves a similar authentication problem to OIDC but predates it, uses XML assertions and browser-redirect bindings instead of JSON/JWTs, and is still the right choice specifically when integrating with an enterprise partner or legacy system whose IdP only speaks SAML — which is exactly the kind of scenario Northwind Apps' own enterprise-customer integrations have to account for. In new, greenfield work, OIDC is almost always the default; SAML shows up because of what the other side of an integration already runs, not because it's the better protocol for a new build.</p>
+      </details></li>
+      <li><details>
+        <summary>The capstone's "what's honestly out of scope" section cuts the Acme Corp brokering/JIT-provisioning stretch goal. Is that a weakness in the capstone, or a reasonable scope decision? Defend whichever answer you actually believe.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>It's a reasonable, deliberately-stated scope cut, not a weakness, for a specific reason: the capstone's own stated job was integration — wiring together pieces that hadn't been connected yet — not re-proving mechanisms that chapter 31 had already independently verified work (a full, real brokered login with JIT provisioning). Cutting a feature because it would duplicate already-proven work, and saying so explicitly in the write-up instead of silently dropping it or faking a transcript, is exactly the discipline CLAUDE.md §2's "hands-on is real, not narrated" rule demands. It would be a genuine weakness only if the capstone claimed to demonstrate brokering while not actually having built it — it doesn't; it names the gap plainly.</p>
+      </details></li>
+      <li><details>
+        <summary>Mentor a junior engineer who's about to write their first custom Keycloak SPI and extend it into a real app, using the two real bugs this course hit while doing exactly that (the declarative User Profile silently dropping an undeclared attribute, and a UMA resource URI's unsupported mid-path wildcard). What would you tell them to check first, before they lose an hour to either one?</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>First: if a custom attribute (or a claim derived from one) seems to just never appear anywhere — not in the Admin Console, not on an issued token, with zero error output — check the realm's User Profile schema before suspecting the protocol mapper or the SPI jar itself. Keycloak 26's declarative User Profile silently drops any attribute not declared in its schema, with no warning, which makes this bug look exactly like a broken mapper when the mapper was never the problem. Second: if a UMA resource's URI pattern gets rejected outright at creation time, check whether the wildcard is doing something more ambitious than Keycloak actually supports — only a trailing <code>/*</code> or a <code>/*.ext</code> suffix is accepted; a wildcard standing in for a path segment in the middle of the URI (like a per-resource ID) isn't a supported pattern, and the fix is usually to make the protected path fixed rather than parameterized. Both bugs share a lesson: when something "just doesn't show up" or "just gets rejected" with no helpful error, suspect a strict, undocumented-feeling validation or schema rule before suspecting your own code.</p>
+      </details></li>
+      <li><details>
+        <summary>Explain Keycloak's realm/client/role/group model to someone who has never touched Keycloak, using one of the three running case-study orgs as your example.</summary>
+        <p class="self-check-answer"><span class="self-check-answer-label">Model answer</span>Using Meridian Trust: a <strong>realm</strong> is a completely isolated security domain — its own users, its own password policy, its own session timeouts — so Meridian runs exactly one realm, <code>meridian-trust</code>, because employees and retail customers don't need authentication-level isolation from each other, only authorization-level separation. A <strong>client</strong> is a specific application registered to use that realm for login — Meridian has separate clients for its teller console, its wire-transfer app, and its online/mobile banking apps, each with its own allowed grant types and redirect URIs. A <strong>role</strong> is a named permission a user can hold within the realm — <code>transfer-creator</code> and <code>transfer-approver</code> are two of Meridian's, deliberately kept mutually exclusive so no single identity can both originate and approve the same wire transfer. A <strong>group</strong> is a way to bundle users together to assign roles (and other settings) in bulk, rather than one user at a time — Meridian's tellers, loan officers, and wire-transfer approvers are modeled as groups precisely so a new hire's access comes from "which group did we put them in," not a hand-picked list of individual role grants.</p>
+      </details></li>
+    </ol>
+
+    <h2>What's next</h2>
+    <p>If this exam went well: revisit <a href="../case-studies.html">the case studies</a> and
+      <a href="../capstone.html">the capstone</a> as portfolio material, and come back to
+      <a href="../roadmap.html">the roadmap</a> once chapters 49-50 (career paths, certifications, the
+      interview question bank, and the master glossary/cheat sheets) are built — they're the natural
+      next stop after this exam. If a specific question caught you out, the chapter references in this
+      exam's own explanations are the fastest way back to the material it's grounded in.</p>
+
+  </article></main>
+</div>
+<script src="../assets/js/nav-data.js"></script>
+<script src="../assets/js/glossary-data.js"></script>
+<script src="../assets/js/quiz-data.js"></script>
+<script src="../assets/js/book.js"></script>
+<script src="../assets/js/quiz.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    QuizEngine.renderQuiz("exam-quiz-mount", "exam-final", 25);
+  });
+</script>
+</body>
+</html>
