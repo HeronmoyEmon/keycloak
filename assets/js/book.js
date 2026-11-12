@@ -147,13 +147,33 @@
      never touched here) mix a "$ command" / ">>> expr" prompt with its own literal
      output in one block, for readability on the page. Copying the raw text and pasting
      it into a real shell tries to execute the output lines too. This extracts only the
-     actual input a reader typed: strips the prompt, keeps backslash-continuation lines
-     and comments, and drops bare output lines. A block with no prompt line at all (a
-     pure command, or a pure output transcript) is returned unchanged. The prompt is
+     actual input a reader typed: strips the prompt, keeps a command's own continuation
+     lines and comments, and drops bare output lines. A block with no prompt line at all
+     (a pure command, or a pure output transcript) is returned unchanged. The prompt is
      "$" followed by a literal space -- never bare "$NAME", so a real shell variable
      reference at the start of a line (e.g. a file's own "$KC create ...") is never
      mistaken for a prompt in the first place; file blocks are excluded before this
-     function is ever called anyway, as a second, independent safeguard. */
+     function is ever called anyway, as a second, independent safeguard.
+
+     A command keeps spanning lines (stays "mid-command", not yet back to bare output)
+     for three real reasons, not just a trailing backslash: an open quote that hasn't
+     closed yet (single and double tracked separately, correctly ignoring a quote
+     character of the other kind while already inside one -- "'{\"a\":\"b\"}'" never
+     mistakes its inner double quotes for bash's own; quote-scanning itself stops at the
+     first unquoted "#", since that's where a real shell comment starts -- without this,
+     an apostrophe in a trailing English comment, e.g. "# northwind-dashboard's internal
+     id", reads as an unclosed quote and corrupts everything after it, a real bug this
+     already shipped with once), a shell block keyword that hasn't been closed yet
+     (for/while/if/until ... do/then, closed by a line that's just done/fi/}), and the
+     ordinary trailing-backslash case. Missing any one of these for real content (not
+     just a contrived test) silently truncates or corrupts a real command when copied --
+     confirmed by running the actual extracted output against every real prompt-bearing
+     block on the site (68 of them) and finding zero remaining issues, not just by
+     reading the regex. A speculative "..." Python-continuation-prompt case was tried
+     and removed: nothing on the site ever uses it for real, and it falsely matched a
+     real "... 5 ClusterRoles, 5 RoleBindings ..." truncation-ellipsis line in a
+     chapter 42 kubectl output, corrupting that block -- removed rather than special-
+     cased, since it had no real benefit to weigh against the real bug. */
   function extractCopyText(raw) {
     var lines = raw.split("\n");
     var hasPrompt = lines.some(function (l) {
@@ -163,25 +183,46 @@
 
     var kept = [];
     var continuing = false;
+    var inSingle = false;
+    var inDouble = false;
+    var blockDepth = 0;
+
+    function scanQuotes(line) {
+      for (var i = 0; i < line.length; i++) {
+        var c = line.charAt(i);
+        if (c === "#" && !inSingle && !inDouble) break; // unquoted # starts a comment; rest of line doesn't count
+        if (c === "'" && !inDouble) inSingle = !inSingle;
+        else if (c === '"' && !inSingle) inDouble = !inDouble;
+      }
+    }
+    function endsWithContinuation(line) { return /\\\s*$/.test(line); }
+    function opensBlock(line) { return /\b(do|then)\s*$/.test(line.trim()) || /\{\s*$/.test(line.trim()); }
+    function closesBlock(line) { return /^(done|fi|\})\s*(#.*)?$/.test(line.trim()); }
+
+    function afterKeepingLine(line) {
+      scanQuotes(line);
+      if (inSingle || inDouble) { continuing = true; return; }
+      if (closesBlock(line) && blockDepth > 0) blockDepth--;
+      else if (opensBlock(line)) blockDepth++;
+      continuing = endsWithContinuation(line) || blockDepth > 0;
+    }
+
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
+
       if (continuing) {
         kept.push(line);
-        continuing = /\\\s*$/.test(line);
+        afterKeepingLine(line);
         continue;
       }
       if (/^\s*\$ /.test(line)) {
         var strippedDollar = line.replace(/^\s*\$ /, "");
         kept.push(strippedDollar);
-        continuing = /\\\s*$/.test(strippedDollar);
+        afterKeepingLine(strippedDollar);
         continue;
       }
       if (/^\s*>>> /.test(line)) {
         kept.push(line.replace(/^\s*>>> /, ""));
-        continue;
-      }
-      if (/^\s*\.\.\. /.test(line)) { // Python REPL continuation prompt
-        kept.push(line.replace(/^\s*\.\.\. /, ""));
         continue;
       }
       if (/^\s*#/.test(line) || line.trim() === "") {

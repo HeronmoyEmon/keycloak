@@ -551,7 +551,7 @@ https://demo.duendesoftware.com/callback?code=99E3B405AE1BB4C00E5202D899D100280C
           <li><p><strong>Step 8 — confirm the token endpoint's behavior on bad or missing input</strong> (worth
           knowing, since it's the same shape of error a real debugging session will show you):</p>
           <pre><code># missing/garbage code:
-$ curl -s -X POST .../connect/token -d "grant_type=authorization_code&client_id=interactive.public&code=not-a-real-code&redirect_uri=...&code_verifier=..."
+$ curl -s -X POST https://demo.duendesoftware.com/connect/token -d "grant_type=authorization_code&client_id=interactive.public&code=not-a-real-code&redirect_uri=https://demo.duendesoftware.com/callback&code_verifier=not-a-real-verifier"
 {"error":"invalid_grant"}          # HTTP 400
 
 # reusing an already-exchanged code (the real one from step 7, tried again):

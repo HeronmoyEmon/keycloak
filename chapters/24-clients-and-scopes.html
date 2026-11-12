@@ -207,14 +207,18 @@ Created new realm with id 'northwind-apps'</code></pre></li>
         <ol class="lab-steps" style="counter-reset: lab-step 2;">
           <li><p>Create <code>jane.doe</code> — the exact identity chapter 2's identity/identifier/credential/
           attribute example used — and set a custom <code>department</code> attribute on her:</p>
-<pre><code>$ kcadm.sh create users -r northwind-apps \
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps \
     -s username=jane.doe -s email=jane.doe@northwindapps.com -s enabled=true \
     -s firstName=Jane -s lastName=Doe
-Created new user with id 'a9ac0f36-7863-4940-9f71-8cdd8d450187'
+Created new user with id 'a9ac0f36-7863-4940-9f71-8cdd8d450187'</code></pre>
+          <p>That id is specific to this one run — every fresh realm generates a new one. Capture it into a
+          variable instead of hardcoding it, the same pattern chapters 23/27/31 use, so every command below
+          actually works on whichever id your own run just created:</p>
+<pre><code>$ JANE_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users -r northwind-apps -q username=jane.doe --fields id --format csv --noquotes)
 
-$ kcadm.sh update users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update users/$JANE_ID -r northwind-apps \
     -s 'attributes.department=["Engineering"]'
-$ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users/$JANE_ID -r northwind-apps
 {
   "id" : "a9ac0f36-7863-4940-9f71-8cdd8d450187",
   "username" : "jane.doe",
@@ -230,7 +234,7 @@ $ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
           <code>email</code>, <code>firstName</code>, <code>lastName</code>), and any attribute outside that
           schema is <strong>silently dropped</strong>, with no error anywhere, unless the realm's
           <code>unmanagedAttributePolicy</code> is explicitly set to allow it:</p>
-<pre><code>$ kcadm.sh get users/profile -r northwind-apps
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users/profile -r northwind-apps
 {
   "attributes" : [ {"name":"username", ...}, {"name":"email", ...},
                    {"name":"firstName", ...}, {"name":"lastName", ...} ],
@@ -238,11 +242,11 @@ $ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
 }
 (no "department" attribute declared anywhere — and no unmanagedAttributePolicy field means it's off)
 
-$ kcadm.sh update users/profile -r northwind-apps -s unmanagedAttributePolicy=ENABLED
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update users/profile -r northwind-apps -s unmanagedAttributePolicy=ENABLED
 
-$ kcadm.sh update users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update users/$JANE_ID -r northwind-apps \
     -s 'attributes.department=["Engineering"]'
-$ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get users/$JANE_ID -r northwind-apps
 {
   "id" : "a9ac0f36-7863-4940-9f71-8cdd8d450187",
   "username" : "jane.doe",
@@ -324,7 +328,7 @@ $ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
         <ol class="lab-steps">
           <li><p>Register <code>northwind-dashboard</code> itself — a confidential, standard-flow client, with
           a narrowly-scoped wildcard redirect URI per the pitfall above:</p>
-<pre><code>$ kcadm.sh create clients -r northwind-apps \
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps \
     -s clientId=northwind-dashboard \
     -s name="Northwind Dashboard" \
     -s description="Staff-facing internal dashboard for Northwind Apps employees" \
@@ -332,9 +336,13 @@ $ kcadm.sh get users/a9ac0f36-7863-4940-9f71-8cdd8d450187 -r northwind-apps
     -s directAccessGrantsEnabled=false -s serviceAccountsEnabled=false \
     -s 'redirectUris=["https://dashboard.northwindapps.internal/*"]' \
     -s 'webOrigins=["https://dashboard.northwindapps.internal"]' -i
-1b36f7b1-6a7f-4907-9290-c80157ab133c
+1b36f7b1-6a7f-4907-9290-c80157ab133c</code></pre>
+          <p>Capture that id into a variable — every command for the rest of this chapter targets this one
+          client, and the id above is specific to this run only:</p>
+<pre><code>$ CLIENT_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r northwind-apps -q clientId=northwind-dashboard \
+    --fields id --format csv --noquotes)
 
-$ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID -r northwind-apps \
     --fields clientId,publicClient,standardFlowEnabled,redirectUris,protocol
 {
   "clientId" : "northwind-dashboard",
@@ -344,17 +352,20 @@ $ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
   "protocol" : "openid-connect"
 }
 
-$ kcadm.sh get clients/1b36f7b1-.../client-secret -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID/client-secret -r northwind-apps
 { "type" : "secret", "value" : "Ses1A87vQT6MPcHctbFdpQrRlpgOXlnpNpmvmiXlVWrokrSnvGhQz2FvyQxTZ53zZahPR5cUVbVMe9jftax07d" }</code></pre>
           <p>(That secret is a throwaway local-lab value from a container nobody outside this machine can
           reach — the same convention the README uses for <code>admin_lab_password</code> — not a credential
           meant to survive past this lab run.)</p></li>
 
-          <li><p>Create the <code>northwind-profile</code> client scope:</p>
-<pre><code>$ kcadm.sh create client-scopes -r northwind-apps \
+          <li><p>Create the <code>northwind-profile</code> client scope. Capture its id directly from the
+          <code>-i</code> flag's own output this time, not a name-filtered lookup — confirmed live that the
+          client-scopes list endpoint's <code>-q</code> query parameter doesn't actually filter by
+          <code>name</code> at all (it silently returns every client scope in the realm, unlike the
+          <code>clientId</code>/<code>username</code> filters used above, which do filter correctly):</p>
+<pre><code>$ SCOPE_ID=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create client-scopes -r northwind-apps \
     -s name=northwind-profile -s protocol=openid-connect \
-    -s 'attributes={"display.on.consent.screen":"true","include.in.token.scope":"true"}' -i
-11192168-40ec-49ef-a419-2abd01c09fcd</code></pre></li>
+    -s 'attributes={"display.on.consent.screen":"true","include.in.token.scope":"true"}' -i)</code></pre></li>
         </ol>
       </section>
 
@@ -368,16 +379,15 @@ $ kcadm.sh get clients/1b36f7b1-.../client-secret -r northwind-apps
         to the client's own role list, not the realm's.</p>
 
         <ol class="lab-steps">
-          <li><p>Create a client role directly under <code>northwind-dashboard</code>, and confirm, two
-          different ways, that it lives there and nowhere else:</p>
-<pre><code>$ CLIENT_ID=1b36f7b1-6a7f-4907-9290-c80157ab133c   # northwind-dashboard's internal id, captured when it was created above
-
-$ kcadm.sh create clients/$CLIENT_ID/roles -r northwind-apps \
+          <li><p>Create a client role directly under <code>northwind-dashboard</code> — still using the same
+          <code>$CLIENT_ID</code> captured earlier in this chapter — and confirm, two different ways, that it
+          lives there and nowhere else:</p>
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/roles -r northwind-apps \
     -s name=dashboard-admin \
     -s description="Full admin access within the Northwind Dashboard app only"
 Created new role with id 'dashboard-admin'
 
-$ kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
 [ {
   "name" : "dashboard-admin",
   "composite" : false,
@@ -385,7 +395,7 @@ $ kcadm.sh get clients/$CLIENT_ID/roles -r northwind-apps
   "containerId" : "1b36f7b1-6a7f-4907-9290-c80157ab133c"
 } ]
 
-$ kcadm.sh get roles -r northwind-apps --fields name
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get roles -r northwind-apps --fields name
 [ {"name":"offline_access"}, {"name":"default-roles-northwind-apps"}, {"name":"uma_authorization"} ]
 (dashboard-admin does not appear in the realm's own role list at all — "clientRole": true is the field
 that makes the difference real, not just a naming convention)</code></pre></li>
@@ -459,10 +469,9 @@ that makes the difference real, not just a naming convention)</code></pre></li>
         </figure>
 
         <ol class="lab-steps">
-          <li><p>Add the <code>department</code> mapper to the <code>northwind-profile</code> scope:</p>
-<pre><code>$ SCOPE_ID=11192168-40ec-49ef-a419-2abd01c09fcd
-
-$ kcadm.sh create client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps \
+          <li><p>Add the <code>department</code> mapper to the <code>northwind-profile</code> scope — still
+          using the same <code>$SCOPE_ID</code> captured above:</p>
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps \
     -s name=department -s protocol=openid-connect \
     -s protocolMapper=oidc-usermodel-attribute-mapper \
     -s 'config={"user.attribute":"department","claim.name":"department",
@@ -471,7 +480,7 @@ $ kcadm.sh create client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-a
          "multivalued":"false"}' -i
 f6425e19-e554-451b-a16d-e2e31c68afae
 
-$ kcadm.sh get client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps
 [ {
   "id" : "f6425e19-e554-451b-a16d-e2e31c68afae",
   "name" : "department",
@@ -495,9 +504,9 @@ $ kcadm.sh get client-scopes/$SCOPE_ID/protocol-mappers/models -r northwind-apps
           <li><p>Attach <code>northwind-profile</code> to <code>northwind-dashboard</code> as a
           <strong>default</strong> scope — automatically included in every token this client gets, no
           <code>scope=</code> parameter required:</p>
-<pre><code>$ kcadm.sh update clients/1b36f7b1-.../default-client-scopes/$SCOPE_ID -r northwind-apps
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID/default-client-scopes/$SCOPE_ID -r northwind-apps
 
-$ kcadm.sh get clients/1b36f7b1-.../default-client-scopes -r northwind-apps
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID/default-client-scopes -r northwind-apps
 [ {"name":"web-origins"}, {"name":"acr"}, {"name":"northwind-profile"},
   {"name":"profile"}, {"name":"roles"}, {"name":"basic"}, {"name":"email"} ]</code></pre>
           <p><code>northwind-profile</code> now sits alongside Keycloak's own built-in default scopes
@@ -509,13 +518,16 @@ $ kcadm.sh get clients/1b36f7b1-.../default-client-scopes -r northwind-apps
           direct access grants (chapter 13's deprecated ROPC — recognize it, don't reach for it in a real
           product; this is a lab-only probe, reverted immediately after) were enabled just long enough to get
           one real token, then turned back off:</p>
-<pre><code>$ kcadm.sh update clients/1b36f7b1-... -r northwind-apps -s directAccessGrantsEnabled=true
-$ kcadm.sh set-password -r northwind-apps --username jane.doe \
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID -r northwind-apps -s directAccessGrantsEnabled=true
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-apps --username jane.doe \
     --new-password 'Lab_Password_2026!' --temporary=false
+
+$ CLIENT_SECRET=$(docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID/client-secret -r northwind-apps \
+    --fields value --format csv --noquotes)
 
 $ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
     -d "grant_type=password" -d "client_id=northwind-dashboard" \
-    -d "client_secret=Ses1A87vQT6M...ax07d" \
+    -d "client_secret=$CLIENT_SECRET" \
     -d "username=jane.doe" -d "password=Lab_Password_2026!" \
     -d "scope=openid profile email"
 {
@@ -576,9 +588,9 @@ $ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-co
 
           <li><p>Revert the lab-only probe — <code>northwind-dashboard</code>'s real, intended configuration
           never included direct access grants:</p>
-<pre><code>$ kcadm.sh update clients/1b36f7b1-... -r northwind-apps -s directAccessGrantsEnabled=false
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID -r northwind-apps -s directAccessGrantsEnabled=false
 
-$ kcadm.sh get clients/1b36f7b1-... -r northwind-apps \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID -r northwind-apps \
     --fields clientId,publicClient,standardFlowEnabled,directAccessGrantsEnabled,serviceAccountsEnabled
 {
   "clientId" : "northwind-dashboard",

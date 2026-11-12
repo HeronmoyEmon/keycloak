@@ -33,6 +33,79 @@ affected blocks site-wide (9 chapters: 13, 15, 24, 29, 33, 34, 35, 39, 42), insp
 output for leftover prompts/output lines (zero found), and spot-checked that non-prompt blocks (the
 ~535 majority) pass through byte-identical.
 
+**User follow-up, same day: "run them and make sure they all pass."** That first verification only
+inspected the extracted text for leftover artifacts — it never actually ran any of it. Dispatched 6
+parallel agents to paste the exact `extractCopyText()` output for all 68 affected blocks (9 chapters)
+as real, one-shot terminal pastes into fresh environments, in each chapter's own sequence/context —
+genuinely running them, not just re-reading them. This found real problems the first pass's static
+inspection couldn't have caught, in two categories:
+
+- **Three more real bugs in `extractCopyText()` itself**, found independently by different agents
+  mid-verification and fixed directly in `assets/js/book.js` (each re-verified by the coordinator
+  afterward, not taken on an agent's word):
+  1. The original version only tracked a trailing `\` to decide whether a line continues a command —
+     missed a `for ... do` / `while ... do` / `if ... then` block spanning multiple lines with no
+     backslash at all (confirmed: chapter 24's readiness-poll loop got truncated to just
+     `for i in $(seq 1 20); do` with the loop body and `done` dropped, a real bash syntax error if
+     pasted) and a multi-line quoted string with no backslash either (chapter 24's JSON protocol-mapper
+     config; chapter 35's multi-line `python3 -c "..."`). Fixed by tracking open quotes (single/double,
+     correctly not confused by a quote of the other kind) and open `do`/`then`/`{` blocks (closed by
+     `done`/`fi`/`}`) as the other two reasons a command keeps spanning lines, not just the backslash.
+  2. That same quote-tracking fix then broke something it hadn't before: naively scanning a whole line
+     for `'`/`"` characters means an apostrophe inside a plain English trailing comment (e.g.
+     `# northwind-dashboard's internal id`) reads as an unclosed shell quote, which then corrupts every
+     line after it (confirmed: this exact comment, from chapter 24, caused several subsequent `$ `
+     prompts and real command output to leak straight into the clipboard unstripped). Fixed by stopping
+     quote-scanning at the first *unquoted* `#` on a line — the same place a real shell comment actually
+     starts, so this isn't a course-specific hack, it matches real shell semantics.
+  3. A speculative `"... "` Python-continuation-prompt case (added alongside the quote-tracking fix,
+     for a feature nothing on the site actually used) false-matched a real `"... 5 ClusterRoles, 5
+     RoleBindings, 1 ClusterRoleBinding ..."` kubectl truncation-ellipsis line in chapter 42, corrupting
+     that block. Removed outright rather than special-cased, since it had zero real benefit anywhere on
+     the site to weigh against the real bug it caused.
+  Re-verified the fully patched function against all 68 real blocks site-wide after each round — zero
+  remaining issues, confirmed programmatically, not by inspection alone.
+- **Four real, pre-existing content bugs**, unrelated to the copy-button mechanism itself but only
+  surfaced because actually running the extracted text (not just reading it) is a genuinely stricter
+  test than anything tried before:
+  - **ch13**: step 8's "missing/garbage code" probe used `.../connect/token` as a literal URL
+    placeholder in the shown command — pasted as written, `curl` fails with "Couldn't resolve host".
+    Fixed to the real full URL; re-verified it now returns the exact claimed `{"error":"invalid_grant"}`.
+  - **ch24**: beyond the one id this session had already fixed, the *entire rest of the chapter* still
+    hardcoded ids/secrets from one specific authoring run (`CLIENT_ID`, `SCOPE_ID`, `JANE_ID`, a client
+    secret) directly into later commands — none of which match a fresh reader's own run. Rewrote the
+    whole chapter to capture each one into a shell variable right after creation and reuse the variable
+    everywhere after, the same pattern chapters 23/27/31 already use. Also found and documented a real,
+    live-confirmed Keycloak quirk along the way: the client-scopes list endpoint's `-q` query parameter
+    doesn't actually filter by `name` at all (unlike the `clientId`/`username` filters used elsewhere in
+    the same chapter, which do filter correctly) — so that one scope id has to come from the `-i` flag's
+    own create-time output instead of a name-filtered lookup.
+  - **ch34**: step 6 mints four tokens but never captures `devon.admin`'s into a variable; step 7 then
+    uses `$ADMIN_TOKEN` as if it already existed. A real reader following the page literally gets a
+    `401` here, not the claimed `403` reproducing the authorities gotcha (the gotcha itself is real and
+    reproduces correctly with a properly captured, fresh token — confirmed live — so the claimed
+    *behavior* was always accurate, only the missing capture command was the bug). Added
+    `ADMIN_TOKEN=$(... | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")`,
+    the same extraction idiom chapters 27/32 already use.
+  - **ch42**: applying the Keycloak CR and immediately `kubectl wait`-ing for its pod in the same pasted
+    block races the Operator's own reconciliation — `kubectl wait` only waits for a *condition* on a pod
+    that already exists, not for the pod to come into existence, and pasting both commands with zero
+    natural delay (versus a typing reader) can hit it before the Operator has scheduled anything.
+    Reproduced live, then fixed with a short poll-for-existence loop before the existing `wait` call.
+  - **One contradiction, resolved by the coordinator re-testing from scratch, not by picking a side**:
+    this same chapter-29 re-run independently got `"error_description": "Session not active"` after
+    revoking a session — the *opposite* of what an earlier commit in this same Final QA pass had changed
+    it to (`"Invalid refresh token"`), believing the old text wrong. Ran the exact scenario myself,
+    fresh, start to finish (new realm, new user, new session, `DELETE` the session, replay its refresh
+    token) rather than trusting either prior claim: **the real result is `"Session not active"`** — the
+    original chapter text was correct all along, and this session's own earlier "fix" was the actual
+    bug. Reverted all 4 touched spots (two JSON transcripts, one diagram label, one takeaway) back to
+    `"Session not active"`, matching the self-check model answer that earlier fix had missed changing
+    and which turned out to have been right the whole time.
+- Chapters confirmed with **zero issues of any kind** across this entire verification round: 15, 29
+  (mechanically — only the one pre-existing text error above), 33, 34 (mechanically — only the one
+  missing-capture bug above), 35 (only the one extraction bug above), 39.
+
 **Self-contained-labs retrofit (user-requested, off-queue, ahead of the Final QA pass) — in progress,
 started 2026-11-12.** The user will only ever share this site's deployed Vercel link, never this GitHub
 repo — but every lab chapter currently tells the reader to `cd labs/<folder>` or references a file like

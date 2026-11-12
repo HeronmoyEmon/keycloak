@@ -364,10 +364,13 @@ spec:
     hostname: localhost
   ingress:
     enabled: false</code></pre>
-        <p>Apply it:</p>
+        <p>Apply it. <code>kubectl wait</code> only waits for a <em>condition</em> on a pod that already
+        exists — it doesn't wait for the pod to exist in the first place, and the Operator needs a moment
+        to reconcile the new resource and schedule that pod, so a short poll loop comes first:</p>
         <pre><code>$ kubectl apply -f example-kc.yaml
 keycloak.k8s.keycloak.org/example-kc created
 
+$ for i in $(seq 1 30); do kubectl -n keycloak get pod/example-kc-0 &amp;>/dev/null && break; sleep 2; done
 $ kubectl -n keycloak wait --for=condition=ready pod/example-kc-0 --timeout=180s
 pod/example-kc-0 condition met
 

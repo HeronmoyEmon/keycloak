@@ -906,14 +906,17 @@ curl -s -X POST "http://localhost:8080/realms/northwind-apps/protocol/openid-con
 curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
   -d "username=amara.reader" -d "password=Reader#2026Pass"
 
-# 3. Direct grant -- devon.admin (billing-admin)
-curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
-  -d "username=devon.admin" -d "password=Admin#2026Pass"
+# 3. Direct grant -- devon.admin (billing-admin) -- captured into $ADMIN_TOKEN, reused in the
+#    gotcha-reproduction step below rather than minted twice
+ADMIN_TOKEN=$(curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
+  -d "username=devon.admin" -d "password=Admin#2026Pass" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
 
 # 4. Direct grant -- priya.sales (no billing role at all)
 curl -s -X POST ".../token" -d "client_id=billing-direct-grant" -d "grant_type=password" \
   -d "username=priya.sales" -d "password=Sales#2026Pass"</code></pre>
-          <p>All four returned HTTP 200 with a real <code>access_token</code>. Decoding
+          <p>All four returned HTTP 200 with a real <code>access_token</code> (devon.admin's captured into
+          <code>$ADMIN_TOKEN</code> for reuse below, rather than re-minting it later). Decoding
           <code>devon.admin</code>'s token's payload (base64url, no verification needed just to read it —
           chapter 16's point that a JWT's payload is readable by anyone, signed but not encrypted) confirms
           the exact claim shape the previous slide described:</p>
