@@ -1475,20 +1475,28 @@ to acknowledge the following for this login session: ...&lt;/p&gt;
   &lt;input name="submitAction" id="kc-accept" type="submit" value="I Acknowledge"/&gt;
   &lt;input name="cancel" id="kc-decline" type="submit" value="Decline"/&gt;
 &lt;/form&gt;</code></pre>
-        <p>Submitting <strong>decline</strong> hard-fails the whole attempt (a real <code>400</code>, a real
-        <code>data-page-id="login-error"</code> error page — login is genuinely over, not merely paused).
-        Submitting <strong>accept</strong> on a fresh attempt instead redirects straight on to the application
-        with a real authorization code, and a follow-up <code>GET</code> of the user confirms
-        <code>requiredActions</code> is now empty — Keycloak clears a satisfied one-time required action from
-        the user record automatically, exactly as chapter 25 described for the built-in ones.</p>
+        <p>Submitting <strong>decline</strong> hard-fails the whole attempt — but not with a Keycloak-rendered
+        error page. Because this login is a real authorization-code flow for a real client with a real
+        <code>redirect_uri</code>, Keycloak sends the failure back as an ordinary OAuth error: a genuine
+        <code>302</code> redirect straight to the client's own <code>redirect_uri</code>, carrying
+        <code>error=access_denied</code> and, verbatim, <code>error_description=riversideHipaaAckDeclined</code>
+        — the exact string <code>processAction()</code> passed to <code>context.failure(...)</code>. Login is
+        genuinely over, not merely paused; the application just receives the denial as a standard OAuth error
+        response instead of anything Keycloak-branded. Submitting <strong>accept</strong> on a fresh attempt
+        instead redirects straight on to the application with a real authorization code, and a follow-up
+        <code>GET</code> of the user confirms <code>requiredActions</code> is now empty — Keycloak clears a
+        satisfied one-time required action from the user record automatically, exactly as chapter 25 described
+        for the built-in ones.</p>
 
         <div class="callout callout--try-it">
           <div class="callout-label">Try it</div>
-          <p>Re-run the decline path yourself and read the resulting error page's text closely — it says
-          something generic ("An error occurred, please login again through your application"), not anything
-          HIPAA-specific, even though <code>processAction()</code> calls
-          <code>context.failure("riversideHipaaAckDeclined")</code>. Why doesn't that string show up on the
-          page? (The common-mistakes slide answers it directly — think it through first.)</p>
+          <p>Re-run the decline path yourself and decode the redirect's query string closely — the
+          <code>error_description</code> is exactly the raw string this chapter's
+          <code>context.failure("riversideHipaaAckDeclined")</code> call passed in, riding unencrypted on a
+          browser redirect the client application (and anything sitting between it and Keycloak) can read in
+          full. That's worth noticing as its own lesson: an event-error string is effectively public the moment
+          it's used this way, so it should stay a short, generic code — never anything that could leak an
+          internal detail worth keeping quiet.</p>
         </div>
       </section>
 
@@ -1514,12 +1522,17 @@ to acknowledge the following for this login session: ...&lt;/p&gt;
           sails straight through, the cause is very likely that the action was never explicitly
           <code>register-required-action</code>'d on that specific realm — a per-realm switch this SPI has that
           the Identity Provider SPI simply doesn't.</li>
-          <li>If <code>context.failure("someMessageCode")</code> produces only Keycloak's generic "An error
-          occurred" page instead of anything specific, the cause is that <code>messageCode</code> is a realm
-          message-bundle <strong>key</strong>, not display text — it only renders custom text if a matching
-          entry exists in a <code>theme-resources/messages/messages_en.properties</code> file (deliberately
-          left out of this lab to keep message-bundle customization, a different topic, separate from the one
-          new mechanism being taught here).</li>
+          <li>What <code>context.failure("someMessageCode")</code> actually does with that string depends on
+          whether a client/redirect is in play. In a real authorization-code flow (this lab's own case),
+          Keycloak sends it straight back to the client as the OAuth <code>error_description</code> on a
+          <code>302</code> redirect, verbatim — not through any message-bundle lookup at all. Only when there's
+          no client to redirect to (a flow with no in-progress authorization request, such as some Account
+          Console actions) does Keycloak fall back to rendering its own generic page, and even then
+          <code>messageCode</code> is treated as a realm message-bundle <strong>key</strong>, not display text
+          — it only shows custom text on that page if a matching entry exists in a
+          <code>theme-resources/messages/messages_en.properties</code> file (deliberately left out of this lab
+          to keep message-bundle customization, a different topic, separate from the one new mechanism being
+          taught here).</li>
           <li>If a beginner reaches for a custom <em>authenticator</em> (chapter 39) to enforce a policy
           acknowledgment like this chapter's HIPAA notice, the fix is recognizing it as a required action
           instead: anything that should gate "a session becomes usable" <em>after</em> a credential has already
