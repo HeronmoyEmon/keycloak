@@ -125,8 +125,8 @@
             <line x1="665" y1="78" x2="356" y2="148" class="diagram-stroke"></line>
 
             <rect x="220" y="150" width="160" height="60" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="300" y="175" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="13">Keycloak node</text>
-            <text x="300" y="192" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">(Quarkus distribution)</text>
+            <text x="300" y="175" text-anchor="middle" class="diagram-label-on-accent" font-weight="700" font-size="13">Keycloak node</text>
+            <text x="300" y="192" text-anchor="middle" class="diagram-label-on-accent" font-size="10">(Quarkus distribution)</text>
 
             <line x1="260" y1="210" x2="190" y2="262" class="diagram-stroke"></line>
             <line x1="340" y1="210" x2="570" y2="262" class="diagram-stroke"></line>
@@ -280,7 +280,7 @@
 
             <text x="190" y="26" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">On-demand pool (initial/min = 0)</text>
             <rect x="60" y="48" width="130" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="125" y="72" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Keycloak node</text>
+            <text x="125" y="72" text-anchor="middle" class="diagram-label-on-accent" font-size="11">Keycloak node</text>
             <line x1="125" y1="88" x2="125" y2="116" class="diagram-stroke"></line>
             <rect x="30" y="118" width="320" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
             <text x="190" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">Agroal pool</text>
@@ -299,7 +299,7 @@
 
             <text x="570" y="26" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Fixed-size pool (initial = min = max)</text>
             <rect x="505" y="48" width="130" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="570" y="72" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="11">Keycloak node</text>
+            <text x="570" y="72" text-anchor="middle" class="diagram-label-on-accent" font-size="11">Keycloak node</text>
             <line x1="570" y1="88" x2="570" y2="116" class="diagram-stroke"></line>
             <rect x="410" y="118" width="320" height="100" rx="8" class="diagram-fill-surface diagram-stroke"></rect>
             <text x="570" y="134" text-anchor="middle" class="diagram-label-muted" font-size="10">Agroal pool</text>
@@ -378,8 +378,8 @@
             <title id="t43-3">A local cache serving as a read-through accelerator in front of the database</title>
             <desc id="d43-3">A Keycloak node sends a request to its local cache. On a cache hit, the result is served immediately back to the node. On a cache miss, the request continues on to the database, which answers and also refills the cache entry for next time, before the result returns to the node.</desc>
             <rect x="20" y="100" width="140" height="56" rx="7" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="90" y="124" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">Keycloak node</text>
-            <text x="90" y="140" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">makes a request</text>
+            <text x="90" y="124" text-anchor="middle" class="diagram-label-on-accent" font-size="12" font-weight="700">Keycloak node</text>
+            <text x="90" y="140" text-anchor="middle" class="diagram-label-on-accent" font-size="9">makes a request</text>
 
             <line x1="160" y1="128" x2="228" y2="128" class="diagram-stroke" marker-end="url(#arrowA)"></line>
             <defs>
@@ -476,11 +476,11 @@
             <line x1="370" y1="182" x2="370" y2="210" class="diagram-stroke"></line>
 
             <rect x="60" y="212" width="620" height="112" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="370" y="234" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="12" font-weight="700">Worked example — Meridian Trust's target traffic</text>
-            <text x="370" y="254" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">45 logins/s + 360 client-credential/s + 360 refresh/s, across 3 pods</text>
-            <text x="370" y="274" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Per pod: 3 vCPU request / 7.5 vCPU limit, 1250 MB mem request / 1360 MB limit</text>
-            <text x="370" y="294" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">Database: a 2 vCPU instance (lighter peaks) or 4 vCPU instance (tighter response-time needs)</text>
-            <text x="370" y="312" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">(numbers per Keycloak's own High Availability sizing guide, applied to this traffic mix)</text>
+            <text x="370" y="234" text-anchor="middle" class="diagram-label-on-accent" font-size="12" font-weight="700">Worked example — Meridian Trust's target traffic</text>
+            <text x="370" y="254" text-anchor="middle" class="diagram-label-on-accent" font-size="10">45 logins/s + 360 client-credential/s + 360 refresh/s, across 3 pods</text>
+            <text x="370" y="274" text-anchor="middle" class="diagram-label-on-accent" font-size="10">Per pod: 3 vCPU request / 7.5 vCPU limit, 1250 MB mem request / 1360 MB limit</text>
+            <text x="370" y="294" text-anchor="middle" class="diagram-label-on-accent" font-size="10">Database: a 2 vCPU instance (lighter peaks) or 4 vCPU instance (tighter response-time needs)</text>
+            <text x="370" y="312" text-anchor="middle" class="diagram-label-on-accent" font-size="9">(numbers per Keycloak's own High Availability sizing guide, applied to this traffic mix)</text>
           </svg>
           <figcaption>Figure 43.4 — Keycloak's own documented per-vCPU throughput budgets, applied to a
           Meridian Trust-shaped traffic target.</figcaption>

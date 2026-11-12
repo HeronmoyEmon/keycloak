@@ -136,10 +136,10 @@
             </g>
 
             <rect x="55" y="198" width="320" height="76" rx="8" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="215" y="220" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="12">Realm export / import</text>
-            <text x="215" y="238" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">kc.sh export / import</text>
-            <text x="215" y="254" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="10">realm + client config, users (optional)</text>
-            <text x="215" y="268" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-size="9">a subset, not a replacement</text>
+            <text x="215" y="220" text-anchor="middle" class="diagram-label-on-accent" font-weight="700" font-size="12">Realm export / import</text>
+            <text x="215" y="238" text-anchor="middle" class="diagram-label-on-accent" font-size="10">kc.sh export / import</text>
+            <text x="215" y="254" text-anchor="middle" class="diagram-label-on-accent" font-size="10">realm + client config, users (optional)</text>
+            <text x="215" y="268" text-anchor="middle" class="diagram-label-on-accent" font-size="9">a subset, not a replacement</text>
 
             <rect x="405" y="198" width="280" height="76" rx="8" class="diagram-fill-danger diagram-stroke"></rect>
             <text x="545" y="218" text-anchor="middle" class="diagram-label" font-weight="700" font-size="11">Export/import does NOT cover:</text>
@@ -306,7 +306,7 @@
             <title id="t44-4">Multi-cluster v2 topology: two independent Keycloak clusters behind a load balancer, coordinated through a synchronously replicated database</title>
             <desc id="d44-4">Two independent boxes labeled Site A cluster and Site B cluster, each containing its own Keycloak nodes with no direct cluster link between them. An external load balancer sits above both, distributing and health-probing requests to each site. Below both sites, a database layer is labeled synchronously replicated database, shared logically across both sites, with a caveat noting that sub-ten-millisecond commit latency is required between sites and that without active health probing, a failed site can keep receiving traffic.</desc>
             <rect x="260" y="15" width="220" height="40" rx="6" class="diagram-fill-accent-strong diagram-stroke"></rect>
-            <text x="370" y="40" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700">External load balancer</text>
+            <text x="370" y="40" text-anchor="middle" class="diagram-label-on-accent" font-weight="700">External load balancer</text>
 
             <rect x="60" y="90" width="260" height="90" rx="8" class="diagram-fill-info diagram-stroke"></rect>
             <text x="190" y="112" text-anchor="middle" class="diagram-label" font-weight="700" font-size="12">Site A cluster</text>

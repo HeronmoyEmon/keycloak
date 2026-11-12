@@ -102,7 +102,65 @@ need" menu before the first step, and commands that start from an empty folder, 
 - **Self-contained-labs retrofit is now COMPLETE** (chapter 20 reference + wave 1's 12 lightweight
   chapters + wave 2's 8 heavy chapters + wave 3's capstone = all 28 `hasLab:true` chapters plus the
   capstone; chapters 13-15 needed no change, already self-contained against a public demo server).
-  **Queue item 21, the Final QA pass, is next and last** — see below.
+
+## Final QA pass (queue item 21) — in progress, started 2026-11-12
+
+Per CLAUDE.md §8: full link check, full quiz/glossary validation, every lab re-run from a clean Docker
+state, every "In Keycloak" callout spot-checked against a live admin console, README.md update. The
+user also explicitly flagged a diagram-contrast bug to look for and fix first, plus any other visual
+discrepancies — done as the first sub-item, see below.
+
+- **Diagram contrast audit/fix — DONE.** User report: some diagrams have a terracotta-colored
+  background with black text, unreadable. Root cause confirmed real and systemic: `book.css`'s
+  `.diagram-fill-accent-strong` (the one *solid*, non-soft fill — `var(--accent)`, a medium terracotta
+  brown in light/sepia theme) needs its text in `.diagram-label-on-accent` (light/white), not the
+  default dark `.diagram-label`/`.diagram-label-muted` — many diagrams across the site had the wrong
+  one. Audited all 186 inline SVG diagrams site-wide (chapters, case studies, exams, capstone) with a
+  geometric scanner (parses every `<rect>`'s real x/y/width/height + fill class, and every `<text>`'s
+  real x/y, and checks which box's bounding box the text's coordinates actually fall inside — far more
+  reliable than a sequential "last-shape-wins" heuristic, which produced real false positives along the
+  way, caught and corrected before committing: 75 connector-caption labels that sit *between* boxes on
+  the plain diagram background, not actually inside the preceding box, which the first heuristic pass
+  wrongly flipped to light text — reverted with the same geometric method once caught). Final result,
+  independently re-verified: **0 geometric mismatches across all 1,299 diagram texts carrying a label
+  class** (2,443 total `<text>` elements exist across 186 diagrams; 1,299 of those carry a
+  `diagram-label*` class and were checked for fill-vs-text-color correctness), 0 tag-balance errors
+  across all 67 HTML files site-wide, exact same total label-class count before and after (1,299 → 1,299
+  — every fix reclassified a text's color, none were lost or duplicated). 30 chapter/page HTML files
+  touched. Fixes applied:
+  - 17 single-class texts switched from dark (`diagram-label`/`diagram-label-muted`) to light
+    (`diagram-label-on-accent`/new `diagram-label-on-accent-muted`) where they genuinely sit on a solid
+    `diagram-fill-accent-strong` box but were still carrying the wrong, dark-text class.
+  - 113 texts had **both** a plain and an on-accent class on the same element simultaneously (a
+    pre-existing mess predating this session, from whichever earlier agent built each diagram — CSS
+    cascade source order in `book.css` happened to make the on-accent one win regardless of which was
+    actually correct for that box, so some of these were already rendering right by accident and some
+    weren't). All 113 resolved down to the single genuinely-correct class per the geometric check — the
+    large majority to `diagram-label-on-accent` (confirming they really did sit on a solid box), 4 of
+    them (chapter 2's three org-intro header bars, chapter 45's one checklist-footer bar) resolved to
+    plain `diagram-label` instead, below.
+  - Added `.diagram-label-on-accent-muted` to `book.css` (didn't exist before — only a non-muted
+    on-accent variant did), `fill: var(--accent-contrast)` at 0.82 opacity, so muted captions on a solid
+    box keep the same visual hierarchy as muted captions on a plain background instead of all reading at
+    full brightness.
+  - **capstone.html's main architecture diagram** had the same inverse bug (soft fill + on-accent text)
+    on its biggest box (the "Keycloak — northwind-apps realm" hub, deliberately the most visually
+    prominent node in the
+    diagram): filled with the soft `diagram-fill-accent` while its 9 text lines were already
+    `diagram-label-on-accent`. Judgment call: rather than darken the text (which would make the
+    intentionally-prominent hub box look like every other plain box), changed the box's own fill to
+    `diagram-fill-accent-strong` to match its already-white text and its evident design intent as the
+    diagram's visual focal point.
+  - **One real near-miss, caught and reverted before it shipped**: an early cleanup pass's blind
+    sitewide regex for `class="..."` briefly matched a JavaScript string-concatenation expression inside
+    `roadmap.html`'s inline `<script>` (`'<div class="' + chipClasses + '" ...'`), corrupting it into
+    invalid JS. Caught immediately via `git diff` review (empty diff where 7 "fixes" were expected
+    signaled something was wrong; the next script version's diff showed the actual corruption), reverted
+    that one line by hand, then re-verified no other touched file had a `class="` match landing inside a
+    `<script>` block before trusting the rest of the batch.
+  - Not yet checked: whether this same contrast issue exists in any way outside inline SVGs (e.g. a
+    hardcoded color in a non-diagram context) — scoped this pass to diagrams specifically, per the
+    user's report; flag if anything else surfaces during the rest of the Final QA pass.
 
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
 detail. **Queue item 21, the Final QA pass, is next and last** once this retrofit is done — closes out

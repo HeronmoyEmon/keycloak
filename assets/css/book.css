@@ -286,6 +286,7 @@ figure.diagram figcaption {
    would disappear in dark mode. accent-contrast tracks accent-strong's own background correctly in
    every theme instead. */
 .diagram-label-on-accent { fill: var(--accent-contrast); font: 13px -apple-system, Roboto, sans-serif; }
+.diagram-label-on-accent-muted { fill: var(--accent-contrast); opacity: 0.82; font: 12px -apple-system, Roboto, sans-serif; }
 .diagram-stroke { stroke: var(--line-strong); }
 .diagram-fill-surface { fill: var(--surface); }
 .diagram-fill-accent { fill: var(--accent-soft); }
