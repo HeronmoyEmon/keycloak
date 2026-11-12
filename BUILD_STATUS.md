@@ -8,6 +8,13 @@ explicitly says to (standing instruction from the user — do not push without b
 
 ## Current unit
 
+**Nothing currently in progress. v1.0 is complete and every gate (1-5, plus the Final QA gate) is
+approved, as of 2026-11-12** — see the "Final QA pass" entry below for the closing summary, and the
+Gates section for the full approval record. A future session picking this project back up should treat
+this as a maintenance/extension phase, not a build-in-progress one: the standing open items noted at
+the end of the Final QA entry (Vercel not yet connected, chat-widget and progress export/import both
+still deferred per CLAUDE.md §12) are the only known remaining work, and none of them block v1.0.
+
 **Self-contained-labs retrofit (user-requested, off-queue, ahead of the Final QA pass) — in progress,
 started 2026-11-12.** The user will only ever share this site's deployed Vercel link, never this GitHub
 repo — but every lab chapter currently tells the reader to `cd labs/<folder>` or references a file like
@@ -276,14 +283,16 @@ discrepancies — done as the first sub-item, see below.
   chapter's own self-contained lab instructions instead of a separate `labs/README.md` prerequisite.
   Verified every link in the README resolves.
 
-**Final QA pass (queue item 21) — COMPLETE, 2026-11-12.** Diagram contrast audit, full link check, full
-quiz/glossary validation, every lab re-run from a clean Docker state, every "In Keycloak" callout
-spot-checked, the three validator tools built, and this README update — all done, all documented above.
-**This closes CLAUDE.md §8's Final QA gate. The course is content-complete at v1.0**: all 50 chapters,
-the capstone, the 5 exams, the 3 case studies, every lab self-contained, zero known open content bugs.
-Standing open items not part of this gate (unchanged, not touched this session): Vercel deployment not
-yet connected; the chat-widget feature remains deferred per CLAUDE.md §12; progress export/import
-remains deferred per the same section.
+**Final QA pass (queue item 21) — COMPLETE, 2026-11-12. Final QA gate approved 2026-11-12** ("approve
+Final QA gate", no feedback given — approved as built, the same convention every prior gate used).
+Diagram contrast audit, full link check, full quiz/glossary validation, every lab re-run from a clean
+Docker state, every "In Keycloak" callout spot-checked, the three validator tools built, and this
+README update — all done, all documented above. **The course is content-complete at v1.0 and the build
+is formally closed out**: all 50 chapters, the capstone, the 5 exams, the 3 case studies, every lab
+self-contained, zero known open content bugs, every gate (1 through 5, plus this one) approved.
+Standing open items, intentionally outside this gate's scope and untouched this session: Vercel
+deployment not yet connected; the chat-widget feature remains deferred per CLAUDE.md §12;
+progress export/import remains deferred per the same section.
 
 **Part XI (queue item 20): chapters 49-50 — COMPLETE, 2026-11-12.** See the Done entry below for full
 detail. The brief that built chapters 49-50 is preserved below for reference.
@@ -613,8 +622,8 @@ a template/build gate, not a content-mastery one.
 21. ~~Full QA pass (CLAUDE.md §8 final gate): link check, quiz/glossary validation, every lab re-run from a
     clean Docker state, every "In Keycloak" callout spot-checked against a live admin console. README.md
     update to reflect final chapter count and lab list.~~ — done 2026-11-12, see the "Final QA pass" entry
-    above for full detail. **→ Final QA gate reached, awaiting approval** (gates are never self-approved
-    per CLAUDE.md §8 — say "approve Final QA gate" when ready).
+    above for full detail. **→ Final QA gate reached and approved 2026-11-12** ("approve Final QA gate",
+    no feedback given). **v1.0 complete.**
 
 ## Gates
 
@@ -624,7 +633,8 @@ a template/build gate, not a content-mastery one.
 - **GATE-4: approved 2026-11-10**, no feedback given (approved as built). See summary below.
 - **GATE-5: approved 2026-11-11** ("approve GATE-5"), no feedback given (approved as built). See summary
   below.
-- Final QA gate: reached 2026-11-12, awaiting approval
+- Final QA gate: approved 2026-11-12 ("approve Final QA gate"), no feedback given (approved as built).
+  **v1.0 complete — every gate in this build is now approved.**
 
 ### GATE-1 review summary
 
