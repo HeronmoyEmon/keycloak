@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capstone — IAM &amp; Keycloak Mastery</title>
+<link rel="stylesheet" href="assets/css/book.css">
+<link rel="stylesheet" href="assets/css/print.css" media="print">
+<script>window.SITE_ROOT = "";</script>
+</head>
+<body>
+<header class="top-bar">
+  <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html"><span class="mark">IK</span> IAM &amp; Keycloak Mastery</a>
+  <div class="spacer"></div>
+  <nav class="top-quicklinks">
+    <a href="roadmap.html">Study pace</a>
+    <a href="glossary.html">Glossary</a>
+    <a href="quizzes.html">Quizzes</a>
+    <a href="labs.html">Labs</a>
+    <a href="case-studies.html">Case studies</a>
+  </nav>
+  <div class="top-actions">
+    <button class="icon-btn" id="font-toggle" title="Change text size">Aa</button>
+    <button class="icon-btn" id="theme-toggle" title="Change theme">&#9680;</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar"><div id="sidebar-nav"></div></nav>
+  <main class="content"><article class="content-inner">
+    <h1>The capstone: Northwind Apps, built end to end</h1>
+    <p class="lede">Every other unit in this course either teaches one concept or runs one isolated lab.
+      The capstone is different, per the curriculum's own description: <strong>"own project, not a
+      chapter page"</strong> — a real, running, multi-app Keycloak-secured system, assembled from pieces
+      this course already proved independently, with no narrated transcript standing in for an actual
+      run. It's built around <span class="org-chip northwind">Northwind Apps</span> specifically, because
+      that's the org with the most accumulated, real infrastructure across the labs: the
+      <code>northwind-apps</code> realm (chapter 20), its roles and groups (chapter 23), identity
+      brokering (chapter 31), the <code>billing-api</code> Spring Boot resource server (chapter 34), UMA
+      2.0 authorization (chapter 37), and the <code>TenantIdProtocolMapper</code> custom SPI (chapter
+      39). This page is the walkthrough; <code>capstone/README.md</code> is the exact, reproducible
+      command sequence.</p>
+
+    <div class="callout callout--key-idea">
+      <div class="callout-label">Key idea</div>
+      <p>The capstone's job is <strong>integration</strong>, not invention: every piece below was already
+        independently verified in its own chapter. What's new here is wiring them together into one
+        stack that actually runs, plus one genuinely new endpoint (a UMA-gated "premium invoice report")
+        that didn't exist until this unit — and the real, live-verified bugs that only showed up once
+        these pieces had to work <em>together</em>, not in isolation.</p>
+    </div>
+
+    <h2>Architecture</h2>
+    <figure class="diagram">
+      <svg viewBox="0 0 820 440" role="img" aria-labelledby="t1 d1">
+        <title id="t1">The capstone's architecture: three clients against one Keycloak realm</title>
+        <desc id="d1">Three client boxes stacked on the left -- northwind-spa, a public PKCE client;
+          billing-service-account, a confidential machine-to-machine client; and billing-api, the
+          resource server -- each with its own horizontal arrow into one tall box on the right labeled
+          Keycloak, northwind-apps realm, which lists its roles, the tenant_id protocol mapper, and the
+          UMA resource/scope/policy/permission for the premium invoice report. The arrow from
+          northwind-spa is labeled authorization code plus PKCE login. The arrow from
+          billing-service-account is labeled client credentials grant. The arrow from billing-api is
+          bidirectional and labeled UMA ticket request, then RPT exchange. A separate note below the
+          three left boxes states that northwind-spa and billing-service-account both call billing-api
+          directly over HTTP using the bearer access token they already obtained from Keycloak.</desc>
+
+        <rect x="40" y="30" width="280" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="180" y="58" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">northwind-spa</text>
+        <text x="180" y="76" text-anchor="middle" class="diagram-label-muted" font-size="10">public client, PKCE required</text>
+        <text x="180" y="90" text-anchor="middle" class="diagram-label-muted" font-size="10">(ch. 24 named it, built for real here)</text>
+
+        <rect x="40" y="170" width="280" height="70" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="180" y="198" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">billing-service-account</text>
+        <text x="180" y="216" text-anchor="middle" class="diagram-label-muted" font-size="10">confidential, client_credentials (ch. 34/36)</text>
+
+        <rect x="40" y="310" width="280" height="90" rx="8" class="diagram-fill-surface diagram-stroke"/>
+        <text x="180" y="338" text-anchor="middle" class="diagram-label" font-weight="700" font-size="13">billing-api</text>
+        <text x="180" y="356" text-anchor="middle" class="diagram-label-muted" font-size="10">Spring Boot resource server (ch. 34)</text>
+        <text x="180" y="372" text-anchor="middle" class="diagram-label-muted" font-size="10">+ real UMA 2.0 PEP for /premium-report</text>
+
+        <rect x="460" y="30" width="320" height="370" rx="10" class="diagram-fill-accent diagram-stroke"/>
+        <text x="620" y="58" text-anchor="middle" class="diagram-label diagram-label-on-accent" font-weight="700" font-size="14">Keycloak -- northwind-apps realm</text>
+        <text x="620" y="84" text-anchor="middle" class="diagram-label-on-accent" font-size="11">roles: tenant-admin, billing-reader,</text>
+        <text x="620" y="100" text-anchor="middle" class="diagram-label-on-accent" font-size="11">billing-admin, support-agent, platform-engineer</text>
+        <text x="620" y="130" text-anchor="middle" class="diagram-label-on-accent" font-size="11">tenant-context client scope --</text>
+        <text x="620" y="146" text-anchor="middle" class="diagram-label-on-accent" font-size="11">TenantIdProtocolMapper (ch. 39)</text>
+        <text x="620" y="176" text-anchor="middle" class="diagram-label-on-accent" font-size="11">Authorization Services on billing-api:</text>
+        <text x="620" y="192" text-anchor="middle" class="diagram-label-on-accent" font-size="11">premium-invoice-report resource,</text>
+        <text x="620" y="208" text-anchor="middle" class="diagram-label-on-accent" font-size="11">view scope, billing-admin-policy,</text>
+        <text x="620" y="224" text-anchor="middle" class="diagram-label-on-accent" font-size="11">view-premium-invoice-report permission</text>
+
+        <path d="M320,65 H460" class="diagram-stroke" marker-end="url(#arrow)"/>
+        <text x="390" y="56" text-anchor="middle" class="diagram-label-muted" font-size="9">auth code + PKCE</text>
+
+        <path d="M320,205 H460" class="diagram-stroke" marker-end="url(#arrow)"/>
+        <text x="390" y="196" text-anchor="middle" class="diagram-label-muted" font-size="9">client_credentials</text>
+
+        <path d="M320,355 H460" class="diagram-stroke" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+        <text x="390" y="340" text-anchor="middle" class="diagram-label-muted" font-size="9">UMA ticket,</text>
+        <text x="390" y="352" text-anchor="middle" class="diagram-label-muted" font-size="9">then RPT</text>
+
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" class="diagram-fill-surface"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption>Figure — northwind-spa and billing-service-account each get their own token from
+        Keycloak, then call billing-api directly with that bearer token (not shown as a separate arrow
+        to keep the diagram readable); billing-api itself talks back to Keycloak only for the UMA ticket
+        + RPT exchange that decides the one fine-grained-gated endpoint.</figcaption>
+    </figure>
+
+    <h2>What each piece recalls</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Piece</th><th>Recalls</th><th>New in the capstone</th></tr></thead>
+        <tbody>
+          <tr><td><code>northwind-apps</code> realm, roles, groups</td><td>Chapters 20-23</td><td>Rebuilt fresh in an isolated stack via <code>seed-realm.sh</code></td></tr>
+          <tr><td><code>northwind-spa</code> (public, PKCE)</td><td>Chapter 24 (named only)</td><td>Built for real, for the first time, with a real running React app</td></tr>
+          <tr><td><code>billing-api</code> role-protected endpoints</td><td>Chapter 34</td><td>Unchanged — reused as-is from the chapter 34 lab</td></tr>
+          <tr><td><code>TenantIdProtocolMapper</code></td><td>Chapter 39</td><td>Attached to real clients for the first time, via a real <code>tenant-context</code> client scope</td></tr>
+          <tr><td>UMA 2.0 resource/scope/policy/permission</td><td>Chapter 37 (curl only, standalone)</td><td>Wired into a real app as a real server-side PEP (<code>UmaPermissionService</code>), gating a new endpoint</td></tr>
+          <tr><td>Client credentials M2M job</td><td>Chapters 34, 36</td><td><code>m2m-billing-job.sh</code>, actually run against the real stack</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>How to run it</h2>
+    <p>Full, exact, reproducible commands are in <code>capstone/README.md</code>. In short: bring up
+      <code>capstone/docker-compose.yml</code>, run <code>capstone/seed-realm.sh</code>, build and run
+      <code>capstone/billing-api</code>, build and run <code>capstone/dashboard-spa</code>, then run
+      <code>capstone/m2m-billing-job.sh</code>.</p>
+
+    <h2>Real, verified results — not narrated</h2>
+    <p>Every number below is actual output captured from this capstone's own running stack on
+      2026-11-12, independently spot-checked afterward rather than taken on faith.</p>
+    <div class="table-wrap">
+      <table class="table-compare table-compare--pro-con">
+        <caption>Caller / endpoint / result, against the real running billing-api</caption>
+        <thead><tr><th>Caller and request</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>amara.reader (billing-reader) — <code>GET /api/invoices</code></td><td>200</td></tr>
+          <tr><td>amara.reader — <code>POST /api/invoices</code></td><td>403</td></tr>
+          <tr><td>devon.admin (billing-admin) — <code>POST /api/invoices</code></td><td>201</td></tr>
+          <tr><td>amara.reader — <code>GET /api/invoices/premium-report</code> (real UMA check)</td><td>403 — <code>access_denied</code></td></tr>
+          <tr><td>devon.admin — <code>GET /api/invoices/premium-report</code> (real UMA check)</td><td>200 — real aggregate report</td></tr>
+          <tr><td>billing-service-account (M2M, client_credentials) — both endpoints above</td><td>200 / 200</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A full real authorization-code + PKCE login against <code>northwind-spa</code> was also scripted
+      end to end (reusing the login-form-POST technique chapter 13's lab proved works in this
+      environment): a real S256 PKCE challenge, a real login form submission for <code>jane.doe</code>,
+      a real redirect carrying a real authorization code, a real token exchange, and a decoded access
+      token that genuinely carries <code>"tenant_id": "acme-corp"</code> — the custom SPI's claim,
+      riding on a real token for the first time anywhere in this course.</p>
+
+    <div class="callout callout--pitfall">
+      <div class="callout-label">Real bugs found while building this</div>
+      <p><strong>1.</strong> A UMA resource URI with a path-segment wildcard
+        (<code>/api/invoices/*/premium-report</code>) is rejected outright — Keycloak only accepts a
+        trailing <code>/*</code> or a <code>/*.ext</code> suffix. Fixed by making the endpoint a fixed
+        path instead of a per-invoice one.</p>
+      <p><strong>2.</strong> Keycloak 26's declarative User Profile silently drops any user attribute
+        not declared in its schema — no error, no warning, the attribute just never appears, and a
+        protocol mapper reading it never fires. <code>tenant_id</code> had to be added to the realm's
+        User Profile schema before it would actually persist and ride in a token. Full write-up in
+        <code>capstone/README.md</code>.</p>
+    </div>
+
+    <h2>How to defend this in an interview</h2>
+    <ul>
+      <li><strong>Why one realm, not two or three?</strong> A realm is Keycloak's unit of complete
+        isolation — themes, password policy, session lifetimes, brute-force protection all apply realm-
+        wide. Northwind's actual separation need (per-tenant data isolation) is an authorization-time
+        concern, not an authentication-time one, so it's enforced with roles, the <code>tenant_id</code>
+        claim, and UMA policies inside one realm instead of paying for N realms' operational overhead.</li>
+      <li><strong>Why UMA instead of just a role check on the premium endpoint?</strong> A role check is
+        static and compiled into the app; the UMA resource/scope/policy/permission model lives in
+        Keycloak and can be changed by an administrator — add a second policy, change the decision
+        strategy, scope it to a specific resource instance — without touching or redeploying the app.
+        It also demonstrates the general shape fine-grained, resource-level authorization takes, which a
+        hardcoded <code>@PreAuthorize</code> can't express as the resource count grows.</li>
+      <li><strong>What does the <code>tenant_id</code> mapper actually buy?</strong> Every downstream
+        application gets the authenticated user's tenant on every token, for free, with no separate
+        lookup call and no risk of that lookup silently drifting out of sync with the user's real
+        assignment.</li>
+      <li><strong>What would change at real scale?</strong> The in-memory invoice list becomes a real,
+        tenant-partitioned database with the <code>tenant_id</code> claim enforced in every query, not
+        just read for display; the single-node Keycloak instance becomes a clustered deployment (Part IX);
+        and the UMA policy set would likely grow from one role policy to a small policy set per resource
+        type as the number of distinct resources grows past what hand-authored policies comfortably
+        cover.</li>
+      <li><strong>What's honestly out of scope here?</strong> Identity brokering (a second realm standing
+        in for Acme Corp's own IdP, demonstrating JIT provisioning) was deliberately cut from this build
+        to keep scope manageable — chapter 31 already proves the mechanism works; this capstone's job was
+        integrating the pieces that hadn't been wired together yet, not re-proving ones that already were.</li>
+    </ul>
+  </article></main>
+</div>
+<script src="assets/js/nav-data.js"></script>
+<script src="assets/js/book.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# The capstone's own, isolated Keycloak + PostgreSQL stack -- same pattern as
+# labs/custom-spis/docker-compose.yml and labs/authorization-services/docker-compose.yml, NOT an
+# override of labs/docker/docker-compose.yml (the shared stack used by chapters 20-30+) and NOT
+# sharing a project name/port with any other lab stack.
+#
+#   cd capstone
+#   mvn -q -f billing-api/pom.xml clean package   # build the billing API jar first
+#   docker compose -p capstonekc up -d
+#
+# Keycloak is published on host port 18200 (http://localhost:18200), per this course's convention
+# of giving each isolated lab/capstone stack its own project name + port.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_lab_password
+    volumes:
+      - capstone_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_lab_password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_lab_password
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "18200:8080"
+    volumes:
+      # The already-built custom SPI jar from chapter 39's lab (rebuilt fresh before this unit --
+      # see BUILD_STATUS.md), mounted read-only. Only its TenantIdProtocolMapper is actually wired
+      # into this realm; the other two providers in the jar (chapter 39's own event listener and
+      # authenticator) are simply unused here, not disabled -- Keycloak registers every provider it
+      # finds but nothing references them unless a client scope/flow actually uses them.
+      - ../labs/custom-spis/target/custom-spis-1.0.0.jar:/opt/keycloak/providers/custom-spis-1.0.0.jar:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  capstone_pg_data:

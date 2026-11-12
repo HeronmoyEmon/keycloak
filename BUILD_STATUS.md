@@ -129,6 +129,60 @@ closed from a visual-design standpoint — same recommendation every prior unit 
 
 **Capstone (queue item 18) is next per the Queue.**
 
+**The capstone — COMPLETE (2026-11-12).** Per CLAUDE.md §5's Part X row, this is "own project, not a
+chapter page" — a real, running, multi-app system, not narrated. Built by a single agent end to end
+(not a parallel round — it's one integrated system, not independently parallelizable work), then
+independently re-verified by the coordinator against the live stack. **Org: Northwind Apps** — already
+the richest-instrumented org across the labs, so the capstone's job was integration: assemble
+already-proven pieces (realm `northwind-apps` ch20-26, UMA authorization ch37, the `billing-api` Spring
+Boot resource server ch34, the `TenantIdProtocolMapper` custom SPI ch39) into one actually-running
+stack rather than building new pieces from scratch.
+
+**What was built:** `capstone/docker-compose.yml` (isolated Keycloak 26.8.2 + PostgreSQL 17, project
+`capstonekc`, port 18200, the already-built `custom-spis-1.0.0.jar` rebuilt fresh and mounted);
+`capstone/seed-realm.sh` (reconstructs the full realm — roles, groups, 5 users, 5 clients
+`northwind-dashboard`/`northwind-spa`/`billing-service-account`/`billing-direct-grant`/`billing-api`,
+the `tenant-context` client scope, and a real UMA resource/scope/policy/permission on `billing-api`
+mirroring chapter 37's pattern); `capstone/billing-api/` (chapter 34's resource server, copied not
+mutated, extended with a real server-side UMA 2.0 PEP — `UmaPermissionService` — gating a new
+`GET /api/invoices/premium-report` endpoint); `capstone/dashboard-spa/` (chapter 35's React SPA, copied
+not mutated, repointed at `northwind-spa`); `capstone/m2m-billing-job.sh`; `capstone.html` +
+`capstone/README.md`. Linked from `index.html`'s quick-links nav, `case-studies.html`, and chapter 46.
+**Cut, documented honestly rather than faked:** the Acme Corp brokering/JIT stretch goal — chapter 31
+already proves that mechanism works, and this capstone's job was integrating pieces that weren't wired
+together yet, not re-proving ones that already were.
+
+**Two real bugs found and fixed while building it** (both documented in `capstone.html`'s own pitfall
+callout and `capstone/README.md`): (1) a UMA resource URI with a path-segment wildcard
+(`/api/invoices/*/premium-report`) is rejected outright — Keycloak only accepts a trailing `/*` or
+`/*.ext`, fixed by using a fixed path; (2) Keycloak 26's declarative User Profile silently drops any
+user attribute not declared in its schema — no error, the attribute (and therefore the mapped claim)
+just never appears — fixed by declaring `tenant_id` in the realm's User Profile schema.
+
+**Independent verification done by the coordinator against the live stack** (not just trusting the
+agent's report — the stack was left running specifically for this): confirmed `capstonekc` containers
+up, `billing-api` and the SPA dev server both actually running (`ps`-confirmed PIDs), Keycloak discovery
+`200`. Re-fetched real client secrets via `kcadm`/Admin REST API and independently re-ran the full
+permission matrix myself from scratch (not reusing the agent's tokens): `amara.reader` (billing-reader)
+→ `GET /api/invoices` 200, `POST /api/invoices` 403, `GET /api/invoices/premium-report` 403;
+`devon.admin`/billing-service-account (billing-admin) → `POST /api/invoices` 201,
+`GET /api/invoices/premium-report` 200 via a real UMA RPT exchange; the M2M job re-run fresh end to
+end, both endpoints 200. Decoded a freshly-issued token and confirmed `tenant_id: acme-corp` genuinely
+rides on it for a client carrying the `tenant-context` scope (temporarily enabled direct-access-grants
+on `northwind-dashboard` purely to generate a verification token without redoing the full browser-form-
+POST PKCE flow, then reverted the setting immediately after — confirmed `204` on both the toggle and
+the revert). Verified the User Profile schema fix is real (`tenant_id` present in the realm's user-
+profile attribute list) and that the underlying user attribute is genuinely persisted (an initial
+`kcadm --fields attributes` check misleadingly showed `{}` — a `kcadm` fields-filter quirk, not a real
+data problem; the raw Admin REST API call showed the attribute correctly set). All 5 touched/new HTML
+files parse cleanly (tag-stack checker) and every internal link added this unit resolves to a real file.
+
+**What's NOT independently re-verified:** the full real authorization-code+PKCE browser-form-POST login
+against `northwind-spa` (re-running that specific flow was judged not worth repeating given the
+`tenant_id`-on-token claim was independently confirmed by an equivalent, lower-cost check against a
+different client carrying the same scope) and the React SPA's actual rendered UI (no browser tool in
+this environment — same standing limitation every prior unit has carried).
+
 ## Queue
 
 Ordered; one item at a time. Each chapter's full brief gets drafted into this file (replacing its queue
@@ -202,7 +256,8 @@ visuals/examples where it helps, not just re-chunk existing prose.
 17. ~~Chapters 46-48 + `case-studies.html` index + `case-studies/cs01-cs03` (full write-ups)~~ — done
     2026-11-12, see Current unit above / Done below for full detail. No gate sits here per CLAUDE.md
     §8 — the capstone is the next and last item before Part XI.
-18. Capstone project spec and build.
+18. ~~Capstone project spec and build~~ — done 2026-11-12, see Current unit / Done below. **Part X is
+    now fully complete.** Part XI (chapters 49-50) is next; the Final QA gate follows that.
 
 ### Part XI (career & reference)
 19. Chapters 49-50; chapter 50 is also the source for the final `glossary.html` sweep.
@@ -529,6 +584,14 @@ live-curled and confirmed `200`. Confirmed via `docker ps -a`/`docker volume ls`
 chapter 37's isolated `ch37kc` lab stack left no stray containers, volumes, or networks behind.
 
 ## Done
+
+### The capstone: Northwind Apps end-to-end multi-app platform — Part X COMPLETE (2026-11-12)
+See "The capstone — COMPLETE" under Current unit above for full detail (what was built, the two real
+bugs found and fixed, and everything the coordinator independently re-verified against the live stack).
+Summary: `capstone/` (docker-compose, seed script, `billing-api/`, `dashboard-spa/`, M2M job, README)
+plus `capstone.html`, linked from `index.html`/`case-studies.html`/chapter 46. The Acme Corp brokering
+stretch goal was deliberately cut and documented as such. This closes Part X entirely — no gate sits
+immediately after it per CLAUDE.md §8; Part XI (chapters 49-50) is next, then the Final QA gate.
 
 ### Part X case studies: chapters 46-48 + case-studies.html + cs01-cs03 (2026-11-12)
 - Built as 3 parallel fork agents, one per running org (Northwind Apps → ch46/cs01, Riverside Health →

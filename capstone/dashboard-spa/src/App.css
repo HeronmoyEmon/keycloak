@@ -1,0 +1,50 @@
+#root {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: left;
+}
+
+.card {
+  padding: 1.5em 2em;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+}
+
+.card--authenticated {
+  border-color: #2f9e44;
+}
+
+.card--error {
+  border-color: #e03131;
+}
+
+.status {
+  font-size: 1.05em;
+}
+
+.status--ok {
+  color: #2f9e44;
+}
+
+.status--error {
+  color: #e03131;
+}
+
+.claims {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25em 1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  margin: 1em 0;
+}
+
+.claims dt {
+  font-weight: 700;
+}
+
+.claims dd {
+  margin: 0;
+  word-break: break-all;
+}
