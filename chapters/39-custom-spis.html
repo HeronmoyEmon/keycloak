@@ -1409,7 +1409,7 @@ client_auth_method=client-secret, username=dalia.khan}</code></pre></li>
           the mapper registers with no error at all, but silently never adds the claim to any token,
           because <code>OIDCAttributeMapperHelper.mapClaim</code> needs it and has no server-side
           default:</p>
-<pre><code>kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models -r northwind-apps \
+<pre><code>docker compose -p ch39kc exec keycloak /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models -r northwind-apps \
   -s name=northwind-tenant-id-mapper \
   -s protocol=openid-connect \
   -s protocolMapper=northwind-tenant-id-mapper \

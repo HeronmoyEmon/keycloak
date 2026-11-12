@@ -972,13 +972,13 @@ $ curl -s http://localhost:8080/realms/master/.well-known/openid-configuration |
 
           <li><p><strong>Step 13 — create the <code>riverside-health</code> realm and the public
           <code>patient-portal</code> client</strong>, PKCE required, no secret:</p>
-          <pre><code>$ kcadm.sh config credentials --server http://localhost:8080 \
+          <pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 \
     --realm master --user admin --password admin_lab_password
 
-$ kcadm.sh create realms -s realm=riverside-health -s enabled=true
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=riverside-health -s enabled=true
 Created new realm with id 'riverside-health'
 
-$ kcadm.sh create clients -r riverside-health \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r riverside-health \
     -s clientId=patient-portal \
     -s publicClient=true \
     -s protocol=openid-connect \
@@ -994,13 +994,13 @@ Created new client with id '64ff6f1e-fe87-4aca-9150-1a2598077b00'</code></pre>
 
           <li><p><strong>Step 14 — create a test patient user</strong>, standing in for a patient who'd
           normally self-register through Riverside's portal:</p>
-          <pre><code>$ kcadm.sh create users -r riverside-health \
+          <pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r riverside-health \
     -s username=priya.patient -s enabled=true \
     -s email=priya.patient@example.com -s emailVerified=true \
     -s firstName=Priya -s lastName=Patient
 Created new user with id 'c117e7d0-dde9-409b-9f15-f5d48dfee8cf'
 
-$ kcadm.sh set-password -r riverside-health \
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r riverside-health \
     --username priya.patient --new-password patient-pass123</code></pre></li>
         </ol>
       </section>

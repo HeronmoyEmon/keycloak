@@ -411,10 +411,10 @@
         the plain, reader-facing form.</p>
         <ol class="lab-steps">
           <li><p><strong>Create the realm and its two roles</strong>:</p>
-          <pre><code>kcadm.sh create realms -s realm=northwind-apps -s enabled=true
-kcadm.sh create roles -r northwind-apps -s name=billing-reader \
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-apps -s enabled=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps -s name=billing-reader \
   -s "description=Read-only access to Northwind Apps billing/invoicing data"
-kcadm.sh create roles -r northwind-apps -s name=billing-admin \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create roles -r northwind-apps -s name=billing-admin \
   -s "description=Read and write access to Northwind Apps billing/invoicing data"</code></pre>
           <pre><code>Created new realm with id 'northwind-apps'
 Created new role with id 'billing-reader'
@@ -424,37 +424,37 @@ Created new role with id 'billing-admin'</code></pre></li>
           client-credentials (machine-to-machine) test, and give its service account the
           <code>billing-admin</code> role (standing in for the nightly reconciliation job from the case
           study above):</p>
-          <pre><code>kcadm.sh create clients -r northwind-apps -s clientId=billing-service-account \
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps -s clientId=billing-service-account \
   -s enabled=true -s publicClient=false -s serviceAccountsEnabled=true \
   -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
   -s secret=billing-service-secret
-kcadm.sh add-roles -r northwind-apps \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps \
   --uusername service-account-billing-service-account --rolename billing-admin</code></pre></li>
 
           <li><p><strong>Create a public, direct-grant client</strong> for this lab's human test users
           (direct grant stands in here for "a real login already happened upstream and this is just how we
           mint a test token," exactly the reasoning chapter 13 used for curl-only grant types), plus three
           test users — two with billing roles, one deliberately without any:</p>
-          <pre><code>kcadm.sh create clients -r northwind-apps -s clientId=billing-direct-grant \
+          <pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps -s clientId=billing-direct-grant \
   -s enabled=true -s publicClient=true -s standardFlowEnabled=false \
   -s directAccessGrantsEnabled=true
 
-kcadm.sh create users -r northwind-apps -s username=amara.reader -s enabled=true \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps -s username=amara.reader -s enabled=true \
   -s emailVerified=true -s email=amara.reader@northwindapps.example \
   -s firstName=Amara -s lastName=Chen
-kcadm.sh set-password -r northwind-apps --username amara.reader --new-password 'Reader#2026Pass'
-kcadm.sh add-roles -r northwind-apps --uusername amara.reader --rolename billing-reader
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-apps --username amara.reader --new-password 'Reader#2026Pass'
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps --uusername amara.reader --rolename billing-reader
 
-kcadm.sh create users -r northwind-apps -s username=devon.admin -s enabled=true \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps -s username=devon.admin -s enabled=true \
   -s emailVerified=true -s email=devon.admin@northwindapps.example \
   -s firstName=Devon -s lastName=Okafor
-kcadm.sh set-password -r northwind-apps --username devon.admin --new-password 'Admin#2026Pass'
-kcadm.sh add-roles -r northwind-apps --uusername devon.admin --rolename billing-admin
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-apps --username devon.admin --new-password 'Admin#2026Pass'
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles -r northwind-apps --uusername devon.admin --rolename billing-admin
 
-kcadm.sh create users -r northwind-apps -s username=priya.sales -s enabled=true \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps -s username=priya.sales -s enabled=true \
   -s emailVerified=true -s email=priya.sales@northwindapps.example \
   -s firstName=Priya -s lastName=Nair
-kcadm.sh set-password -r northwind-apps --username priya.sales --new-password 'Sales#2026Pass'
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-apps --username priya.sales --new-password 'Sales#2026Pass'
 # priya.sales deliberately gets no billing-reader/billing-admin role at all --
 # the "authenticated but wrong role" test case.</code></pre>
           <p><strong>A real, second gotcha hit in this exact step</strong>, worth including honestly rather

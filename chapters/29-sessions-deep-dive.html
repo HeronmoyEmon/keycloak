@@ -328,8 +328,8 @@ $ curl -s -H "Authorization: Bearer &lt;admin token&gt;" \
 
           <li><p><strong>Refresh-token-level revocation</strong> (<code>Revoke Refresh Token</code>, chapter 21),
           enabled for real this time and confirmed:</p>
-<pre><code>$ kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
-$ kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
+<pre><code>$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
+$ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
 <pre><code>{ "revokeRefreshToken" : true }</code></pre>
           <p>A fresh token mint, then its refresh token used once (succeeds, issues a brand-new refresh token
           <code>RT2</code>) and then <em>reused</em> a second time (the original <code>RT1</code> again):</p>
@@ -466,14 +466,14 @@ done</code></pre>
           <li><p>Authenticate <code>kcadm.sh</code>, create <code>northwind-apps</code>, <code>jane.doe</code>, and
           <code>northwind-dashboard</code> (direct access grants <strong>off</strong> by default — this chapter's
           real, intended configuration, same as chapter 24's):</p>
-<pre><code>kcadm.sh config credentials --server http://localhost:8080 --realm master \
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master \
   --user admin --password admin_lab_password
-kcadm.sh create realms -s realm=northwind-apps -s enabled=true -s displayName="Northwind Apps"
-kcadm.sh create users -r northwind-apps -s username=jane.doe -s enabled=true \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create realms -s realm=northwind-apps -s enabled=true -s displayName="Northwind Apps"
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create users -r northwind-apps -s username=jane.doe -s enabled=true \
   -s email=jane.doe@northwindapps.com -s firstName=Jane -s lastName=Doe -s emailVerified=true -i
-kcadm.sh set-password -r northwind-apps --username jane.doe \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password -r northwind-apps --username jane.doe \
   --new-password 'Lab_Password_2026!' --temporary=false
-kcadm.sh create clients -r northwind-apps -s clientId=northwind-dashboard \
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps -s clientId=northwind-dashboard \
   -s publicClient=false -s standardFlowEnabled=true \
   -s directAccessGrantsEnabled=false -s serviceAccountsEnabled=false \
   -s 'redirectUris=["https://dashboard.northwindapps.internal/*"]' -i</code></pre>
@@ -483,7 +483,7 @@ eb3cb5c6-8225-4231-a9cc-44501c13288d</code></pre></li>
 
           <li><p>Read the realm's real session-field defaults before changing anything — the baseline every claim
           in this chapter is measured against:</p>
-<pre><code>kcadm.sh get realms/northwind-apps --fields ssoSessionIdleTimeout,ssoSessionMaxLifespan,\
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields ssoSessionIdleTimeout,ssoSessionMaxLifespan,\
 clientSessionIdleTimeout,clientSessionMaxLifespan,offlineSessionIdleTimeout,\
 offlineSessionMaxLifespanEnabled,revokeRefreshToken</code></pre>
 <pre><code>{
@@ -505,7 +505,7 @@ offlineSessionMaxLifespanEnabled,revokeRefreshToken</code></pre>
 
           <li><p>Temporarily enable direct access grants, mint a real token/session for jane.doe (this lab-only
           probe, same convention as chapter 24, reverted the moment the token is captured):</p>
-<pre><code>kcadm.sh update clients/eb3cb5c6-... -r northwind-apps -s directAccessGrantsEnabled=true
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update clients/eb3cb5c6-... -r northwind-apps -s directAccessGrantsEnabled=true
 curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
   -d "grant_type=password" -d "client_id=northwind-dashboard" -d "client_secret=&lt;secret&gt;" \
   -d "username=jane.doe" -d "password=Lab_Password_2026!" -d "scope=openid profile email"</code></pre>
@@ -538,8 +538,8 @@ curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-conn
 
           <li><p>Enable <code>Revoke Refresh Token</code>, mint a fresh token, use its refresh token once (succeeds,
           new refresh token issued), then replay the stale one:</p>
-<pre><code>kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
-kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/northwind-apps -s revokeRefreshToken=true
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh get realms/northwind-apps --fields revokeRefreshToken</code></pre>
 <pre><code>{ "revokeRefreshToken" : true }</code></pre>
 <pre><code># mint fresh token -&gt; RT1; use RT1 once -&gt; succeeds, returns RT2; reuse RT1 again:
 curl -s -X POST http://localhost:8080/realms/northwind-apps/protocol/openid-connect/token \
@@ -564,7 +564,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $ADMI
 
           <li><p>Register the second client and run the SSO-across-clients cookie-jar demonstration exactly as
           walked through earlier in this chapter (see that section for the full, real output):</p>
-<pre><code>kcadm.sh create clients -r northwind-apps -s clientId=northwind-support-portal \
+<pre><code>docker compose exec keycloak /opt/keycloak/bin/kcadm.sh create clients -r northwind-apps -s clientId=northwind-support-portal \
   -s publicClient=true -s standardFlowEnabled=true \
   -s 'redirectUris=["https://support.northwindapps.internal/*"]' -i</code></pre></li>
 

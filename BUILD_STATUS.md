@@ -106,6 +106,26 @@ inspection couldn't have caught, in two categories:
   (mechanically — only the one pre-existing text error above), 33, 34 (mechanically — only the one
   missing-capture bug above), 35 (only the one extraction bug above), 39.
 
+**Follow-up from a delayed ch24 agent report: the same "bare `kcadm.sh`, no alias ever established"
+class of bug exists in 5 more chapters.** That report (already fully reflected in the commit above)
+flagged it as likely but out of its own scope. Checked directly, site-wide, by extracting every
+`<pre>` block's real text (not raw HTML lines, which undercounts since the `$` prompt often isn't at
+the very start of the HTML source line) and counting bare `kcadm.sh`/`kc.sh` invocations with no
+`docker compose exec keycloak /opt/keycloak/bin/` prefix and no alias/function/interactive-shell setup
+anywhere on the page to justify the bare form. Confirmed real and fixed in 5 files:
+- **ch29, ch34, ch35**: every single `kcadm.sh` line was bare (12, 14, and 5 occurrences) — every one
+  of these chapters' kcadm commands would have hit `command not found` on a fresh host, copy-button or
+  not. Fixed all of them to the full prefixed form.
+- **ch30**: a mix — 2 already correct, 14 bare. Fixed the 14.
+- **ch39**: 1 bare occurrence — this one was this session's own earlier fix (the missing
+  protocol-mapper-attach command added to close a documentation gap), which used the bare form instead
+  of matching this chapter's own established `docker compose -p ch39kc exec keycloak ...` convention
+  (it has its own isolated stack, not chapter 20's shared one). Fixed to match.
+- No bare `kc.sh` (the separate server-CLI tool, used for export/build) found anywhere on the site.
+- Re-verified after fixing: zero bare `kcadm.sh`/`kc.sh` occurrences remain anywhere on the site; full
+  `extractCopyText()` regression re-run clean (68/68 blocks, zero issues); full link/quiz/glossary
+  validation and site-wide tag balance all still clean.
+
 **Self-contained-labs retrofit (user-requested, off-queue, ahead of the Final QA pass) — in progress,
 started 2026-11-12.** The user will only ever share this site's deployed Vercel link, never this GitHub
 repo — but every lab chapter currently tells the reader to `cd labs/<folder>` or references a file like
